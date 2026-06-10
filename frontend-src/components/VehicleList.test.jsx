@@ -1,0 +1,68 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import VehicleList from './VehicleList';
+
+const vehicles = [
+  {
+    id: 1, name: 'Street Triple', kind: 'motorcycle', make: 'Triumph',
+    model: 'Street Triple RS', year: 2021, registration: 'LB21 XYZ',
+    odometer_unit: 'mi', archived: 0, service_count: 4, photo_count: 0,
+    cover_photo_id: null,
+    latest_odometer: { date: '2025-06-01', odometer_km: 160.9344 },
+  },
+  {
+    id: 2, name: 'Daily', kind: 'car', make: 'Honda', model: 'Civic', year: 2019,
+    registration: null, odometer_unit: 'mi', archived: 0, service_count: 1,
+    photo_count: 0, cover_photo_id: null, latest_odometer: null,
+  },
+];
+
+vi.mock('../api.js', () => ({
+  api: {
+    getVehicles: vi.fn().mockResolvedValue([]),
+    photoUrl: (id) => `/api/photos/${id}/file`,
+  },
+}));
+
+import { api } from '../api.js';
+
+vi.mock('../AuthContext.jsx', () => ({
+  useAuth: () => ({ user: { username: 'x', is_readonly: false } }),
+}));
+
+function renderList() {
+  return render(<MemoryRouter><VehicleList /></MemoryRouter>);
+}
+
+describe('VehicleList', () => {
+  it('renders vehicle cards with kind badges and odometer', async () => {
+    api.getVehicles.mockResolvedValue(vehicles);
+    renderList();
+    await waitFor(() => {
+      expect(screen.getByText('Street Triple')).toBeInTheDocument();
+      expect(screen.getByText('Motorcycle')).toBeInTheDocument();
+      expect(screen.getByText('Car')).toBeInTheDocument();
+      expect(screen.getByText('100 mi (161 km)')).toBeInTheDocument();
+      expect(screen.getByText('No mileage yet')).toBeInTheDocument();
+    });
+  });
+
+  it('filters by name', async () => {
+    api.getVehicles.mockResolvedValue(vehicles);
+    renderList();
+    await waitFor(() => expect(screen.getByText('Daily')).toBeInTheDocument());
+    await userEvent.type(screen.getByPlaceholderText(/Filter by name/), 'Triple');
+    expect(screen.queryByText('Daily')).not.toBeInTheDocument();
+    expect(screen.getByText('Street Triple')).toBeInTheDocument();
+  });
+
+  it('shows empty state', async () => {
+    api.getVehicles.mockResolvedValue([]);
+    renderList();
+    await waitFor(() => {
+      expect(screen.getByText(/No vehicles yet/)).toBeInTheDocument();
+    });
+  });
+});

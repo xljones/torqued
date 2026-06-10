@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 667 441">
+  <!-- Rolling hills horizon with a winding road, used as an alpha mask -->
+  <path fill="#000" d="M0 441 V300 C 90 250, 180 310, 270 280 C 380 244, 430 290, 530 255 C 590 234, 630 250, 667 230 V441 Z"/>
+  <path fill="#000" opacity="0.55" d="M0 300 C 80 230, 200 270, 300 225 C 410 176, 500 230, 600 190 L667 165 V250 C 560 280, 430 260, 330 295 C 220 333, 100 305, 0 350 Z"/>
+</svg>

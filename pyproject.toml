@@ -1,0 +1,19 @@
+[project]
+name = "torqued"
+version = "1.0.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+# no testpaths — paths differ between Docker (tests/) and CI (backend-src/tests/)
+addopts = "--cov=torqued --cov-fail-under=100 --cov-report=term-missing"

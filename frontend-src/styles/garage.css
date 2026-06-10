@@ -1,0 +1,71 @@
+/* ── Vehicle cards ─────────────────────────────────────────────────────────── */
+.vehicle-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.vehicle-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column;
+}
+a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
+.vehicle-card-photo {
+  aspect-ratio: 16 / 9; background: var(--surface2); display: flex;
+  align-items: center; justify-content: center; font-size: 40px;
+}
+.vehicle-card-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vehicle-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.vehicle-card-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.vehicle-card-sub { font-size: 13px; color: var(--text2); }
+.vehicle-card-meta { font-size: 12px; color: var(--text2); display: flex; gap: 12px; margin-top: 4px; }
+.vehicle-card.archived { opacity: 0.55; }
+
+/* ── Kind & reminder badges ────────────────────────────────────────────────── */
+.badge-car { background: #ddeeff; color: #1a4a80; }
+.badge-motorcycle { background: #fdeedd; color: #7a3a0a; }
+.badge-overdue { background: #fde2e2; color: #8a1f1f; }
+.badge-due_soon { background: #fdf3d7; color: #7a5a0a; }
+.badge-upcoming { background: #ddf0e6; color: #1a5030; }
+.reg-plate {
+  font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold;
+  background: #fdd835; border: 1px solid #c6a700; color: #000;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+}
+
+/* ── Tyre pressures ────────────────────────────────────────────────────────── */
+.pressure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.pressure-tile { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.pressure-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text2); margin-bottom: 4px; }
+.pressure-value { font-size: 20px; font-weight: 700; }
+.pressure-alt { font-size: 12px; color: var(--text2); }
+.pressure-size { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+/* ── Photos ────────────────────────────────────────────────────────────────── */
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.photo-thumb {
+  position: relative; aspect-ratio: 1; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border); cursor: pointer; padding: 0; background: var(--surface2);
+}
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-thumb-caption {
+  position: absolute; left: 0; right: 0; bottom: 0; font-size: 11px; color: #fff;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7)); padding: 14px 6px 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+}
+.lightbox {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px;
+}
+.lightbox img { max-width: 90vw; max-height: 70vh; border-radius: var(--radius); }
+.lightbox-bar { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13px; flex-wrap: wrap; justify-content: center; }
+.lightbox-caption-input { min-width: 240px; }
+
+/* ── Mileage sparkline ─────────────────────────────────────────────────────── */
+.sparkline { width: 100%; height: 60px; display: block; }
+.sparkline polyline { fill: none; stroke: var(--accent); stroke-width: 2; }
+.sparkline circle { fill: var(--accent); }
+.odo-current { font-size: 24px; font-weight: 700; }
+.odo-current-alt { font-size: 13px; color: var(--text2); }
+
+/* ── Reminders ─────────────────────────────────────────────────────────────── */
+.reminder-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.reminder-row:last-child { border-bottom: none; }
+.reminder-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reminder-title { font-weight: 600; font-size: 13px; }
+.reminder-sub { font-size: 12px; color: var(--text2); }

@@ -1,0 +1,99 @@
+import os
+import uuid
+from pathlib import Path
+
+from flask import Blueprint, jsonify, request, send_from_directory
+from flask.typing import ResponseReturnValue
+from flask_login import current_user, login_required
+
+from torqued.db import get_db
+from torqued.repositories.photo_repository import PhotoRepository
+from torqued.repositories.service_log_repository import ServiceLogRepository
+from torqued.repositories.vehicle_repository import VehicleRepository
+
+bp = Blueprint("photos", __name__)
+
+_DEFAULT_UPLOAD_DIR = str(Path(__file__).parent.parent.parent.parent / "data" / "uploads")
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+
+def upload_dir() -> str:
+    d = os.environ.get("UPLOAD_DIR", _DEFAULT_UPLOAD_DIR)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+@bp.post("/api/vehicles/<int:vehicle_id>/photos")
+@login_required
+def upload_photo(vehicle_id: int) -> ResponseReturnValue:
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify(error="file is required"), 400
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify(error=f"file type {ext or '(none)'} not allowed"), 400
+
+    caption = request.form.get("caption") or None
+    service_log_id_raw = request.form.get("service_log_id") or None
+    service_log_id = None
+
+    with get_db() as db:
+        if not VehicleRepository(db).get_by_id(vehicle_id):
+            return jsonify(error="Not found"), 404
+        if service_log_id_raw:
+            try:
+                service_log_id = int(service_log_id_raw)
+            except ValueError:
+                return jsonify(error="service_log_id must be an integer"), 400
+            log = ServiceLogRepository(db).get_by_id(service_log_id)
+            if not log or log["vehicle_id"] != vehicle_id:
+                return jsonify(error="service log not found for this vehicle"), 400
+
+        filename = f"{uuid.uuid4().hex}{ext}"
+        file.save(os.path.join(upload_dir(), filename))
+        photo = PhotoRepository(db).create(
+            vehicle_id,
+            filename,
+            original_name=file.filename,
+            caption=caption,
+            service_log_id=service_log_id,
+            uploaded_by=current_user.id,
+        )
+    return jsonify(photo), 201
+
+
+@bp.get("/api/photos/<int:photo_id>/file")
+@login_required
+def photo_file(photo_id: int) -> ResponseReturnValue:
+    with get_db() as db:
+        photo = PhotoRepository(db).get_by_id(photo_id)
+    if not photo:
+        return jsonify(error="Not found"), 404
+    return send_from_directory(upload_dir(), photo["filename"], max_age=86400)
+
+
+@bp.put("/api/photos/<int:photo_id>")
+@login_required
+def update_photo(photo_id: int) -> ResponseReturnValue:
+    d = request.json or {}
+    with get_db() as db:
+        repo = PhotoRepository(db)
+        if not repo.get_by_id(photo_id):
+            return jsonify(error="Not found"), 404
+        return jsonify(repo.update_caption(photo_id, d.get("caption") or None))
+
+
+@bp.delete("/api/photos/<int:photo_id>")
+@login_required
+def delete_photo(photo_id: int) -> ResponseReturnValue:
+    with get_db() as db:
+        repo = PhotoRepository(db)
+        photo = repo.get_by_id(photo_id)
+        if not photo:
+            return jsonify(error="Not found"), 404
+        repo.delete(photo_id)
+    try:
+        os.unlink(os.path.join(upload_dir(), photo["filename"]))
+    except FileNotFoundError:
+        pass
+    return "", 204

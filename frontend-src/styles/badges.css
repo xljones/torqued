@@ -1,0 +1,13 @@
+.barcode { font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold; background: var(--surface2); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; white-space: nowrap; color: #000; }
+.barcode-lg { font-size: 18px; }
+
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.badge-box { background: #ddeeff; color: #1a4a80; }
+.badge-tube { background: #ddf0e6; color: #1a5030; }
+.badge-core { background: #fdeedd; color: #7a3a0a; }
+.badge-inherited { position: relative; background: var(--surface2); color: var(--text2); border: 1px solid var(--border); font-weight: 500; margin-left: 6px; }
+
+.user-badge { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 3px; }
+.user-badge-admin { background: var(--accent); color: #fff; }
+.user-badge-normal { background: #ddf0e6; color: #1a5030; }
+.user-badge-readonly { background: var(--surface2); color: var(--text2); }

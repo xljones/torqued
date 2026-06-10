@@ -1,0 +1,16 @@
+FROM python:3.14-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+
+COPY backend-src/ ./
+
+RUN mkdir -p /app/data
+
+ENV DB_PATH=/app/data/garage.db
+
+EXPOSE 5001
+
+CMD ["python", "app.py"]

@@ -1,0 +1,157 @@
+"""Tests for torqued/__init__.py: middleware, frontend serving, app factory."""
+import os
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from flask import Flask
+from flask.testing import FlaskClient
+
+from torqued.db import get_db
+from torqued.repositories.user_repository import UserRepository
+
+
+# ── domain model ─────────────────────────────────────────────────────────────
+
+def test_domain_models_importable() -> None:
+    from torqued.domain.odometer_log import OdometerLog
+    from torqued.domain.photo import Photo
+    from torqued.domain.service_log import ServiceLog
+    from torqued.domain.vehicle import Vehicle
+
+    assert Vehicle(id=1, name="Daily").name == "Daily"
+    assert ServiceLog(id=1, vehicle_id=1, date="2025-01-01", title="Oil").title == "Oil"
+    assert OdometerLog(id=1, vehicle_id=1, date="2025-01-01", odometer_km=100.0).odometer_km == 100.0
+    assert Photo(id=1, vehicle_id=1, filename="x.jpg").filename == "x.jpg"
+
+
+def test_user_is_active_no_expiry() -> None:
+    from torqued.domain.user import User
+    assert User(id=1, username="u").is_active is True
+
+
+def test_user_is_active_future_expiry() -> None:
+    from torqued.domain.user import User
+    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    assert User(id=1, username="u", expires_at=future).is_active is True
+
+
+def test_user_is_active_past_expiry() -> None:
+    from torqued.domain.user import User
+    assert User(id=1, username="u", expires_at="2000-01-01T00:00:00+00:00").is_active is False
+
+
+def test_user_is_active_invalid_format() -> None:
+    from torqued.domain.user import User
+    assert User(id=1, username="u", expires_at="not-a-date").is_active is True
+
+
+# ── app factory ───────────────────────────────────────────────────────────────
+
+def test_create_app_requires_secret_key_in_production(tmp_path: Path) -> None:
+    db_fd, db_path = tempfile.mkstemp(suffix=".db", dir=tmp_path)
+    os.close(db_fd)
+    env = {k: v for k, v in os.environ.items() if k != "SECRET_KEY"}
+    env["FLASK_DEBUG"] = "0"
+    env["DB_PATH"] = db_path
+    with patch.dict(os.environ, env, clear=True):
+        from torqued import create_app
+        with pytest.raises(RuntimeError, match="SECRET_KEY"):
+            create_app()
+
+
+# ── enforce_auth middleware ───────────────────────────────────────────────────
+
+def test_enforce_auth_expired_session(client: FlaskClient) -> None:
+    with get_db() as db:
+        user = UserRepository(db).create("expireme", "pass")
+    client.post("/api/auth/login", json={"username": "expireme", "password": "pass"})
+    with get_db() as db:
+        db.execute(
+            "UPDATE users SET expires_at=? WHERE id=?",
+            ("2000-01-01T00:00:00+00:00", user["id"]),
+        )
+    r = client.get("/api/vehicles")
+    assert r.status_code == 401
+    assert "expired" in r.json["error"].lower()
+
+
+def test_enforce_auth_invalid_expires_at_ignored(client: FlaskClient) -> None:
+    with get_db() as db:
+        user = UserRepository(db).create("badexpiry", "pass")
+    client.post("/api/auth/login", json={"username": "badexpiry", "password": "pass"})
+    with get_db() as db:
+        db.execute(
+            "UPDATE users SET expires_at=? WHERE id=?",
+            ("not-a-valid-date", user["id"]),
+        )
+    r = client.get("/api/vehicles")
+    assert r.status_code == 200
+
+
+def test_enforce_auth_readonly_blocks_write(client: FlaskClient) -> None:
+    with get_db() as db:
+        UserRepository(db).create("reader", "pass", is_readonly=True)
+    client.post("/api/auth/login", json={"username": "reader", "password": "pass"})
+    assert client.post("/api/vehicles", json={"name": "Bike"}).status_code == 403
+
+
+def test_enforce_auth_readonly_allows_password_change(client: FlaskClient) -> None:
+    with get_db() as db:
+        UserRepository(db).create("reader", "pass", is_readonly=True)
+    client.post("/api/auth/login", json={"username": "reader", "password": "pass"})
+    r = client.put("/api/auth/password", json={
+        "current_password": "pass", "new_password": "newpass123"
+    })
+    assert r.status_code == 204
+
+
+# ── frontend serving ──────────────────────────────────────────────────────────
+
+def test_serve_frontend_root(client: FlaskClient, tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "index.html").write_text("<h1>App</h1>")
+    import torqued
+    monkeypatch.setattr(torqued, "_DIST_DIR", str(tmp_path))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert b"App" in r.data
+
+
+def test_serve_frontend_existing_file(client: FlaskClient, tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "index.html").write_text("<h1>App</h1>")
+    (tmp_path / "app.js").write_text("var x = 1;")
+    import torqued
+    monkeypatch.setattr(torqued, "_DIST_DIR", str(tmp_path))
+    r = client.get("/app.js")
+    assert r.status_code == 200
+    assert b"var x" in r.data
+
+
+def test_serve_frontend_missing_path_returns_index(
+    client: FlaskClient, tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "index.html").write_text("<h1>Fallback</h1>")
+    import torqued
+    monkeypatch.setattr(torqued, "_DIST_DIR", str(tmp_path))
+    r = client.get("/some/deep/path")
+    assert r.status_code == 200
+    assert b"Fallback" in r.data
+
+
+# ── db migrations ─────────────────────────────────────────────────────────────
+
+def test_load_user_returns_none_for_deleted_user(client: FlaskClient) -> None:
+    with get_db() as db:
+        UserRepository(db).create("todelete", "pass")
+    client.post("/api/auth/login", json={"username": "todelete", "password": "pass"})
+    with get_db() as db:
+        db.execute("DELETE FROM users WHERE username='todelete'")
+    assert client.get("/api/vehicles").status_code == 401
+
+
+def test_run_migrations_idempotent(auth_client: FlaskClient) -> None:
+    """Calling run_migrations a second time skips already-applied migrations."""
+    from torqued.db import run_migrations
+    run_migrations()  # migrations already applied in fixture; this exercises the 'continue' branch

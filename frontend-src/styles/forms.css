@@ -1,0 +1,62 @@
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-grid.full { grid-template-columns: 1fr; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+.field input, .field textarea, .field select {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 13px; background: var(--surface); color: var(--text);
+  transition: border-color 0.1s;
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  outline: none; border-color: var(--accent);
+}
+.field textarea { resize: vertical; min-height: 80px; }
+.form-actions { display: flex; gap: 8px; margin-top: 8px; }
+.inline-form { display: flex; gap: 8px; align-items: stretch; }
+.inline-form-sm { display: flex; gap: 6px; align-items: stretch; }
+.barcode-input { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; box-sizing: border-box; background: var(--surface); color: var(--text); }
+.barcode-input:focus { outline: none; border-color: var(--accent); }
+.input-sm { flex: 1; padding: 4px 8px; font-size: 12px; line-height: 1; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); box-sizing: border-box; }
+.input-sm:focus { outline: none; border-color: var(--accent); }
+.select-sm { flex: 1; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; background: var(--surface); color: var(--text); box-sizing: border-box; }
+.camera-select { font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+.field-label-row { display: flex; justify-content: space-between; align-items: center; }
+.search-input {
+  width: 100%; max-width: 360px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 13px; background: var(--surface); color: var(--text);
+}
+.search-input:focus { outline: none; border-color: var(--accent); }
+.form-hint { margin: 6px 0 0; font-size: 12px; }
+.form-hint.accent { color: var(--accent); }
+.form-hint.muted { color: var(--text2); }
+.form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+.combo-wrap { position: relative; }
+.combo-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); list-style: none; max-height: 200px; overflow-y: auto; margin-top: 2px;
+}
+.combo-option {
+  display: block; width: 100%; padding: 6px 10px; text-align: left;
+  background: none; border: none; cursor: pointer; font-size: 13px; color: var(--text);
+}
+.combo-option:hover, .combo-option:focus { background: var(--surface2); outline: none; }
+.filter-bar { margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.assign-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.assign-match { margin-top: 10px; display: flex; align-items: center; gap: 12px; }
+.assign-input-group { display: flex; align-items: stretch; gap: 8px; flex: 1; min-width: 260px; }
+.scroll-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.scroll-list table { width: 100%; border-collapse: collapse; }
+.scroll-list td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.scroll-list tr:last-child td { border-bottom: none; }
+
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .span-2 { grid-column: span 1; }
+  /* Prevent iOS Safari from auto-zooming on input focus (requires font-size >= 16px) */
+  .field input, .field textarea, .field select,
+  .barcode-input, .input-sm, .select-sm, .camera-select, .search-input {
+    font-size: 16px;
+  }
+}

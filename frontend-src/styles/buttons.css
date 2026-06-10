@@ -1,0 +1,64 @@
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--radius); border: none;
+  font-size: 13px; font-weight: 500; line-height: 1.2; cursor: pointer; transition: background 0.1s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-success { background: #2e7d32; color: #fff; }
+.btn-success:hover { background: #1b5e20; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #9e3636; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary.btn-active { background: var(--text); color: var(--surface); border-color: var(--text); }
+.btn-secondary.btn-active:hover { background: var(--text2); border-color: var(--text2); }
+.btn-full { width: 100%; }
+.btn-group { display: flex; gap: 8px; }
+
+.export-dropdown { position: relative; }
+.export-dropdown-chevron { font-size: 10px; opacity: 0.7; }
+.export-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 100;
+  min-width: 260px;
+  overflow: hidden;
+}
+.export-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+}
+.export-dropdown-item:hover { background: var(--surface2); }
+.export-dropdown-note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.export-dropdown-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.export-dropdown-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+  user-select: none;
+}
+.export-dropdown-checkbox:hover { background: var(--surface2); }

@@ -1,0 +1,10 @@
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card-body { padding: 16px; }
+.card-map { overflow: hidden; }
+.card.mb-4 { margin-bottom: 16px; }
+.card.mb-6 { margin-bottom: 24px; }
+.card-message { padding: 16px; color: var(--text2); }
+.card-group-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); background: var(--surface2); font-size: 13px; font-weight: 600; }
+.card-group-header:hover { background: var(--surface3, var(--surface2)); }
+.card-group-header.collapsed { border-bottom: none; }
+.card-group-header .toggle { font-size: 10px; color: var(--text2); flex-shrink: 0; }

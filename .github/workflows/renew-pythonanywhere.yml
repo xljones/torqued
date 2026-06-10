@@ -1,0 +1,25 @@
+name: Renew PythonAnywhere
+
+on:
+  schedule:
+    - cron: '0 4 1,15 * *'  # 1st and 15th of each month at 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run renewal script
+        env:
+          PA_USERNAME: ${{ secrets.PA_USERNAME }}
+          PA_PASSWORD: ${{ secrets.PA_PASSWORD }}
+        run: python3 .github/scripts/renew_pythonanywhere.py

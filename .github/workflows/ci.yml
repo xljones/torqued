@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend — lint / typecheck / test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check backend-src/torqued/
+
+      - name: Type check (mypy)
+        run: mypy backend-src/torqued/
+
+      - name: Test (pytest)
+        run: pytest backend-src/tests/ -v
+        env:
+          PYTHONPATH: backend-src
+
+  frontend:
+    name: Frontend — lint / test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Test (vitest)
+        run: npm run test
+
+  deploy:
+    name: Build frontend & push deploy branch
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Write build-info.json
+        run: |
+          VERSION=$(grep -m1 '^version' pyproject.toml | awk -F'"' '{print $2}')
+          SHA=$(git rev-parse --short HEAD)
+          MSG=$(git log -1 --format='%s')
+          BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "{\"version\":\"$VERSION\",\"sha\":\"$SHA\",\"msg\":\"$MSG\",\"built_at\":\"$BUILT_AT\"}" > dist/build-info.json
+
+      - name: Push deploy branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git branch -D deploy 2>/dev/null || true
+          git checkout -b deploy
+          git add -f dist/
+          git commit -m "chore: build frontend dist"
+          git push origin deploy --force
