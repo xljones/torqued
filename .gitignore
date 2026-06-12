@@ -12,3 +12,5 @@ TODO.md
 data/uploads/
 data/db-backup-*.sql
 .venv/
+backend-src/.coverage
+.DS_Store

@@ -19,7 +19,7 @@ export default defineConfig({
   build: { outDir: '../dist', emptyOutDir: true },
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: Number(process.env.PORT) || 5173,
     proxy: {
       '/api/': process.env.API_URL || 'http://localhost:5001',
     },
