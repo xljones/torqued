@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import RegPlate from './RegPlate.jsx';
 import { KIND_ICONS, KIND_LABELS } from '../constants.js';
 import { fmtDistanceBoth } from '../units.js';
 
@@ -83,7 +84,7 @@ export default function VehicleList() {
               <div className="vehicle-card-sub">
                 {[eff(v, 'year'), eff(v, 'make'), eff(v, 'model')].filter(Boolean).join(' ') || '—'}
               </div>
-              {eff(v, 'registration') && <div><span className="reg-plate">{eff(v, 'registration')}</span></div>}
+              {eff(v, 'registration') && <div><RegPlate reg={eff(v, 'registration')} /></div>}
               <div className="vehicle-card-meta">
                 <span>{v.latest_odometer ? fmtDistanceBoth(v.latest_odometer.odometer_km, v.odometer_unit) : 'No mileage yet'}</span>
                 <span>{v.service_count} service{v.service_count !== 1 ? 's' : ''}</span>

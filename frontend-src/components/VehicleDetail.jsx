@@ -7,6 +7,7 @@ import RelativeTime from './RelativeTime.jsx';
 import ExportDropdown from './ExportDropdown.jsx';
 import PhotoGallery from './PhotoGallery.jsx';
 import MotCard from './MotCard.jsx';
+import RegPlate from './RegPlate.jsx';
 import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
@@ -303,7 +304,7 @@ export default function VehicleDetail() {
           <MotField label="Model" fieldKey="model" {...fieldProps} />
           <MotField label="Year" fieldKey="year" {...fieldProps} />
           <MotField label="Registration" fieldKey="registration" {...fieldProps}
-            render={v => <span className="reg-plate">{v}</span>} />
+            render={v => <RegPlate reg={v} />} />
           <MotField label="Engine size" fieldKey="engine_size" {...fieldProps}
             render={v => (/^\d+$/.test(String(v)) ? `${v} cc` : v)} />
           <MotField label="Colour" fieldKey="colour" {...fieldProps} />

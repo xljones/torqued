@@ -14,3 +14,4 @@ data/db-backup-*.sql
 .venv/
 backend-src/.coverage
 .DS_Store
+backend-src/data

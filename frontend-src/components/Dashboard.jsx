@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
+import RegPlate from './RegPlate.jsx';
 import { REMINDER_LABELS } from '../constants.js';
 import { fmtCost, fmtDistance } from '../units.js';
 
@@ -86,14 +87,17 @@ export default function Dashboard() {
             <tbody>
               {vehicles === null
                 ? <SkeletonRows cols={['25%', '35%', '20%', '40px']} rows={3} />
-                : vehicles.map(v => (
+                : vehicles.map(v => {
+                  const reg = v.registration || v.mot_baseline?.registration;
+                  return (
                   <tr key={v.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/vehicles/${v.id}`); }}>
-                    <td><Link to={`/vehicles/${v.id}`}>{v.name}</Link></td>
+                    <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
                     <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? v.mot_baseline?.make, v.model ?? v.mot_baseline?.model].filter(Boolean).join(' ') || '—'}</td>
                     <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
                     <td>{v.service_count}</td>
                   </tr>
-                ))
+                  );
+                })
               }
               {vehicles !== null && vehicles.length === 0 && (
                 <tr><td colSpan={4} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>

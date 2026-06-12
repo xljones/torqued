@@ -77,10 +77,12 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .badge-due_soon { background: #fdf3d7; color: #7a5a0a; }
 .badge-upcoming { background: #ddf0e6; color: #1a5030; }
 .reg-plate {
+  display: inline-block; line-height: 1;
   font-family: 'Charles Wright', 'Courier New', monospace; font-size: 12px; font-weight: bold;
   background: #fdd835; border: 1px solid #c6a700; color: #000;
   padding: 4px 6px 2px; border-radius: 4px; white-space: nowrap;
 }
+.vehicle-name-cell { display: inline-flex; align-items: center; gap: 8px; }
 
 /* ── Tyre pressures ────────────────────────────────────────────────────────── */
 .pressure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
