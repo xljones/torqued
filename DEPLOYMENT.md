@@ -41,6 +41,15 @@ echo "PA_API_TOKEN=<your-token>" >> .env
 echo "PA_USERNAME=<your-username>" >> .env
 ```
 
+**Optional — DVSA MOT history.** To enable the "Refresh from DVSA" button on vehicle pages, [register for the MOT history API](https://documentation.history.mot.api.gov.uk/mot-history-api/register) (free for under 500,000 requests/year; DVSA emails credentials in 1–5 working days) and add:
+
+```bash
+echo "MOT_CLIENT_ID=<client-id>" >> .env
+echo "MOT_CLIENT_SECRET=<client-secret>" >> .env
+echo "MOT_TOKEN_URL=https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token" >> .env
+echo "MOT_API_KEY=<api-key>" >> .env
+```
+
 ### 4. Create your first user
 
 ```bash
