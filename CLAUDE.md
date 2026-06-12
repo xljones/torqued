@@ -22,9 +22,10 @@
 - **ServiceLog** — one maintenance event (date, title, category, performed_by, cost, odometer, optional `next_due_date`/`next_due_km`). Can have zero or more **fault codes** (OBD-II DTCs) recorded in `service_log_fault_codes` (migration `004`). The form uses autocomplete from the existing `dtc.py` lookup but accepts free-text codes too. The detail view expands each code's description and system if found in the OBD-II database.
 - **OdometerLog** — a mileage reading with a `source` ('manual' user entry, or 'mot' mirrored from a DVSA test by `mot_test_number`). Mileage timelines and "latest odometer" merge these with service-log readings; `mileage_series` tags each point with its source ('manual'/'service'/'mot') for the chart.
 - **Photo** — upload attached to a vehicle, optionally scoped to a service log. Files live in `data/uploads/` (env `UPLOAD_DIR`), records in the `photos` table.
-- **Reminders** are derived, not stored: any service log with a `next_due_*` value creates one until a newer log in the same category exists. Status is `overdue` / `due_soon` (≤30 days or ≤500 km away) / `upcoming`.
+- **Reminders** are derived, not stored: any service log with a `next_due_*` value creates one until a newer log in the same category exists, and any stored road-tax due date creates one (`source='tax'`). Status is `overdue` / `due_soon` (≤30 days or ≤500 km away) / `upcoming`. `collect_reminders` (`routes/vehicles.py`) merges both streams for `GET /api/reminders`, the vehicle detail endpoint, and the PDF report.
 - **Fault codes (DTCs)** — `torqued/dtc.py` serves OBD-II code lookups from the vendored `data/obd_codes.json` (2,100+ generic SAE J2012 powertrain codes, MIT-licensed from github.com/fabiovila/OBDIICodes). Codes outside the dataset still get a structural decode (system / generic-vs-manufacturer scope / P-code subsystem). Routes: `GET /api/codes/<code>`, `GET /api/codes?q=` (an empty/blank `q` returns the full list — `dtc.list_all` — so the lookup page shows every code before searching; non-empty searches stay capped at 25).
 - **MOT history (UK)** — `torqued/mot.py` is a client for the official DVSA MOT History API (OAuth2 client-credentials via Microsoft Entra + `X-API-Key`; env vars `MOT_CLIENT_ID`, `MOT_CLIENT_SECRET`, `MOT_TOKEN_URL`, `MOT_API_KEY`; token cached ~60 min). `POST /api/vehicles/<id>/mot/refresh` (write roles) fetches by the vehicle's registration and stores **everything**: a per-vehicle snapshot in `dvsa_vehicles` and each test in `mot_tests` (both keep the verbatim API payload in `raw_json`), then mirrors test odometer readings into `odometer_logs` with `source='mot'` (replace-on-refresh; manual logs untouched) so they appear in the mileage timeline. `GET /api/vehicles/<id>/mot` returns `{configured, mot}`; `GET /api/mot/status` and `GET /api/mot/lookup/<reg>` (preview, no persist) support the form. Unconfigured → 503 on refresh/lookup; unknown registration → 404 relayed from DVSA. Full response schema + the MOT-baseline/user-override model for vehicle details: [docs/MOT_API.md](docs/MOT_API.md).
+- **Vehicle tax (UK)** — `torqued/ves.py` is a client for the official DVLA Vehicle Enquiry Service (single `x-api-key`, no OAuth; env vars `VES_API_KEY` and optional `VES_API_URL` for the UAT sandbox). `POST /api/vehicles/<id>/tax/refresh` (write roles) fetches by registration and stores a per-vehicle snapshot in `dvla_vehicles` — **every** scalar VES field as a column (tax/MOT status + due dates, make/colour/fuel, engine cc, CO₂, V5C date, Euro status, export marker, etc.) plus the verbatim `raw_json`; only tax status/due are shown, the rest are stored for querying. `GET /api/vehicles/<id>/tax` returns `{configured, tax}` and `GET /api/tax/status` gates the button. The tax due date drives a derived reminder (see Reminders). The frontend folds **Tax status** / **Tax due** tiles into the MOT card, whose one "Refresh from DVSA & DVLA" button refreshes both sources. See [docs/TAX_API.md](docs/TAX_API.md).
 
 **Units:** distances are stored canonically in **km** (`odometer_km`, `next_due_km`) along with the unit the user typed; tyre pressures are stored in **psi**. Conversion helpers: `torqued/units.py` (backend), `frontend-src/units.js` (frontend, incl. psi↔bar).
 
@@ -42,13 +43,14 @@ torqued/
   access.py          Per-garage role resolution and write checks (owner/member/readonly)
   dtc.py             OBD-II fault code lookup + SAE J2012 structural decoding
   mot.py             DVSA MOT History API client (OAuth2 + X-API-Key, cached token)
+  ves.py             DVLA Vehicle Enquiry Service client (x-api-key; road tax status/due date)
   data/              obd_codes.json — vendored generic DTC descriptions
   migrations/        Numbered SQL files (001_initial.sql, …)
   domain/            Plain dataclasses: Garage, Vehicle, ServiceLog, OdometerLog, Photo, User
   repositories/      GarageRepository, VehicleRepository, ServiceLogRepository,
                      OdometerLogRepository, PhotoRepository, UserRepository — own all SQL
   routes/            Flask Blueprints: admin, auth, garages, vehicles, services, odometer,
-                     mot, photos, codes, export (services CSV/TSV/JSON, vehicle PDF report),
+                     mot, tax, photos, codes, export (services CSV/TSV/JSON, vehicle PDF report),
                      search, users
 ```
 
