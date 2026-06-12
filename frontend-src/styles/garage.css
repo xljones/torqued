@@ -124,8 +124,8 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .mileage-dot:hover, .mileage-dot.is-active { width: 13px; height: 13px; }
 .mileage-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mileage-dot-manual { background: var(--accent); }
-.mileage-dot-service { background: #1a7a45; }
-.mileage-dot-mot { background: #c87a0a; }
+.mileage-dot-service { background: #7a5a0a; }
+.mileage-dot-mot { background: #1a4a80; }
 .mileage-tooltip {
   position: absolute; z-index: 5; pointer-events: none; min-width: 120px; max-width: 220px;
   background: var(--text); color: var(--surface); border-radius: var(--radius);
