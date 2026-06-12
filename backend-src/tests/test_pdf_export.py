@@ -126,6 +126,16 @@ def test_pdf_single_point_and_unreadable_photo(auth_client: FlaskClient) -> None
     assert r.data[:4] == b"%PDF"
 
 
+def test_fmt_engine_size() -> None:
+    from torqued.pdf_report import _EMDASH, _fmt_engine_size
+
+    # Bare DVSA number gains a unit; a value that already carries one passes through.
+    assert _fmt_engine_size("1968") == "1968 cc"
+    assert _fmt_engine_size("1000 cc") == "1000 cc"
+    # Unset renders the em-dash.
+    assert _fmt_engine_size(None) == _EMDASH
+
+
 def test_pdf_vehicle_out_of_scope(auth_client: FlaskClient) -> None:
     assert auth_client.get("/api/export/vehicles/999/pdf").status_code == 404
 

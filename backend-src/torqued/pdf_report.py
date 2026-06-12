@@ -77,6 +77,18 @@ def _fmt_cost(value: Any) -> str:
     return f"£{float(value):,.2f}"
 
 
+def _fmt_engine_size(value: Any) -> str:
+    """Append 'cc' to a bare numeric engine size, mirroring the web UI.
+
+    DVSA baselines are bare numbers (e.g. '1968'); user overrides may already
+    carry a unit (e.g. '1000 cc') and pass through unchanged.
+    """
+    if value is None:
+        return _EMDASH
+    text = str(value).strip()
+    return f"{text} cc" if text.isdigit() else text
+
+
 def _resolve(vehicle: dict[str, Any], baseline: dict[str, Any] | None, field: str) -> Any:
     """Apply the ``override ?? baseline`` rule used across the UI."""
     value = vehicle.get(field)
@@ -150,8 +162,13 @@ def _identity_section(
     story: list[Any], vehicle: dict[str, Any], baseline: dict[str, Any] | None,
     styles: dict[str, ParagraphStyle],
 ) -> None:
-    rows = [(label, str(_resolve(vehicle, baseline, field) or _EMDASH))
-            for field, label in _IDENTITY_FIELDS]
+    rows = []
+    for field, label in _IDENTITY_FIELDS:
+        value = _resolve(vehicle, baseline, field)
+        if field == "engine_size":
+            rows.append((label, _fmt_engine_size(value)))
+        else:
+            rows.append((label, str(value or _EMDASH)))
     rows.append(("VIN", str(vehicle.get("vin") or _EMDASH)))
     rows.append(("Purchase date", str(vehicle.get("purchase_date") or _EMDASH)))
     rows.append(("Odometer unit", vehicle.get("odometer_unit") or "mi"))
