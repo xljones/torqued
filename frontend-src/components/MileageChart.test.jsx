@@ -45,4 +45,22 @@ describe('MileageChart', () => {
     await userEvent.hover(container.querySelector('.mileage-dot-mot'));
     expect(screen.getByText(/MOT test · 2025-11-03/)).toBeInTheDocument();
   });
+
+  it('marks each year boundary that falls within the data span', () => {
+    // Data runs 2024-04 → 2025-11, so only the 2025 boundary is inside the span.
+    const { container } = render(<MileageChart series={series} unit="mi" />);
+    const labels = [...container.querySelectorAll('.mileage-year-label')].map(el => el.textContent);
+    expect(labels).toEqual(['2025']);
+    expect(container.querySelectorAll('.mileage-year-line')).toHaveLength(1);
+  });
+
+  it('marks every crossed boundary across a multi-year span', () => {
+    const span = [
+      { id: 1, date: '2022-06-01', odometer_km: 1000, source: 'manual' },
+      { id: 2, date: '2025-06-01', odometer_km: 9000, source: 'manual' },
+    ];
+    const { container } = render(<MileageChart series={span} unit="mi" />);
+    const labels = [...container.querySelectorAll('.mileage-year-label')].map(el => el.textContent);
+    expect(labels).toEqual(['2023', '2024', '2025']);
+  });
 });

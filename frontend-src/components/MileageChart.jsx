@@ -36,10 +36,31 @@ export default function MileageChart({ series, unit }) {
   }));
   const polyline = points.map(p => `${p.left.toFixed(2)},${(100 - p.bottom).toFixed(2)}`).join(' ');
 
+  // Vertical guide + label at each Jan 1 within the data's time span. UTC throughout to
+  // match how point dates parse (`new Date('YYYY-MM-DD')` is UTC midnight).
+  const startYear = new Date(x0).getUTCFullYear();
+  const endYear = new Date(x1).getUTCFullYear();
+  const yearMarks = [];
+  for (let y = startYear + 1; y <= endYear; y++) {
+    const t = Date.UTC(y, 0, 1);
+    if (t >= x0 && t <= x1) yearMarks.push({ year: y, left: left(fx(t)) });
+  }
+
   return (
     <div className="mileage-chart" onMouseLeave={() => setHover(null)}>
       <svg className="sparkline" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
         aria-label={`Mileage from ${fmtDistance(y0, unit)} to ${fmtDistance(y1, unit)}`}>
+        {yearMarks.map(m => (
+          <line
+            key={m.year}
+            className="mileage-year-line"
+            x1={m.left}
+            x2={m.left}
+            y1="0"
+            y2="100"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
         <polyline points={polyline} vectorEffect="non-scaling-stroke" />
       </svg>
       {points.map((p, i) => {
@@ -57,6 +78,11 @@ export default function MileageChart({ series, unit }) {
           />
         );
       })}
+      {yearMarks.map(m => (
+        <span key={m.year} className="mileage-year-label" style={{ left: `${m.left}%` }}>
+          {m.year}
+        </span>
+      ))}
       {hover !== null && (() => {
         const p = points[hover];
         const meta = SOURCE_META[p.source] ?? SOURCE_META.manual;

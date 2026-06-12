@@ -114,9 +114,14 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .lightbox-caption-input { min-width: 240px; }
 
 /* ── Mileage chart ─────────────────────────────────────────────────────────── */
-.mileage-chart { position: relative; width: 100%; height: 72px; margin-top: 4px; }
+.mileage-chart { position: relative; width: 100%; height: 115px; margin-top: 4px; margin-bottom: 40px; }
 .sparkline { width: 100%; height: 100%; display: block; overflow: visible; }
 .sparkline polyline { fill: none; stroke: var(--accent); stroke-width: 2; }
+.mileage-year-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 2; }
+.mileage-year-label {
+  position: absolute; bottom: -16px; transform: translateX(-50%);
+  font-size: 10px; color: var(--text2); pointer-events: none;
+}
 .mileage-dot {
   position: absolute; width: 9px; height: 9px; padding: 0; margin: 0;
   transform: translate(-50%, 50%); border-radius: 50%;
