@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from typing import Any
 
+from torqued import dtc
 from torqued.repositories.base import BaseRepository
 
 SERVICE_FIELDS: list[str] = [
@@ -22,7 +23,7 @@ DUE_SOON_DAYS = 30
 DUE_SOON_KM = 500.0
 
 _VEHICLE_JOIN = """
-    SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind,
+    SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind, v.garage_id,
            v.odometer_unit AS vehicle_odometer_unit,
            (SELECT COUNT(*) FROM photos p WHERE p.service_log_id = s.id) AS photo_count
     FROM service_logs s
@@ -31,23 +32,73 @@ _VEHICLE_JOIN = """
 
 
 class ServiceLogRepository(BaseRepository):
-    def list_all(self) -> list[dict[str, Any]]:
-        """Return all service logs across vehicles, newest first."""
-        return self._rows(
-            self.db.execute(f"{_VEHICLE_JOIN} ORDER BY s.date DESC, s.id DESC").fetchall()
+    def _fault_codes_for_logs(self, log_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+        """Batch-load fault codes for a set of service log IDs."""
+        if not log_ids:
+            return {}
+        placeholders = ",".join("?" * len(log_ids))
+        rows = self.db.execute(
+            f"SELECT service_log_id, code FROM service_log_fault_codes"
+            f" WHERE service_log_id IN ({placeholders}) ORDER BY id",
+            tuple(log_ids),
+        ).fetchall()
+        result: dict[int, list[dict[str, Any]]] = {}
+        for r in rows:
+            detail = dtc.lookup(r["code"])
+            entry: dict[str, Any] = {"code": r["code"]}
+            if detail and detail.get("description"):
+                entry["description"] = detail["description"]
+                entry["system"] = detail["system"]
+            result.setdefault(r["service_log_id"], []).append(entry)
+        return result
+
+    def _attach_fault_codes(self, logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Attach fault_codes list to each log dict."""
+        ids = [log["id"] for log in logs]
+        codes_map = self._fault_codes_for_logs(ids)
+        for log in logs:
+            log["fault_codes"] = codes_map.get(log["id"], [])
+        return logs
+
+    def _replace_fault_codes(self, log_id: int, codes: list[str]) -> None:
+        """Delete and re-insert fault codes for a service log."""
+        self.db.execute(
+            "DELETE FROM service_log_fault_codes WHERE service_log_id=?", (log_id,)
         )
+        for code in codes:
+            stripped = code.strip().upper()
+            if stripped:
+                self.db.execute(
+                    "INSERT INTO service_log_fault_codes (service_log_id, code) VALUES (?,?)",
+                    (log_id, stripped),
+                )
+
+    def list_for_garages(self, garage_ids: list[int]) -> list[dict[str, Any]]:
+        """Return the garages' service logs across vehicles, newest first."""
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
+        logs = self._rows(
+            self.db.execute(
+                f"{_VEHICLE_JOIN} WHERE v.garage_id IN ({placeholders})"
+                " ORDER BY s.date DESC, s.id DESC",
+                tuple(garage_ids),
+            ).fetchall()
+        )
+        return self._attach_fault_codes(logs)
 
     def list_for_vehicle(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's service logs, newest first."""
-        return self._rows(
+        logs = self._rows(
             self.db.execute(
                 f"{_VEHICLE_JOIN} WHERE s.vehicle_id=? ORDER BY s.date DESC, s.id DESC",
                 (vehicle_id,),
             ).fetchall()
         )
+        return self._attach_fault_codes(logs)
 
     def get_by_id(self, log_id: int) -> dict[str, Any] | None:
-        """Return a single service log with vehicle info and photos, or None if not found."""
+        """Return a single service log with vehicle info, photos, and fault codes."""
         log = self._row(self.db.execute(f"{_VEHICLE_JOIN} WHERE s.id=?", (log_id,)).fetchone())
         if not log:
             return None
@@ -61,6 +112,7 @@ class ServiceLogRepository(BaseRepository):
                 (log_id,),
             ).fetchall()
         )
+        self._attach_fault_codes([log])
         return log
 
     def create(self, data: dict[str, Any], changed_by: int | None = None) -> dict[str, Any]:
@@ -74,6 +126,9 @@ class ServiceLogRepository(BaseRepository):
         row_id = cur.lastrowid
         if row_id is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
+        fault_codes = data.get("fault_codes") or []
+        if fault_codes:
+            self._replace_fault_codes(row_id, fault_codes)
         log = self.get_by_id(row_id)
         if log is None:  # pragma: no cover
             raise RuntimeError(f"Row {row_id} not found after INSERT")
@@ -90,6 +145,8 @@ class ServiceLogRepository(BaseRepository):
             f"UPDATE service_logs SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (*(data.get(f) for f in fields), log_id),
         )
+        if "fault_codes" in data:
+            self._replace_fault_codes(log_id, data["fault_codes"] or [])
         log = self.get_by_id(log_id)
         if log is not None:
             self._record_history(log, changed_by)
@@ -139,7 +196,10 @@ class ServiceLogRepository(BaseRepository):
         )
 
     def reminders(
-        self, vehicle_id: int | None = None, today: date | None = None
+        self,
+        garage_ids: list[int],
+        vehicle_id: int | None = None,
+        today: date | None = None,
     ) -> list[dict[str, Any]]:
         """Return open maintenance reminders, most urgent first.
 
@@ -149,19 +209,23 @@ class ServiceLogRepository(BaseRepository):
         vehicle's latest odometer reading), or 'upcoming'.
         """
         today = today or date.today()
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
         where = ""
-        params: tuple[Any, ...] = ()
+        params: tuple[Any, ...] = tuple(garage_ids)
         if vehicle_id is not None:
-            where, params = "AND s.vehicle_id = ?", (vehicle_id,)
+            where, params = "AND s.vehicle_id = ?", (*garage_ids, vehicle_id)
         candidates = self._rows(
             self.db.execute(
                 f"""
-                SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind,
+                SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind, v.garage_id,
                        v.odometer_unit AS vehicle_odometer_unit
                 FROM service_logs s
                 JOIN vehicles v ON v.id = s.vehicle_id
                 WHERE (s.next_due_date IS NOT NULL OR s.next_due_km IS NOT NULL)
                   AND v.archived = 0
+                  AND v.garage_id IN ({placeholders})
                   AND NOT EXISTS (
                       SELECT 1 FROM service_logs n
                       WHERE n.vehicle_id = s.vehicle_id
@@ -200,47 +264,66 @@ class ServiceLogRepository(BaseRepository):
         reminders.sort(key=lambda r: (order[r["status"]], r["next_due_date"] or "9999-12-31"))
         return reminders
 
-    def search(self, query: str) -> list[dict[str, Any]]:
-        """Return up to 10 service logs matching title, description, category, or garage."""
+    def search(self, query: str, garage_ids: list[int]) -> list[dict[str, Any]]:
+        """Return up to 10 in-scope service logs matching title, description, or performer."""
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
         q = f"%{query}%"
         return self._rows(
             self.db.execute(
                 f"""
                 {_VEHICLE_JOIN}
-                WHERE s.title LIKE ? OR s.description LIKE ? OR s.category LIKE ?
-                   OR s.performed_by LIKE ?
+                WHERE v.garage_id IN ({placeholders})
+                  AND (s.title LIKE ? OR s.description LIKE ? OR s.category LIKE ?
+                       OR s.performed_by LIKE ?)
                 LIMIT 10
                 """,
-                (q, q, q, q),
+                (*garage_ids, q, q, q, q),
             ).fetchall()
         )
 
-    def performers(self) -> list[str]:
-        """Return distinct 'performed_by' values for autocomplete suggestions."""
+    def performers(self, garage_ids: list[int]) -> list[str]:
+        """Return distinct in-scope 'performed_by' values for autocomplete suggestions."""
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
         return [
             r["performed_by"]
             for r in self.db.execute(
-                "SELECT DISTINCT performed_by FROM service_logs"
-                " WHERE performed_by IS NOT NULL AND performed_by != '' ORDER BY performed_by"
+                f"""
+                SELECT DISTINCT s.performed_by FROM service_logs s
+                JOIN vehicles v ON v.id = s.vehicle_id
+                WHERE v.garage_id IN ({placeholders})
+                  AND s.performed_by IS NOT NULL AND s.performed_by != ''
+                ORDER BY s.performed_by
+                """,
+                tuple(garage_ids),
             ).fetchall()
         ]
 
-    def export_flat(self, vehicle_id: int | None = None) -> list[dict[str, Any]]:
-        """Return flat export rows for service logs, optionally for one vehicle."""
+    def export_flat(
+        self, garage_ids: list[int], vehicle_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Return flat in-scope export rows for service logs, optionally for one vehicle."""
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
         where = ""
-        params: tuple[Any, ...] = ()
+        params: tuple[Any, ...] = tuple(garage_ids)
         if vehicle_id is not None:
-            where, params = "WHERE s.vehicle_id = ?", (vehicle_id,)
+            where, params = "AND s.vehicle_id = ?", (*garage_ids, vehicle_id)
         return self._rows(
             self.db.execute(
                 f"""
-                SELECT v.name AS vehicle, v.make, v.model, v.registration,
+                SELECT g.name AS garage, v.name AS vehicle, v.make, v.model, v.registration,
                        s.date, s.title, s.category, s.description, s.performed_by,
                        s.cost, s.odometer_km, s.odometer_unit,
                        s.next_due_date, s.next_due_km, s.created_at
                 FROM service_logs s
                 JOIN vehicles v ON v.id = s.vehicle_id
-                {where}
+                JOIN garages g ON g.id = v.garage_id
+                WHERE v.garage_id IN ({placeholders}) {where}
                 ORDER BY v.name ASC, s.date DESC, s.id DESC
                 """,
                 params,

@@ -8,7 +8,7 @@ class OdometerLogRepository(BaseRepository):
         """Return a vehicle's manual odometer logs, newest first."""
         return self._rows(
             self.db.execute(
-                "SELECT * FROM odometer_logs WHERE vehicle_id=?"
+                "SELECT * FROM odometer_logs WHERE vehicle_id=? AND source='manual'"
                 " ORDER BY date DESC, odometer_km DESC, id DESC",
                 (vehicle_id,),
             ).fetchall()

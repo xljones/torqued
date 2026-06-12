@@ -1,10 +1,10 @@
 from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
-from flask_login import login_required
+from flask_login import current_user, login_required
 
+from torqued.access import can_write, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.odometer_log_repository import OdometerLogRepository
-from torqued.repositories.vehicle_repository import VehicleRepository
 from torqued.units import parse_distance
 
 bp = Blueprint("odometer", __name__)
@@ -14,7 +14,7 @@ bp = Blueprint("odometer", __name__)
 @login_required
 def list_odometer(vehicle_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        if not VehicleRepository(db).get_by_id(vehicle_id):
+        if vehicle_role(db, current_user, vehicle_id) is None:
             return jsonify(error="Not found"), 404
         return jsonify(OdometerLogRepository(db).list_for_vehicle(vehicle_id))
 
@@ -32,8 +32,11 @@ def create_odometer(vehicle_id: int) -> ResponseReturnValue:
     if odometer_km is None:
         return jsonify(error="odometer is required"), 400
     with get_db() as db:
-        if not VehicleRepository(db).get_by_id(vehicle_id):
+        role = vehicle_role(db, current_user, vehicle_id)
+        if role is None:
             return jsonify(error="Not found"), 404
+        if not can_write(role):
+            return jsonify(error="Read-only access to this garage"), 403
         log = OdometerLogRepository(db).create(
             vehicle_id, d["date"].strip(), odometer_km, unit, note=d.get("note") or None
         )
@@ -44,6 +47,12 @@ def create_odometer(vehicle_id: int) -> ResponseReturnValue:
 @login_required
 def delete_odometer(log_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        if not OdometerLogRepository(db).delete(log_id):
+        repo = OdometerLogRepository(db)
+        log = repo.get_by_id(log_id)
+        role = vehicle_role(db, current_user, log["vehicle_id"]) if log else None
+        if log is None or role is None:
             return jsonify(error="Not found"), 404
+        if not can_write(role):
+            return jsonify(error="Read-only access to this garage"), 403
+        repo.delete(log_id)
     return "", 204

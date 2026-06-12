@@ -11,13 +11,13 @@ from torqued.repositories.user_repository import UserRepository
 bp = Blueprint("auth", __name__)
 
 
-def _user_dict(row: dict[str, Any]) -> dict[str, Any]:
+def _user_dict(row: dict[str, Any], memberships: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "username": row["username"],
-        "is_readonly": bool(row.get("is_readonly")),
         "is_admin": bool(row.get("is_admin")),
         "expires_at": row.get("expires_at"),
+        "memberships": memberships,
     }
 
 
@@ -25,7 +25,6 @@ def _user_obj(row: dict[str, Any]) -> User:
     return User(
         id=row["id"],
         username=row["username"],
-        is_readonly=bool(row.get("is_readonly")),
         is_admin=bool(row.get("is_admin")),
         expires_at=row.get("expires_at"),
     )
@@ -39,14 +38,16 @@ def login() -> ResponseReturnValue:
     if not username or not password:
         return jsonify(error="Username and password required"), 400
     with get_db() as db:
-        row = UserRepository(db).verify_password(username, password)
+        repo = UserRepository(db)
+        row = repo.verify_password(username, password)
+        memberships = repo.memberships(row["id"]) if row else []
     if not row:
         return jsonify(error="Invalid username or password"), 401
     user = _user_obj(row)
     if not user.is_active:
         return jsonify(error="Account expired"), 401
     login_user(user)
-    return jsonify(_user_dict(row))
+    return jsonify(_user_dict(row, memberships))
 
 
 @bp.post("/api/auth/logout")
@@ -58,12 +59,14 @@ def logout() -> ResponseReturnValue:
 @bp.get("/api/auth/me")
 @login_required
 def me() -> Response:
+    with get_db() as db:
+        memberships = UserRepository(db).memberships(current_user.id)
     return jsonify(
         id=current_user.id,
         username=current_user.username,
-        is_readonly=bool(current_user.is_readonly),
         is_admin=bool(current_user.is_admin),
         expires_at=current_user.expires_at,
+        memberships=memberships,
     )
 
 

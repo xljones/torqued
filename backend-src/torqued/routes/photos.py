@@ -1,15 +1,16 @@
 import os
 import uuid
 from pathlib import Path
+from typing import Any
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, Response, jsonify, request, send_from_directory
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
+from torqued.access import can_write, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.photo_repository import PhotoRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
-from torqued.repositories.vehicle_repository import VehicleRepository
 
 bp = Blueprint("photos", __name__)
 
@@ -21,6 +22,18 @@ def upload_dir() -> str:
     d = os.environ.get("UPLOAD_DIR", _DEFAULT_UPLOAD_DIR)
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def _check_photo(
+    db: Any, photo: dict[str, Any] | None, write: bool = False
+) -> tuple[Response, int] | None:
+    """Return an error response if the photo is missing/out of scope/read-only, else None."""
+    role = vehicle_role(db, current_user, photo["vehicle_id"]) if photo else None
+    if photo is None or role is None:
+        return jsonify(error="Not found"), 404
+    if write and not can_write(role):
+        return jsonify(error="Read-only access to this garage"), 403
+    return None
 
 
 @bp.post("/api/vehicles/<int:vehicle_id>/photos")
@@ -38,8 +51,11 @@ def upload_photo(vehicle_id: int) -> ResponseReturnValue:
     service_log_id = None
 
     with get_db() as db:
-        if not VehicleRepository(db).get_by_id(vehicle_id):
+        role = vehicle_role(db, current_user, vehicle_id)
+        if role is None:
             return jsonify(error="Not found"), 404
+        if not can_write(role):
+            return jsonify(error="Read-only access to this garage"), 403
         if service_log_id_raw:
             try:
                 service_log_id = int(service_log_id_raw)
@@ -67,8 +83,10 @@ def upload_photo(vehicle_id: int) -> ResponseReturnValue:
 def photo_file(photo_id: int) -> ResponseReturnValue:
     with get_db() as db:
         photo = PhotoRepository(db).get_by_id(photo_id)
-    if not photo:
-        return jsonify(error="Not found"), 404
+        err = _check_photo(db, photo)
+        if err:
+            return err
+        assert photo is not None
     return send_from_directory(upload_dir(), photo["filename"], max_age=86400)
 
 
@@ -78,8 +96,9 @@ def update_photo(photo_id: int) -> ResponseReturnValue:
     d = request.json or {}
     with get_db() as db:
         repo = PhotoRepository(db)
-        if not repo.get_by_id(photo_id):
-            return jsonify(error="Not found"), 404
+        err = _check_photo(db, repo.get_by_id(photo_id), write=True)
+        if err:
+            return err
         return jsonify(repo.update_caption(photo_id, d.get("caption") or None))
 
 
@@ -89,8 +108,10 @@ def delete_photo(photo_id: int) -> ResponseReturnValue:
     with get_db() as db:
         repo = PhotoRepository(db)
         photo = repo.get_by_id(photo_id)
-        if not photo:
-            return jsonify(error="Not found"), 404
+        err = _check_photo(db, photo, write=True)
+        if err:
+            return err
+        assert photo is not None
         repo.delete(photo_id)
     try:
         os.unlink(os.path.join(upload_dir(), photo["filename"]))

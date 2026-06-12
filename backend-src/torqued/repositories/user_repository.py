@@ -11,13 +11,11 @@ class UserRepository:
     def get_by_id(self, user_id: int) -> dict[str, Any] | None:
         """Return a user by their primary key (excluding password_hash), or None if not found."""
         r = self.db.execute(
-            "SELECT id, username, is_readonly, is_admin, "
-            "expires_at, created_at FROM users WHERE id=?",
+            "SELECT id, username, is_admin, expires_at, created_at FROM users WHERE id=?",
             (user_id,),
         ).fetchone()
         if r:
             d = dict(r)
-            d["is_readonly"] = bool(d["is_readonly"])
             d["is_admin"] = bool(d["is_admin"])
             return d
         return None
@@ -30,35 +28,48 @@ class UserRepository:
         return dict(r) if r else None
 
     def list_all(self) -> list[dict[str, Any]]:
-        """Return all users (excluding password_hash), ordered by creation date ascending."""
+        """Return all users (excluding password_hash) with their garage memberships."""
         rows = self.db.execute(
-            "SELECT id, username, is_readonly, is_admin, expires_at, created_at "
-            "FROM users ORDER BY created_at"
+            "SELECT id, username, is_admin, expires_at, created_at FROM users ORDER BY created_at"
         ).fetchall()
-        return [
-            {**dict(r), "is_readonly": bool(r["is_readonly"]), "is_admin": bool(r["is_admin"])}
-            for r in rows
-        ]
+        users = [{**dict(r), "is_admin": bool(r["is_admin"])} for r in rows]
+        memberships = self.db.execute("""
+            SELECT gm.user_id, gm.garage_id, gm.role, g.name AS garage_name
+            FROM garage_members gm JOIN garages g ON g.id = gm.garage_id
+            ORDER BY g.name
+        """).fetchall()
+        by_user: dict[int, list[dict[str, Any]]] = {}
+        for m in memberships:
+            by_user.setdefault(m["user_id"], []).append(
+                {"garage_id": m["garage_id"], "garage_name": m["garage_name"], "role": m["role"]}
+            )
+        for u in users:
+            u["memberships"] = by_user.get(u["id"], [])
+        return users
+
+    def memberships(self, user_id: int) -> list[dict[str, Any]]:
+        """Return the user's garage memberships with garage names."""
+        rows = self.db.execute(
+            """
+            SELECT gm.garage_id, gm.role, g.name AS garage_name
+            FROM garage_members gm JOIN garages g ON g.id = gm.garage_id
+            WHERE gm.user_id = ? ORDER BY g.name
+            """,
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def create(
         self,
         username: str,
         password: str,
-        is_readonly: bool = False,
         is_admin: bool = False,
         expires_at: str | None = None,
     ) -> dict[str, Any]:
         """Insert a new user with a hashed password and return the created user (no hash)."""
         cur = self.db.execute(
-            "INSERT INTO users (username, password_hash, is_readonly, "
-            "is_admin, expires_at) VALUES (?,?,?,?,?)",
-            (
-                username,
-                generate_password_hash(password),
-                int(is_readonly),
-                int(is_admin),
-                expires_at,
-            ),
+            "INSERT INTO users (username, password_hash, is_admin, expires_at) VALUES (?,?,?,?)",
+            (username, generate_password_hash(password), int(is_admin), expires_at),
         )
         row_id = cur.lastrowid
         if row_id is None:  # pragma: no cover
@@ -82,6 +93,13 @@ class UserRepository:
         if user and check_password_hash(user["password_hash"], password):
             return user
         return None
+
+    def set_password(self, user_id: int, new_password: str) -> None:
+        """Overwrite a user's password without verifying the current one (admin reset)."""
+        self.db.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (generate_password_hash(new_password), user_id),
+        )
 
     def change_password(
         self,

@@ -4,9 +4,9 @@ from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
+from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.service_log_repository import ServiceLogRepository
-from torqued.repositories.vehicle_repository import VehicleRepository
 from torqued.units import parse_distance
 
 bp = Blueprint("services", __name__)
@@ -35,7 +35,11 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
     except ValueError:
         return jsonify(error="odometer, next_due_distance, and cost must be numeric"), 400
 
-    return {
+    fault_codes = d.get("fault_codes")
+    if fault_codes is not None and not isinstance(fault_codes, list):
+        return jsonify(error="fault_codes must be a list"), 400
+
+    result: dict[str, Any] = {
         "date": d["date"].strip(),
         "title": d["title"].strip(),
         "category": opt("category"),
@@ -47,27 +51,53 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
         "next_due_date": opt("next_due_date"),
         "next_due_km": next_due_km,
     }
+    if fault_codes is not None:
+        result["fault_codes"] = [str(c) for c in fault_codes]
+    return result
+
+
+def _check_log(
+    db: Any, log: dict[str, Any] | None, write: bool = False
+) -> tuple[Response, int] | None:
+    """Return an error response if the log is missing/out of scope/read-only, else None."""
+    role = garage_role(db, current_user, log["garage_id"]) if log else None
+    if log is None or role is None:
+        return jsonify(error="Not found"), 404
+    if write and not can_write(role):
+        return jsonify(error="Read-only access to this garage"), 403
+    return None
 
 
 @bp.get("/api/services")
 @login_required
-def list_services() -> Response:
+def list_services() -> ResponseReturnValue:
+    garage_id_raw = request.args.get("garage_id")
     with get_db() as db:
-        return jsonify(ServiceLogRepository(db).list_all())
+        garage_ids = accessible_garage_ids(db, current_user)
+        if garage_id_raw:
+            try:
+                garage_id = int(garage_id_raw)
+            except ValueError:
+                return jsonify(error="garage_id must be an integer"), 400
+            if garage_id not in garage_ids:
+                return jsonify(error="Not found"), 404
+            garage_ids = [garage_id]
+        return jsonify(ServiceLogRepository(db).list_for_garages(garage_ids))
 
 
 @bp.get("/api/services/performers")
 @login_required
 def performers() -> Response:
     with get_db() as db:
-        return jsonify(ServiceLogRepository(db).performers())
+        garage_ids = accessible_garage_ids(db, current_user)
+        return jsonify(ServiceLogRepository(db).performers(garage_ids))
 
 
 @bp.get("/api/vehicles/<int:vehicle_id>/services")
 @login_required
 def list_vehicle_services(vehicle_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        if not VehicleRepository(db).get_by_id(vehicle_id):
+        if vehicle_role(db, current_user, vehicle_id) is None:
             return jsonify(error="Not found"), 404
         return jsonify(ServiceLogRepository(db).list_for_vehicle(vehicle_id))
 
@@ -79,8 +109,11 @@ def create_service(vehicle_id: int) -> ResponseReturnValue:
     if isinstance(data, tuple):
         return data
     with get_db() as db:
-        if not VehicleRepository(db).get_by_id(vehicle_id):
+        role = vehicle_role(db, current_user, vehicle_id)
+        if role is None:
             return jsonify(error="Not found"), 404
+        if not can_write(role):
+            return jsonify(error="Read-only access to this garage"), 403
         log = ServiceLogRepository(db).create(
             {**data, "vehicle_id": vehicle_id}, changed_by=current_user.id
         )
@@ -92,8 +125,9 @@ def create_service(vehicle_id: int) -> ResponseReturnValue:
 def get_service(log_id: int) -> ResponseReturnValue:
     with get_db() as db:
         log = ServiceLogRepository(db).get_by_id(log_id)
-    if not log:
-        return jsonify(error="Not found"), 404
+        err = _check_log(db, log)
+        if err:
+            return err
     return jsonify(log)
 
 
@@ -105,8 +139,9 @@ def update_service(log_id: int) -> ResponseReturnValue:
         return data
     with get_db() as db:
         repo = ServiceLogRepository(db)
-        if not repo.get_by_id(log_id):
-            return jsonify(error="Not found"), 404
+        err = _check_log(db, repo.get_by_id(log_id), write=True)
+        if err:
+            return err
         return jsonify(repo.update(log_id, data, changed_by=current_user.id))
 
 
@@ -114,23 +149,34 @@ def update_service(log_id: int) -> ResponseReturnValue:
 @login_required
 def delete_service(log_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        if not ServiceLogRepository(db).delete(log_id):
-            return jsonify(error="Not found"), 404
+        repo = ServiceLogRepository(db)
+        err = _check_log(db, repo.get_by_id(log_id), write=True)
+        if err:
+            return err
+        repo.delete(log_id)
     return "", 204
 
 
 @bp.get("/api/services/<int:log_id>/history")
 @login_required
-def service_history(log_id: int) -> Response:
+def service_history(log_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        return jsonify(ServiceLogRepository(db).get_history(log_id))
+        repo = ServiceLogRepository(db)
+        err = _check_log(db, repo.get_by_id(log_id))
+        if err:
+            return err
+        return jsonify(repo.get_history(log_id))
 
 
 @bp.post("/api/services/<int:log_id>/revert/<int:version_id>")
 @login_required
 def revert_service(log_id: int, version_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        log = ServiceLogRepository(db).revert(log_id, version_id, changed_by=current_user.id)
+        repo = ServiceLogRepository(db)
+        err = _check_log(db, repo.get_by_id(log_id), write=True)
+        if err:
+            return err
+        log = repo.revert(log_id, version_id, changed_by=current_user.id)
     if not log:
         return jsonify(error="Version not found"), 404
     return jsonify(log)

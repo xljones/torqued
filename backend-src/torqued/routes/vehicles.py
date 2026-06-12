@@ -4,6 +4,7 @@ from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
+from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.service_log_repository import ServiceLogRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
@@ -58,25 +59,60 @@ def _vehicle_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
         "tyre_pressure_rear_psi": rear,
         "notes": opt("notes"),
         "archived": 1 if d.get("archived") else 0,
+        "engine_size": opt("engine_size"),
+        "first_used_date": opt("first_used_date"),
+        "registration_date": opt("registration_date"),
     }
+
+
+def _check_vehicle(db: Any, vehicle_id: int, write: bool = False) -> tuple[Response, int] | None:
+    """Return an error response if the vehicle is out of scope or read-only, else None."""
+    role = vehicle_role(db, current_user, vehicle_id)
+    if role is None:
+        return jsonify(error="Not found"), 404
+    if write and not can_write(role):
+        return jsonify(error="Read-only access to this garage"), 403
+    return None
 
 
 @bp.get("/api/vehicles")
 @login_required
-def list_vehicles() -> Response:
+def list_vehicles() -> ResponseReturnValue:
     include_archived = request.args.get("archived") == "1"
+    garage_id_raw = request.args.get("garage_id")
     with get_db() as db:
-        return jsonify(VehicleRepository(db).list_all(include_archived=include_archived))
+        garage_ids = accessible_garage_ids(db, current_user)
+        if garage_id_raw:
+            try:
+                garage_id = int(garage_id_raw)
+            except ValueError:
+                return jsonify(error="garage_id must be an integer"), 400
+            if garage_id not in garage_ids:
+                return jsonify(error="Not found"), 404
+            garage_ids = [garage_id]
+        return jsonify(
+            VehicleRepository(db).list_for_garages(garage_ids, include_archived=include_archived)
+        )
 
 
 @bp.post("/api/vehicles")
 @login_required
 def create_vehicle() -> ResponseReturnValue:
-    data = _vehicle_data(request.json or {})
+    d = request.json or {}
+    try:
+        garage_id = int(d.get("garage_id") or "")
+    except ValueError:
+        return jsonify(error="garage_id is required"), 400
+    data = _vehicle_data(d)
     if isinstance(data, tuple):
         return data
     with get_db() as db:
-        vehicle = VehicleRepository(db).create(data, changed_by=current_user.id)
+        role = garage_role(db, current_user, garage_id)
+        if role is None:
+            return jsonify(error="Not found"), 404
+        if not can_write(role):
+            return jsonify(error="Read-only access to this garage"), 403
+        vehicle = VehicleRepository(db).create(garage_id, data, changed_by=current_user.id)
     return jsonify(vehicle), 201
 
 
@@ -84,10 +120,14 @@ def create_vehicle() -> ResponseReturnValue:
 @login_required
 def get_vehicle(vehicle_id: int) -> ResponseReturnValue:
     with get_db() as db:
+        err = _check_vehicle(db, vehicle_id)
+        if err:
+            return err
         vehicle = VehicleRepository(db).get_detail(vehicle_id)
-        if not vehicle:
-            return jsonify(error="Not found"), 404
-        vehicle["reminders"] = ServiceLogRepository(db).reminders(vehicle_id)
+        assert vehicle is not None  # _check_vehicle verified existence
+        vehicle["reminders"] = ServiceLogRepository(db).reminders(
+            [vehicle["garage_id"]], vehicle_id=vehicle_id
+        )
     return jsonify(vehicle)
 
 
@@ -98,18 +138,20 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
     if isinstance(data, tuple):
         return data
     with get_db() as db:
-        repo = VehicleRepository(db)
-        if not repo.get_by_id(vehicle_id):
-            return jsonify(error="Not found"), 404
-        return jsonify(repo.update(vehicle_id, data, changed_by=current_user.id))
+        err = _check_vehicle(db, vehicle_id, write=True)
+        if err:
+            return err
+        return jsonify(VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id))
 
 
 @bp.delete("/api/vehicles/<int:vehicle_id>")
 @login_required
 def delete_vehicle(vehicle_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        if not VehicleRepository(db).delete(vehicle_id):
-            return jsonify(error="Not found"), 404
+        err = _check_vehicle(db, vehicle_id, write=True)
+        if err:
+            return err
+        VehicleRepository(db).delete(vehicle_id)
     return "", 204
 
 
@@ -126,26 +168,29 @@ def replace_specs(vehicle_id: int) -> ResponseReturnValue:
         spec["name"] = spec["name"].strip()
         spec["value"] = (spec.get("value") or "").strip()
     with get_db() as db:
-        repo = VehicleRepository(db)
-        if not repo.get_by_id(vehicle_id):
-            return jsonify(error="Not found"), 404
-        return jsonify(repo.replace_specs(vehicle_id, specs))
+        err = _check_vehicle(db, vehicle_id, write=True)
+        if err:
+            return err
+        return jsonify(VehicleRepository(db).replace_specs(vehicle_id, specs))
 
 
 @bp.get("/api/vehicles/<int:vehicle_id>/mileage")
 @login_required
 def mileage_series(vehicle_id: int) -> ResponseReturnValue:
     with get_db() as db:
-        repo = VehicleRepository(db)
-        if not repo.get_by_id(vehicle_id):
-            return jsonify(error="Not found"), 404
-        return jsonify(repo.mileage_series(vehicle_id))
+        err = _check_vehicle(db, vehicle_id)
+        if err:
+            return err
+        return jsonify(VehicleRepository(db).mileage_series(vehicle_id))
 
 
 @bp.get("/api/vehicles/<int:vehicle_id>/history")
 @login_required
-def vehicle_history(vehicle_id: int) -> Response:
+def vehicle_history(vehicle_id: int) -> ResponseReturnValue:
     with get_db() as db:
+        err = _check_vehicle(db, vehicle_id)
+        if err:
+            return err
         return jsonify(VehicleRepository(db).get_history(vehicle_id))
 
 
@@ -153,6 +198,9 @@ def vehicle_history(vehicle_id: int) -> Response:
 @login_required
 def revert_vehicle(vehicle_id: int, version_id: int) -> ResponseReturnValue:
     with get_db() as db:
+        err = _check_vehicle(db, vehicle_id, write=True)
+        if err:
+            return err
         vehicle = VehicleRepository(db).revert(vehicle_id, version_id, changed_by=current_user.id)
     if not vehicle:
         return jsonify(error="Version not found"), 404
@@ -161,6 +209,16 @@ def revert_vehicle(vehicle_id: int, version_id: int) -> ResponseReturnValue:
 
 @bp.get("/api/reminders")
 @login_required
-def all_reminders() -> Response:
+def all_reminders() -> ResponseReturnValue:
+    garage_id_raw = request.args.get("garage_id")
     with get_db() as db:
-        return jsonify(ServiceLogRepository(db).reminders())
+        garage_ids = accessible_garage_ids(db, current_user)
+        if garage_id_raw:
+            try:
+                garage_id = int(garage_id_raw)
+            except ValueError:
+                return jsonify(error="garage_id must be an integer"), 400
+            if garage_id not in garage_ids:
+                return jsonify(error="Not found"), 404
+            garage_ids = [garage_id]
+        return jsonify(ServiceLogRepository(db).reminders(garage_ids))

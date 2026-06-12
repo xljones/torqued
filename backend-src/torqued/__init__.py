@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, send_from_directory
 from flask.typing import ResponseReturnValue
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, logout_user
@@ -20,7 +20,10 @@ def create_app() -> Flask:
     from torqued.routes import (
         admin,
         auth,
+        codes,
         export,
+        garages,
+        mot,
         odometer,
         photos,
         search,
@@ -55,7 +58,6 @@ def create_app() -> Flask:
                 id=row["id"],
                 username=row["username"],
                 created_at=row.get("created_at"),
-                is_readonly=bool(row.get("is_readonly")),
                 is_admin=bool(row.get("is_admin")),
                 expires_at=row.get("expires_at"),
             )
@@ -67,6 +69,8 @@ def create_app() -> Flask:
 
     @app.before_request
     def enforce_auth() -> ResponseReturnValue | None:
+        # Read-only enforcement is per-garage and handled in the routes via
+        # torqued.access; this hook only enforces account expiry.
         if not current_user.is_authenticated:
             return None
         if current_user.expires_at:
@@ -76,21 +80,18 @@ def create_app() -> Flask:
                     return jsonify(error="Account expired"), 401
             except ValueError:
                 pass
-        if (
-            current_user.is_readonly
-            and request.method not in ("GET", "HEAD", "OPTIONS")
-            and request.path not in ("/api/auth/password", "/api/auth/logout")
-        ):
-            return jsonify(error="Read-only access"), 403
         return None
 
     for bp in (
         admin.bp,
         auth.bp,
+        garages.bp,
         vehicles.bp,
         services.bp,
         odometer.bp,
+        mot.bp,
         photos.bp,
+        codes.bp,
         export.bp,
         search.bp,
         users.bp,

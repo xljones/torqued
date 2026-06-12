@@ -1,5 +1,7 @@
+import json
 from typing import Any
 
+from torqued import mot
 from torqued.repositories.base import BaseRepository
 
 # Editable vehicle fields, in schema order. History snapshots mirror this list.
@@ -21,29 +23,43 @@ VEHICLE_FIELDS: list[str] = [
     "tyre_pressure_rear_psi",
     "notes",
     "archived",
+    "engine_size",
+    "first_used_date",
+    "registration_date",
 ]
 
 
 class VehicleRepository(BaseRepository):
-    def list_all(self, include_archived: bool = False) -> list[dict[str, Any]]:
-        """Return all vehicles with service/photo counts and a cover photo, newest first."""
-        where = "" if include_archived else "WHERE v.archived = 0"
+    def list_for_garages(
+        self, garage_ids: list[int], include_archived: bool = False
+    ) -> list[dict[str, Any]]:
+        """Return the garages' vehicles with counts and a cover photo, newest first."""
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
+        archived = "" if include_archived else "AND v.archived = 0"
         vehicles = self._rows(
-            self.db.execute(f"""
-            SELECT v.*,
+            self.db.execute(
+                f"""
+            SELECT v.*, g.name AS garage_name,
                    (SELECT COUNT(*) FROM service_logs s WHERE s.vehicle_id = v.id) AS service_count,
                    (SELECT COUNT(*) FROM photos p WHERE p.vehicle_id = v.id) AS photo_count,
                    (SELECT p.id FROM photos p WHERE p.vehicle_id = v.id
                     ORDER BY p.service_log_id IS NOT NULL, p.created_at ASC
                     LIMIT 1) AS cover_photo_id
             FROM vehicles v
-            {where}
+            JOIN garages g ON g.id = v.garage_id
+            WHERE v.garage_id IN ({placeholders}) {archived}
             ORDER BY v.archived ASC, v.created_at DESC
-        """).fetchall()
+        """,
+                tuple(garage_ids),
+            ).fetchall()
         )
         latest = self.latest_odometers()
+        baselines = self.mot_baselines([v["id"] for v in vehicles])
         for v in vehicles:
             v["latest_odometer"] = latest.get(v["id"])
+            v["mot_baseline"] = baselines.get(v["id"])
         return vehicles
 
     def get_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
@@ -57,6 +73,10 @@ class VehicleRepository(BaseRepository):
         vehicle = self.get_by_id(vehicle_id)
         if not vehicle:
             return None
+        garage = self.db.execute(
+            "SELECT name FROM garages WHERE id=?", (vehicle["garage_id"],)
+        ).fetchone()
+        vehicle["garage_name"] = garage["name"] if garage else None
         vehicle["specs"] = self._rows(
             self.db.execute(
                 "SELECT id, name, value, position FROM vehicle_specs"
@@ -77,18 +97,40 @@ class VehicleRepository(BaseRepository):
             ).fetchall()
         )
         vehicle["latest_odometer"] = self.latest_odometers().get(vehicle_id)
+        vehicle["mot_baseline"] = self.mot_baseline(vehicle_id)
         return vehicle
 
-    def create(self, data: dict[str, Any], changed_by: int | None = None) -> dict[str, Any]:
-        """Insert a new vehicle and record its initial history snapshot; return the created row."""
+    def mot_baseline(self, vehicle_id: int) -> dict[str, Any] | None:
+        """Map the stored DVSA snapshot onto vehicle detail fields, or None if not fetched.
+
+        These are the *baseline* values shown when the matching vehicle column is
+        unset; a non-null column overrides them.
+        """
+        return self.mot_baselines([vehicle_id]).get(vehicle_id)
+
+    def mot_baselines(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Batch the MOT baseline lookup for several vehicles in one query."""
+        if not vehicle_ids:
+            return {}
+        placeholders = ",".join("?" * len(vehicle_ids))
+        rows = self.db.execute(
+            f"SELECT vehicle_id, raw_json FROM dvsa_vehicles WHERE vehicle_id IN ({placeholders})",
+            tuple(vehicle_ids),
+        ).fetchall()
+        return {r["vehicle_id"]: mot.to_baseline(json.loads(r["raw_json"])) for r in rows}
+
+    def create(
+        self, garage_id: int, data: dict[str, Any], changed_by: int | None = None
+    ) -> dict[str, Any]:
+        """Insert a new vehicle into a garage and record its initial history snapshot."""
         data = {"kind": "car", "odometer_unit": "mi", "archived": 0, **{
             k: v for k, v in data.items() if v is not None
         }}
         cols = ",".join(VEHICLE_FIELDS)
         marks = ",".join("?" * len(VEHICLE_FIELDS))
         cur = self.db.execute(
-            f"INSERT INTO vehicles ({cols}) VALUES ({marks})",
-            tuple(data.get(f) for f in VEHICLE_FIELDS),
+            f"INSERT INTO vehicles (garage_id, {cols}) VALUES (?,{marks})",
+            (garage_id, *(data.get(f) for f in VEHICLE_FIELDS)),
         )
         row_id = cur.lastrowid
         if row_id is None:  # pragma: no cover
@@ -134,9 +176,14 @@ class VehicleRepository(BaseRepository):
         )
 
     def latest_odometers(self) -> dict[int, dict[str, Any]]:
-        """Return the most recent odometer reading per vehicle, merging manual and service logs."""
+        """Return the most recent odometer reading per vehicle across all three sources."""
         rows = self.db.execute("""
-            SELECT vehicle_id, date, odometer_km FROM odometer_logs
+            SELECT vehicle_id, date, odometer_km FROM odometer_logs WHERE source='manual'
+            UNION ALL
+            SELECT vehicle_id, SUBSTR(completed_date, 1, 10) AS date,
+                   CASE odometer_unit WHEN 'mi' THEN CAST(odometer_value AS REAL) * 1.609344
+                                      ELSE CAST(odometer_value AS REAL) END AS odometer_km
+            FROM mot_tests WHERE odometer_value IS NOT NULL AND odometer_unit IS NOT NULL
             UNION ALL
             SELECT vehicle_id, date, odometer_km FROM service_logs WHERE odometer_km IS NOT NULL
             ORDER BY date ASC, odometer_km ASC
@@ -147,19 +194,27 @@ class VehicleRepository(BaseRepository):
         return latest
 
     def mileage_series(self, vehicle_id: int) -> list[dict[str, Any]]:
-        """Return the merged odometer timeline (manual + service readings), oldest first."""
+        """Return the merged odometer timeline (manual, MOT, service), oldest first."""
         return self._rows(
             self.db.execute(
                 """
-                SELECT id, date, odometer_km, unit, note, 'manual' AS source FROM odometer_logs
-                WHERE vehicle_id=?
+                SELECT 'manual' AS source, id, date, odometer_km, unit, note
+                FROM odometer_logs WHERE vehicle_id=? AND source='manual'
                 UNION ALL
-                SELECT id, date, odometer_km, odometer_unit AS unit, title AS note,
-                       'service' AS source
+                SELECT 'mot' AS source, id, SUBSTR(completed_date, 1, 10) AS date,
+                       CASE odometer_unit WHEN 'mi' THEN CAST(odometer_value AS REAL) * 1.609344
+                                          ELSE CAST(odometer_value AS REAL) END AS odometer_km,
+                       odometer_unit AS unit,
+                       'MOT test (' || test_result || ')' AS note
+                FROM mot_tests
+                WHERE vehicle_id=? AND odometer_value IS NOT NULL AND odometer_unit IS NOT NULL
+                UNION ALL
+                SELECT 'service' AS source, id, date, odometer_km, odometer_unit AS unit,
+                       title AS note
                 FROM service_logs WHERE vehicle_id=? AND odometer_km IS NOT NULL
                 ORDER BY date ASC, odometer_km ASC
                 """,
-                (vehicle_id, vehicle_id),
+                (vehicle_id, vehicle_id, vehicle_id),
             ).fetchall()
         )
 
@@ -201,16 +256,20 @@ class VehicleRepository(BaseRepository):
             (vehicle["id"], changed_by, *(vehicle.get(f) for f in VEHICLE_FIELDS)),
         )
 
-    def search(self, query: str) -> list[dict[str, Any]]:
-        """Return up to 10 vehicles matching the query against name, make, model, or plate."""
+    def search(self, query: str, garage_ids: list[int]) -> list[dict[str, Any]]:
+        """Return up to 10 in-scope vehicles matching name, make, model, or plate."""
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
         q = f"%{query}%"
         return self._rows(
             self.db.execute(
-                """
+                f"""
                 SELECT v.*, 'vehicle' AS type FROM vehicles v
-                WHERE v.name LIKE ? OR v.make LIKE ? OR v.model LIKE ? OR v.registration LIKE ?
+                WHERE v.garage_id IN ({placeholders})
+                  AND (v.name LIKE ? OR v.make LIKE ? OR v.model LIKE ? OR v.registration LIKE ?)
                 LIMIT 10
                 """,
-                (q, q, q, q),
+                (*garage_ids, q, q, q, q),
             ).fetchall()
         )

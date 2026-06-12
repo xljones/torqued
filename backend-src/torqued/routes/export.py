@@ -6,8 +6,9 @@ from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
-from flask_login import login_required
+from flask_login import current_user, login_required
 
+from torqued.access import accessible_garage_ids, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.service_log_repository import ServiceLogRepository
 
@@ -40,8 +41,20 @@ def export_services() -> ResponseReturnValue:
         except ValueError:
             return jsonify(error="vehicle_id must be an integer"), 400
 
+    garage_id_raw = request.args.get("garage_id")
     with get_db() as db:
-        rows = ServiceLogRepository(db).export_flat(vehicle_id=vehicle_id)
+        if vehicle_id is not None and vehicle_role(db, current_user, vehicle_id) is None:
+            return jsonify(error="Not found"), 404
+        garage_ids = accessible_garage_ids(db, current_user)
+        if garage_id_raw:
+            try:
+                garage_id = int(garage_id_raw)
+            except ValueError:
+                return jsonify(error="garage_id must be an integer"), 400
+            if garage_id not in garage_ids:
+                return jsonify(error="Not found"), 404
+            garage_ids = [garage_id]
+        rows = ServiceLogRepository(db).export_flat(garage_ids, vehicle_id=vehicle_id)
 
     stem = f"torqued-services-{date.today().isoformat()}"
     if fmt == "json":
