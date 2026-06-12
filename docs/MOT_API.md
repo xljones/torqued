@@ -1,7 +1,7 @@
 # DVSA MOT History API — reference
 
 What the official [DVSA MOT History API](https://documentation.history.mot.api.gov.uk/) returns, how
-Torqued stores it, and the planned **baseline-with-overrides** model for the vehicle details panel.
+Torqued stores it, and the **baseline-with-overrides** model for the vehicle details panel.
 
 Field names below are quoted exactly as the API returns them (camelCase). The schema is taken from
 DVSA's own published data models; Torqued additionally keeps the **entire raw response verbatim** in

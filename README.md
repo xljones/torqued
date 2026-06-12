@@ -9,20 +9,20 @@ A multi-tenant web app for logging vehicle maintenance — built for motorcycles
 
 ## Features
 
-- **Garages (multi-tenant)** — data is split per garage; a garage switcher in the sidebar flips the whole app between them. Site admins create garages and users; garage owners manage their garage's members and roles
-- **Per-garage roles** — `owner` (manage members, rename), `member` (full read-write), `readonly` (view only); enforced on every endpoint
+- **Garages (multi-tenant)** — data is split per garage; a garage switcher in the sidebar flips the whole app between them. Site admins create garages and users and manage per-garage memberships and roles from the admin panel
+- **Per-garage roles** — `owner` (full access, incl. garage rename), `member` (full read-write), `readonly` (view only); enforced on every endpoint
 - **Vehicles** — any number of cars and motorcycles per garage, each with make/model/year, registration plate, VIN, and a per-vehicle odometer display unit (mi or km, converted automatically everywhere)
 - **Service log** — what was done, who did it (with autocomplete from past entries), when, at what mileage, and what it cost
 - **Maintenance reminders** — set "next due" by date and/or odometer on any service; the dashboard flags overdue and due-soon work, and newer services in the same category close old reminders automatically
-- **Mileage tracking** — quick odometer entries, readings captured from services, and MOT-recorded mileages merged into one timeline; an interactive chart plots every reading with a hover tooltip showing the mileage, date and where it came from
+- **Mileage tracking** — quick odometer entries, readings captured from services, and MOT-recorded mileages merged into one timeline; an interactive chart plots every reading with year-boundary markers and a hover tooltip showing the mileage, date and where it came from. Quick-add warns if a reading would go backwards relative to a dated neighbour
 - **MOT history (UK)** — pull a vehicle's official DVSA test history by registration plate: pass/fail results, expiry dates, defects and advisories, outstanding recalls; recorded mileages feed straight into the mileage timeline (needs free [DVSA MOT history API](https://documentation.history.mot.api.gov.uk/) credentials; full response schema in [docs/MOT_API.md](docs/MOT_API.md))
 - **Reference specs** — dedicated tyre pressure card (psi/bar) and tyre sizes, plus free-form per-vehicle specs (oil type & capacity, battery, wheel-nut torque, …)
 - **Photos** — upload photos against a vehicle or a specific service; gallery with lightbox and captions
-- **Fault code lookup** — type an OBD-II code (e.g. `P0016`) for an instant description, or search 2,100+ generic codes by keyword; unknown manufacturer-specific codes still get a structural breakdown (system / scope / subsystem)
+- **Fault code lookup** — browse the full list of 2,100+ generic OBD-II codes, type a code (e.g. `P0016`) for an instant description, or filter by keyword; unknown manufacturer-specific codes still get a structural breakdown (system / scope / subsystem)
 - **Version history** — every save of a vehicle or service is snapshotted; revert at any time
-- **Export** — service history as CSV, TSV, or JSON (whole fleet or per vehicle)
+- **Export** — service history as CSV, TSV, or JSON (whole fleet or per vehicle), plus a rich printable **PDF vehicle report** (details, tyres, specs, reminders, mileage chart, full service history, MOT history, and optional photos)
 - **Archiving** — sold a vehicle? Archive it; history is kept but it leaves the garage view
-- **Users** — session login (Flask-Login) with optional account expiry; site admins manage users and garages from the admin panel (plus live PythonAnywhere stats)
+- **Users** — session login (Flask-Login) with optional account expiry; site admins manage users, garages, and per-garage memberships from the admin panel (plus live PythonAnywhere stats)
 
 ## Running locally
 
@@ -72,7 +72,7 @@ backend-src/           Python backend
   manage.py            CLI (create-user, migrate, seed, db-backup, db-restore, …)
   wsgi.py              WSGI entry point (used by pa_wsgi.py)
   torqued/
-    __init__.py        App factory (Flask-Login, before_request auth/expiry/readonly guard)
+    __init__.py        App factory (Flask-Login, before_request auth/expiry guard)
     db.py              Connection + migration runner
     units.py           mi/km and psi/bar conversion helpers
     dtc.py             OBD-II fault code lookup (data/obd_codes.json, MIT-licensed dataset)
