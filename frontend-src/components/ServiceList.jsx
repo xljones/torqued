@@ -9,11 +9,17 @@ import { fmtCost, fmtDistance } from '../units.js';
 export default function ServiceList() {
   const { currentGarage } = useAuth();
   const [services, setServices] = useState(null);
+  const [vehicles, setVehicles] = useState([]);
   const [filter, setFilter] = useState('');
+  const [vehicleId, setVehicleId] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentGarage) api.getServices(currentGarage.id).then(setServices);
+    if (currentGarage) {
+      api.getServices(currentGarage.id).then(setServices);
+      api.getVehicles(currentGarage.id).then(setVehicles);
+      setVehicleId('');
+    }
   }, [currentGarage]);
 
   if (!currentGarage) {
@@ -26,14 +32,14 @@ export default function ServiceList() {
   }
 
   const q = filter.toLowerCase();
-  const visible = q
-    ? (services ?? []).filter(s =>
-        s.title.toLowerCase().includes(q) ||
-        (s.category ?? '').toLowerCase().includes(q) ||
-        (s.performed_by ?? '').toLowerCase().includes(q) ||
-        s.vehicle_name.toLowerCase().includes(q)
-      )
-    : (services ?? []);
+  const visible = (services ?? []).filter(s =>
+    (!vehicleId || String(s.vehicle_id) === vehicleId) &&
+    (!q ||
+      s.title.toLowerCase().includes(q) ||
+      (s.category ?? '').toLowerCase().includes(q) ||
+      (s.performed_by ?? '').toLowerCase().includes(q) ||
+      s.vehicle_name.toLowerCase().includes(q))
+  );
 
   const totalCost = visible.reduce((sum, s) => sum + (s.cost ?? 0), 0);
 
@@ -54,7 +60,7 @@ export default function ServiceList() {
         </div>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 inline-form-sm">
         <input
           type="search"
           value={filter}
@@ -62,6 +68,18 @@ export default function ServiceList() {
           placeholder="Filter by title, category, vehicle, garage…"
           className="search-input"
         />
+        <select
+          value={vehicleId}
+          onChange={e => setVehicleId(e.target.value)}
+          aria-label="Filter by vehicle"
+        >
+          <option value="">All vehicles</option>
+          <optgroup label={currentGarage.name}>
+            {vehicles.map(v => (
+              <option key={v.id} value={String(v.id)}>{v.name}</option>
+            ))}
+          </optgroup>
+        </select>
       </div>
 
       <div className="card">
@@ -83,7 +101,7 @@ export default function ServiceList() {
                   </tr>
                 ))
               }
-              {services !== null && visible.length === 0 && <tr><td colSpan={7} className="empty">{filter ? 'No matches' : 'No services logged yet'}</td></tr>}
+              {services !== null && visible.length === 0 && <tr><td colSpan={7} className="empty">{(filter || vehicleId) ? 'No matches' : 'No services logged yet'}</td></tr>}
             </tbody>
             {visible.length > 0 && totalCost > 0 && (
               <tfoot>
