@@ -6,30 +6,45 @@ import { KIND_ICONS, KIND_LABELS } from '../constants.js';
 import { fmtDistanceBoth } from '../units.js';
 
 export default function VehicleList() {
-  const { user } = useAuth();
-  const ro = user?.is_readonly;
+  const { currentGarage } = useAuth();
+  const ro = currentGarage?.role === 'readonly';
   const [vehicles, setVehicles] = useState(null);
   const [filter, setFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
-    api.getVehicles(showArchived).then(setVehicles);
-  }, [showArchived]);
+    if (currentGarage) api.getVehicles(currentGarage.id, showArchived).then(setVehicles);
+  }, [currentGarage, showArchived]);
+
+  if (!currentGarage) {
+    return (
+      <div>
+        <div className="page-header"><h1 className="page-title">Vehicles</h1></div>
+        <div className="card"><p className="card-message">Create a garage in the admin panel to get started.</p></div>
+      </div>
+    );
+  }
+
+  // Effective value = user override, else the DVSA MOT baseline (same rule as the detail panel).
+  const eff = (v, key) => {
+    const o = v[key];
+    return o != null && o !== '' ? o : (v.mot_baseline?.[key] ?? null);
+  };
 
   const q = filter.toLowerCase();
   const visible = q
     ? (vehicles ?? []).filter(v =>
         v.name.toLowerCase().includes(q) ||
-        (v.make ?? '').toLowerCase().includes(q) ||
-        (v.model ?? '').toLowerCase().includes(q) ||
-        (v.registration ?? '').toLowerCase().includes(q)
+        String(eff(v, 'make') ?? '').toLowerCase().includes(q) ||
+        String(eff(v, 'model') ?? '').toLowerCase().includes(q) ||
+        String(eff(v, 'registration') ?? '').toLowerCase().includes(q)
       )
     : (vehicles ?? []);
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Garage</h1>
+        <h1 className="page-title">{currentGarage.name}</h1>
         <div className="btn-group">
           {!ro && <Link to="/vehicles/new" className="btn btn-primary">+ Add vehicle</Link>}
         </div>
@@ -66,9 +81,9 @@ export default function VehicleList() {
                 {!!v.archived && <span className="badge">Archived</span>}
               </div>
               <div className="vehicle-card-sub">
-                {[v.year, v.make, v.model].filter(Boolean).join(' ') || '—'}
+                {[eff(v, 'year'), eff(v, 'make'), eff(v, 'model')].filter(Boolean).join(' ') || '—'}
               </div>
-              {v.registration && <div><span className="reg-plate">{v.registration}</span></div>}
+              {eff(v, 'registration') && <div><span className="reg-plate">{eff(v, 'registration')}</span></div>}
               <div className="vehicle-card-meta">
                 <span>{v.latest_odometer ? fmtDistanceBoth(v.latest_odometer.odometer_km, v.odometer_unit) : 'No mileage yet'}</span>
                 <span>{v.service_count} service{v.service_count !== 1 ? 's' : ''}</span>

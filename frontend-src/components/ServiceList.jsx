@@ -1,16 +1,29 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../AuthContext.jsx';
 import ExportDropdown from './ExportDropdown.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
 import { fmtCost, fmtDistance } from '../units.js';
 
 export default function ServiceList() {
+  const { currentGarage } = useAuth();
   const [services, setServices] = useState(null);
   const [filter, setFilter] = useState('');
   const navigate = useNavigate();
 
-  useEffect(() => { api.getServices().then(setServices); }, []);
+  useEffect(() => {
+    if (currentGarage) api.getServices(currentGarage.id).then(setServices);
+  }, [currentGarage]);
+
+  if (!currentGarage) {
+    return (
+      <div>
+        <div className="page-header"><h1 className="page-title">Service log</h1></div>
+        <div className="card"><p className="card-message">Create a garage in the admin panel to get started.</p></div>
+      </div>
+    );
+  }
 
   const q = filter.toLowerCase();
   const visible = q
@@ -27,15 +40,15 @@ export default function ServiceList() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Service log</h1>
+        <h1 className="page-title">Service log — {currentGarage.name}</h1>
         <div className="btn-group">
           <ExportDropdown
             label="Export"
             disabled={visible.length === 0}
             options={[
-              { label: 'Comma separated values (.csv)', onClick: () => { window.location.href = '/api/export/services'; } },
-              { label: 'Tab separated values (.tsv)', onClick: () => { window.location.href = '/api/export/services?format=tsv'; } },
-              { label: 'JSON (.json)', onClick: () => { window.location.href = '/api/export/services?format=json'; } },
+              { label: 'Comma separated values (.csv)', onClick: () => { window.location.href = `/api/export/services?garage_id=${currentGarage.id}`; } },
+              { label: 'Tab separated values (.tsv)', onClick: () => { window.location.href = `/api/export/services?garage_id=${currentGarage.id}&format=tsv`; } },
+              { label: 'JSON (.json)', onClick: () => { window.location.href = `/api/export/services?garage_id=${currentGarage.id}&format=json`; } },
             ]}
           />
         </div>

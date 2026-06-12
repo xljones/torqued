@@ -1,3 +1,55 @@
+@font-face {
+  font-family: 'Charles Wright';
+  src: url('./fonts/CharlesWright-Bold.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Garage switcher & memberships ─────────────────────────────────────────── */
+.sidebar-garage { padding: 0 16px 12px; }
+.garage-switcher { width: 100%; font-size: 13px; font-weight: 600; }
+.garage-switcher-single {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  padding: 6px 10px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.membership-chip {
+  display: inline-block; font-size: 11px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 99px;
+  padding: 1px 8px; margin: 1px 4px 1px 0; white-space: nowrap;
+}
+.membership-chip em { font-style: normal; color: var(--text2); }
+.user-editor { padding: 12px 14px; background: var(--surface2); border-radius: var(--radius); }
+.user-editor-garage { display: inline-flex; align-items: center; font-size: 13px; font-weight: 600; min-width: 140px; }
+
+/* ── Registration lookup (vehicle form) ────────────────────────────────────── */
+.reg-lookup { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.reg-lookup-field { max-width: 260px; }
+/* Override the base input rule (its :not() chain out-specifies a single class). */
+.reg-plate-input {
+  font-family: 'Charles Wright', 'Courier New', monospace !important; font-weight: bold;
+  text-transform: uppercase; letter-spacing: 1.5px; font-size: 18px !important;
+  line-height: 1 !important;
+  text-align: center; color: #000 !important;
+  background: #fdd835 !important; border: 1px solid #c6a700 !important;
+}
+.reg-plate-input::placeholder { color: rgba(0, 0, 0, 0.4); font-weight: bold; }
+.reg-plate-input:focus { border-color: #b8990a !important; }
+.mot-found {
+  font-size: 13px; color: var(--text); background: #ddf0e6;
+  border: 1px solid #b6dcc4; border-radius: var(--radius); padding: 8px 12px;
+}
+
+/* ── MOT-sourced detail fields ─────────────────────────────────────────────── */
+.field-source {
+  display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text2); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 99px; padding: 0 6px; margin-left: 6px;
+  vertical-align: middle;
+}
+.field-reset { margin-left: 8px; font-size: 11px; }
+
 /* ── Vehicle cards ─────────────────────────────────────────────────────────── */
 .vehicle-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
 .vehicle-card {
@@ -23,7 +75,7 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .badge-due_soon { background: #fdf3d7; color: #7a5a0a; }
 .badge-upcoming { background: #ddf0e6; color: #1a5030; }
 .reg-plate {
-  font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold;
+  font-family: 'Charles Wright', 'Courier New', monospace; font-size: 12px; font-weight: bold;
   background: #fdd835; border: 1px solid #c6a700; color: #000;
   padding: 2px 6px; border-radius: 4px; white-space: nowrap;
 }
@@ -56,12 +108,129 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .lightbox-bar { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13px; flex-wrap: wrap; justify-content: center; }
 .lightbox-caption-input { min-width: 240px; }
 
-/* ── Mileage sparkline ─────────────────────────────────────────────────────── */
-.sparkline { width: 100%; height: 60px; display: block; }
+/* ── Mileage chart ─────────────────────────────────────────────────────────── */
+.mileage-chart { position: relative; width: 100%; height: 72px; margin-top: 4px; }
+.sparkline { width: 100%; height: 100%; display: block; overflow: visible; }
 .sparkline polyline { fill: none; stroke: var(--accent); stroke-width: 2; }
-.sparkline circle { fill: var(--accent); }
+.mileage-dot {
+  position: absolute; width: 9px; height: 9px; padding: 0; margin: 0;
+  transform: translate(-50%, 50%); border-radius: 50%;
+  border: 2px solid var(--surface); background: var(--accent);
+  cursor: pointer; transition: width 0.1s, height 0.1s;
+}
+.mileage-dot:hover, .mileage-dot.is-active { width: 13px; height: 13px; }
+.mileage-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mileage-dot-manual { background: var(--accent); }
+.mileage-dot-service { background: #1a7a45; }
+.mileage-dot-mot { background: #c87a0a; }
+.mileage-tooltip {
+  position: absolute; z-index: 5; pointer-events: none; min-width: 120px; max-width: 220px;
+  background: var(--text); color: var(--surface); border-radius: var(--radius);
+  padding: 6px 9px; font-size: 12px; line-height: 1.3; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.mileage-tooltip-value { font-weight: 700; font-size: 13px; }
+.mileage-tooltip-meta { display: flex; align-items: center; gap: 6px; opacity: 0.85; margin-top: 1px; }
+.mileage-tooltip-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.mileage-tooltip-note { margin-top: 3px; opacity: 0.75; white-space: normal; }
 .odo-current { font-size: 24px; font-weight: 700; }
 .odo-current-alt { font-size: 13px; color: var(--text2); }
+
+/* ── Fault code input (service form) ──────────────────────────────────────── */
+.fault-code-input { position: relative; }
+.fault-code-tags {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 8px; background: var(--surface); min-height: 38px; cursor: text;
+}
+.fault-code-tags:focus-within { border-color: var(--accent); }
+.fault-code-text {
+  flex: 1; min-width: 80px; border: none !important; padding: 2px 0 !important;
+  background: transparent !important; outline: none; font-size: 13px;
+}
+.fault-code-tag {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 4px 1px 0;
+}
+.fault-code-remove {
+  background: none; border: none; cursor: pointer; font-size: 14px;
+  color: var(--text2); padding: 0 2px; line-height: 1;
+}
+.fault-code-remove:hover { color: var(--danger); }
+.fault-code-suggest {
+  position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin-top: 2px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); max-height: 200px; overflow-y: auto; list-style: none;
+}
+.fault-code-option {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  cursor: pointer; font-size: 13px;
+}
+.fault-code-option:hover, .fault-code-option.is-focused { background: var(--surface2); }
+.fault-code-option.is-added { opacity: 0.4; }
+.fault-code-desc { color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Fault code detail (service detail) ──────────────────────────────────── */
+.fault-code-detail {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 12px; font-size: 13px;
+}
+.fault-code-detail-row { display: flex; align-items: baseline; gap: 8px; }
+.fault-code-detail-row + .fault-code-detail-row { margin-top: 6px; }
+.fault-code-system { font-size: 11px; color: var(--text2); }
+
+/* ── Fault codes (lookup page) ───────────────────────────────────────────── */
+.dtc-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.dtc-code {
+  font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold;
+  background: var(--surface2); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 4px;
+}
+.dtc-code-sm { font-size: 12px; padding: 1px 6px; }
+.dtc-description { font-size: 16px; font-weight: 600; }
+.link-button {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--accent); font-size: inherit; text-decoration: underline;
+}
+
+/* ── MOT history ───────────────────────────────────────────────────────────── */
+.badge-passed { background: #ddf0e6; color: #1a5030; }
+.badge-failed { background: #fde2e2; color: #8a1f1f; }
+.badge-source-manual { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+.badge-source-mot    { background: #ddeeff; color: #1a4a80; }
+.badge-source-service { background: #fdf3d7; color: #7a5a0a; }
+.mot-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.mot-test { border-bottom: 1px solid var(--border); padding: 8px 0; }
+.mot-test:last-child { border-bottom: none; }
+.mot-test-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mot-test-date { font-weight: 600; font-size: 13px; }
+.mot-test-odo { font-size: 13px; }
+.mot-test-extra { flex: 1; }
+.mot-defects { margin: 8px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.mot-defect-type {
+  display: inline-block; font-size: 11px; font-weight: 700; text-transform: lowercase;
+  border-radius: 99px; padding: 1px 8px; margin-right: 6px;
+}
+.mot-defect-serious { background: #fde2e2; color: #8a1f1f; }
+.mot-defect-minor { background: #ddeeff; color: #1a4a80; }
+.mot-defect-advisory { background: #fdf3d7; color: #7a5a0a; }
+.dvsa-record-tile { cursor: pointer; user-select: none; transition: background 0.1s; }
+.dvsa-record-tile:hover { background: var(--surface3, #e8e8e8); }
+.dvsa-record-tile--open { background: var(--surface2); }
+.dvsa-record-caret { font-size: 10px; opacity: 0.6; margin-left: 4px; }
+.dvsa-json-toolbar { display: flex; gap: 6px; margin-bottom: 2px; }
+.dvsa-raw-json {
+  font-size: 12px; font-family: 'Courier New', monospace; line-height: 1.5;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; overflow-x: auto; white-space: pre; max-height: 400px; overflow-y: auto;
+}
+.jkey { color: #7c4dff; font-weight: 600; }
+.jstr { color: #2e7d32; }
+.jnum { color: #e65100; }
+.jbool { color: #1565c0; font-weight: 600; }
+.jnull { color: #999; font-style: italic; }
 
 /* ── Reminders ─────────────────────────────────────────────────────────────── */
 .reminder-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); }

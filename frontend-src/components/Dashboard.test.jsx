@@ -3,6 +3,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
 
+vi.mock('../AuthContext.jsx', () => ({
+  useAuth: () => ({
+    user: { username: 'x', is_admin: false, memberships: [{ garage_id: 1, garage_name: 'Home Garage', role: 'member' }] },
+    currentGarage: { id: 1, name: 'Home Garage', role: 'member' },
+    roleFor: () => 'member',
+  }),
+}));
+
 vi.mock('../api.js', () => ({
   api: {
     getVehicles: vi.fn().mockResolvedValue([
@@ -67,6 +75,19 @@ describe('Dashboard', () => {
     // 160.9344 km == 100 mi
     await waitFor(() => {
       expect(screen.getAllByText('100 mi').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('falls back to mot_baseline for make/model/year when vehicle columns are null', async () => {
+    const { api } = await import('../api.js');
+    api.getVehicles.mockResolvedValueOnce([{
+      id: 9, name: 'Passat', kind: 'car', make: null, model: null, year: null,
+      odometer_unit: 'mi', service_count: 0, photo_count: 0, cover_photo_id: null,
+      latest_odometer: null, mot_baseline: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003 },
+    }]);
+    renderDashboard();
+    await waitFor(() => {
+      expect(screen.getByText('2003 VOLKSWAGEN PASSAT')).toBeInTheDocument();
     });
   });
 });

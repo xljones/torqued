@@ -31,6 +31,12 @@ export const SERVICE_CATEGORIES = Object.freeze([
   'Other',
 ]);
 
+export const ROLE_LABELS = Object.freeze({
+  owner: 'Owner',
+  member: 'Member',
+  readonly: 'Read-only',
+});
+
 export const REMINDER_LABELS = Object.freeze({
   overdue: 'Overdue',
   due_soon: 'Due soon',

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../AuthContext.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
 import { REMINDER_LABELS } from '../constants.js';
 import { fmtCost, fmtDistance } from '../units.js';
@@ -8,16 +9,27 @@ import { fmtCost, fmtDistance } from '../units.js';
 const statSkeleton = <span className="skeleton-line" style={{ width: 48, height: 34, display: 'inline-block' }} />;
 
 export default function Dashboard() {
+  const { currentGarage } = useAuth();
   const [vehicles, setVehicles] = useState(null);
   const [services, setServices] = useState(null);
   const [reminders, setReminders] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.getVehicles().then(setVehicles).catch(() => {});
-    api.getServices().then(setServices).catch(() => {});
-    api.getReminders().then(setReminders).catch(() => {});
-  }, []);
+    if (!currentGarage) return;
+    api.getVehicles(currentGarage.id).then(setVehicles).catch(() => {});
+    api.getServices(currentGarage.id).then(setServices).catch(() => {});
+    api.getReminders(currentGarage.id).then(setReminders).catch(() => {});
+  }, [currentGarage]);
+
+  if (!currentGarage) {
+    return (
+      <div>
+        <div className="page-header"><h1 className="page-title">Dashboard</h1></div>
+        <div className="card"><p className="card-message">Create a garage in the admin panel to get started.</p></div>
+      </div>
+    );
+  }
 
   const dueCount = reminders === null ? null : reminders.filter(r => r.status !== 'upcoming').length;
   const totalSpent = services === null ? null : services.reduce((sum, s) => sum + (s.cost ?? 0), 0);
@@ -26,7 +38,7 @@ export default function Dashboard() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Dashboard</h1>
+        <h1 className="page-title">Dashboard — {currentGarage.name}</h1>
       </div>
       <div className="stat-grid">
         <Link to="/vehicles" className="stat-card">
@@ -77,7 +89,7 @@ export default function Dashboard() {
                 : vehicles.map(v => (
                   <tr key={v.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/vehicles/${v.id}`); }}>
                     <td><Link to={`/vehicles/${v.id}`}>{v.name}</Link></td>
-                    <td className="col-mobile-hide">{[v.year, v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? v.mot_baseline?.make, v.model ?? v.mot_baseline?.model].filter(Boolean).join(' ') || '—'}</td>
                     <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
                     <td>{v.service_count}</td>
                   </tr>

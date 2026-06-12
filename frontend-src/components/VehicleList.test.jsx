@@ -29,7 +29,11 @@ vi.mock('../api.js', () => ({
 import { api } from '../api.js';
 
 vi.mock('../AuthContext.jsx', () => ({
-  useAuth: () => ({ user: { username: 'x', is_readonly: false } }),
+  useAuth: () => ({
+    user: { username: 'x', is_admin: false, memberships: [{ garage_id: 1, garage_name: 'Home Garage', role: 'member' }] },
+    currentGarage: { id: 1, name: 'Home Garage', role: 'member' },
+    roleFor: () => 'member',
+  }),
 }));
 
 function renderList() {
@@ -64,5 +68,24 @@ describe('VehicleList', () => {
     await waitFor(() => {
       expect(screen.getByText(/No vehicles yet/)).toBeInTheDocument();
     });
+  });
+
+  it('falls back to the MOT baseline for make/model/year/plate when not overridden', async () => {
+    api.getVehicles.mockResolvedValue([{
+      id: 3, name: 'Passat', kind: 'car', make: null, model: null, year: null,
+      registration: null, odometer_unit: 'mi', archived: 0, service_count: 0,
+      photo_count: 0, cover_photo_id: null, latest_odometer: null,
+      mot_baseline: {
+        make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, registration: 'LR53UHD',
+      },
+    }]);
+    renderList();
+    await waitFor(() => {
+      expect(screen.getByText('2003 VOLKSWAGEN PASSAT')).toBeInTheDocument();
+      expect(screen.getByText('LR53UHD')).toBeInTheDocument();
+    });
+    // Baseline values are searchable too
+    await userEvent.type(screen.getByPlaceholderText(/Filter by name/), 'volkswagen');
+    expect(screen.getByText('Passat')).toBeInTheDocument();
   });
 });

@@ -39,7 +39,7 @@ export default function AccountPage() {
         <div className="mb-4">
           <div className="meta">Signed in as</div>
           <div className="fw-600">{user?.username}</div>
-          {user?.is_readonly && <div className="meta">Read-only account</div>}
+          {user?.is_admin && <div className="meta">Site admin</div>}
         </div>
 
         <form onSubmit={handleSubmit}>
