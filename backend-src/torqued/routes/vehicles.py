@@ -8,11 +8,24 @@ from torqued.access import accessible_garage_ids, can_write, garage_role, vehicl
 from torqued.db import get_db
 from torqued.repositories.service_log_repository import ServiceLogRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
+from torqued.repositories.ves_repository import VesRepository
 
 bp = Blueprint("vehicles", __name__)
 
 KINDS = ("car", "motorcycle")
 ODOMETER_UNITS = ("mi", "km")
+
+_REMINDER_ORDER = {"overdue": 0, "due_soon": 1, "upcoming": 2}
+
+
+def collect_reminders(
+    db: Any, garage_ids: list[int], vehicle_id: int | None = None
+) -> list[dict[str, Any]]:
+    """Merge service-log and road-tax reminders into one most-urgent-first list."""
+    items = ServiceLogRepository(db).reminders(garage_ids, vehicle_id=vehicle_id)
+    items += VesRepository(db).tax_reminders(garage_ids, vehicle_id=vehicle_id)
+    items.sort(key=lambda r: (_REMINDER_ORDER[r["status"]], r["next_due_date"] or "9999-12-31"))
+    return items
 
 
 def _vehicle_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
@@ -125,8 +138,8 @@ def get_vehicle(vehicle_id: int) -> ResponseReturnValue:
             return err
         vehicle = VehicleRepository(db).get_detail(vehicle_id)
         assert vehicle is not None  # _check_vehicle verified existence
-        vehicle["reminders"] = ServiceLogRepository(db).reminders(
-            [vehicle["garage_id"]], vehicle_id=vehicle_id
+        vehicle["reminders"] = collect_reminders(
+            db, [vehicle["garage_id"]], vehicle_id=vehicle_id
         )
     return jsonify(vehicle)
 
@@ -221,4 +234,4 @@ def all_reminders() -> ResponseReturnValue:
             if garage_id not in garage_ids:
                 return jsonify(error="Not found"), 404
             garage_ids = [garage_id]
-        return jsonify(ServiceLogRepository(db).reminders(garage_ids))
+        return jsonify(collect_reminders(db, garage_ids))
