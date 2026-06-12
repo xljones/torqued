@@ -10,7 +10,9 @@ from flask_login import current_user, login_required
 
 from torqued.access import accessible_garage_ids, vehicle_role
 from torqued.db import get_db
+from torqued.repositories.mot_repository import MotRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
+from torqued.repositories.vehicle_repository import VehicleRepository
 
 bp = Blueprint("export", __name__)
 
@@ -68,3 +70,37 @@ def export_services() -> ResponseReturnValue:
     if fmt == "csv":
         return _csv_response(rows, ",", f"{stem}.csv")
     return jsonify(error=f"unknown format: {fmt}"), 400
+
+
+@bp.get("/api/export/vehicles/<int:vehicle_id>/pdf")
+@login_required
+def export_vehicle_pdf(vehicle_id: int) -> ResponseReturnValue:
+    """Export a vehicle's full history as a rich PDF; photos are opt-in."""
+    from torqued.pdf_report import build_vehicle_report
+    from torqued.routes.photos import upload_dir
+
+    include_photos = request.args.get("include_photos") in ("1", "true")
+    with get_db() as db:
+        if vehicle_role(db, current_user, vehicle_id) is None:
+            return jsonify(error="Not found"), 404
+        vehicles = VehicleRepository(db)
+        services = ServiceLogRepository(db)
+        vehicle = vehicles.get_detail(vehicle_id)
+        assert vehicle is not None  # role check above guarantees it exists
+        logs = services.list_for_vehicle(vehicle_id)
+        mileage = vehicles.mileage_series(vehicle_id)
+        reminders = services.reminders([vehicle["garage_id"]], vehicle_id=vehicle_id)
+        mot = MotRepository(db).get_for_vehicle(vehicle_id)
+
+    pdf = build_vehicle_report(
+        vehicle, logs, mileage, reminders, mot,
+        include_photos=include_photos, photo_dir=upload_dir(),
+    )
+    label = vehicle.get("registration") or vehicle.get("name") or f"vehicle-{vehicle_id}"
+    safe = "".join(c if c.isalnum() else "-" for c in str(label)).strip("-") or "vehicle"
+    filename = f"torqued-{safe}-{date.today().isoformat()}.pdf"
+    return Response(
+        pdf,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
