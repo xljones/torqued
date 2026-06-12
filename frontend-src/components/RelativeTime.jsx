@@ -1,25 +1,27 @@
 import { useState, useEffect } from 'react';
 
-function toUtcDate(isoString) {
-  // SQLite stores UTC without trailing Z — normalise before parsing
-  return new Date(isoString.endsWith('Z') ? isoString : isoString + 'Z');
+function toUtcDate(value) {
+  // Date-only values (YYYY-MM-DD) → treat as UTC midnight
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(value + 'T00:00:00Z');
+  // SQLite stores UTC datetimes without trailing Z — normalise before parsing
+  return new Date(value.endsWith('Z') ? value : value + 'Z');
 }
 
 function relativeTime(date) {
   const diffMs = Date.now() - date.getTime();
   const diffSec = Math.round(diffMs / 1000);
   const fmt = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  if (diffSec < 60)    return fmt.format(-diffSec, 'second');
+  if (Math.abs(diffSec) < 60)    return fmt.format(-diffSec, 'second');
   const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60)    return fmt.format(-diffMin, 'minute');
+  if (Math.abs(diffMin) < 60)    return fmt.format(-diffMin, 'minute');
   const diffHour = Math.round(diffMin / 60);
-  if (diffHour < 24)   return fmt.format(-diffHour, 'hour');
+  if (Math.abs(diffHour) < 24)   return fmt.format(-diffHour, 'hour');
   const diffDay = Math.round(diffHour / 24);
-  if (diffDay < 7)     return fmt.format(-diffDay, 'day');
+  if (Math.abs(diffDay) < 7)     return fmt.format(-diffDay, 'day');
   const diffWeek = Math.round(diffDay / 7);
-  if (diffWeek < 5)    return fmt.format(-diffWeek, 'week');
+  if (Math.abs(diffWeek) < 5)    return fmt.format(-diffWeek, 'week');
   const diffMonth = Math.round(diffDay / 30.5);
-  if (diffMonth < 12)  return fmt.format(-diffMonth, 'month');
+  if (Math.abs(diffMonth) < 12)  return fmt.format(-diffMonth, 'month');
   return fmt.format(-Math.round(diffMonth / 12), 'year');
 }
 

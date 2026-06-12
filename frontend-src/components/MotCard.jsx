@@ -211,6 +211,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
               <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
                 <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
                 <div className="pressure-value">{expiry}</div>
+                <div className="pressure-alt"><RelativeTime value={expiry} /></div>
               </div>
             )}
             {String(mot.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown' && (
