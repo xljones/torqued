@@ -28,26 +28,31 @@ def cmd_create_user(args: list[str]) -> None:
 
 def cmd_list_users(_: list[str]) -> None:
     from torqued.db import get_db
+    from torqued.repositories.user_repository import UserRepository
     with get_db() as db:
-        users = db.execute(
-            "SELECT id, username, is_readonly, is_admin, expires_at, created_at FROM users ORDER BY id"
-        ).fetchall()
+        users = UserRepository(db).list_all()
     if not users:
         print("No users.")
     for u in users:
-        kind = "admin" if u[3] else ("read-only" if u[2] else "normal")
-        expiry = f"  expires {u[4]}" if u[4] else ""
-        print(f"  [{u[0]}] {u[1]}  ({kind}{expiry})  created {u[5]}")
+        kind = "site admin" if u["is_admin"] else "normal"
+        expiry = f"  expires {u['expires_at']}" if u["expires_at"] else ""
+        garages = ", ".join(
+            f"{m['garage_name']} ({m['role']})" for m in u["memberships"]
+        ) or "no garages"
+        print(f"  [{u['id']}] {u['username']}  ({kind}{expiry})  {garages}")
 
 
 def cmd_seed(_: list[str]) -> None:
     from torqued.db import get_db, run_migrations
+    from torqued.repositories.garage_repository import GarageRepository
     from torqued.repositories.odometer_log_repository import OdometerLogRepository
     from torqued.repositories.service_log_repository import ServiceLogRepository
     from torqued.repositories.vehicle_repository import VehicleRepository
     from torqued.units import to_km
 
     run_migrations()
+
+    GARAGE_NAME = "Home Garage"
 
     VEHICLES = [
         {
@@ -129,8 +134,8 @@ def cmd_seed(_: list[str]) -> None:
         ("Street Triple", "2025-02-21", "New rear tyre", "Tyres",
          "Michelin Road 6, fitted and balanced.", "Two Wheel Tyres", 189.50, 12100, "mi",
          None, None),
-        ("Street Triple", "2025-04-05", "Annual service + MOT", "Service",
-         "Oil + filter, brake fluid flush. MOT pass, no advisories.",
+        ("Street Triple", "2025-04-05", "Annual service", "Service",
+         "Oil + filter, brake fluid flush.",
          "Triumph Leicester", 342.00, 12800, "mi", "2026-07-01", 18800),
         ("Daily", "2024-10-19", "Full service", "Service",
          "Oil, oil filter, air filter, pollen filter.", "Halfords Autocentre", 215.00,
@@ -138,9 +143,6 @@ def cmd_seed(_: list[str]) -> None:
         ("Daily", "2025-03-08", "Front brake pads & discs", "Brakes",
          "Pagid discs and pads, copper grease on sliders.", "Me", 145.20, 43900, "mi",
          None, None),
-        ("Daily", "2026-05-30", "MOT", "Inspection",
-         "Pass. Advisory: rear tyres close to legal limit.", "Halfords Autocentre", 39.99,
-         45050, "mi", "2027-05-30", None),
         ("Weekend toy", "2024-06-15", "Oil change", "Oil change",
          "5W-30 + filter. Sump washer replaced.", "Me", 62.40, 88500, "km",
          "2025-06-15", 98500),
@@ -158,18 +160,29 @@ def cmd_seed(_: list[str]) -> None:
     ]
 
     with get_db() as db:
+        garage_repo = GarageRepository(db)
         vehicle_repo = VehicleRepository(db)
         service_repo = ServiceLogRepository(db)
         odo_repo = OdometerLogRepository(db)
         ids: dict[str, int] = {}
 
-        existing = {v["name"] for v in vehicle_repo.list_all(include_archived=True)}
+        garage = garage_repo.get_by_name(GARAGE_NAME)
+        if garage is None:
+            garage = garage_repo.create(GARAGE_NAME)
+            print(f"  garage {GARAGE_NAME}")
+        else:
+            print(f"  skip garage {GARAGE_NAME} (already exists)")
+
+        existing = {
+            v["name"]
+            for v in vehicle_repo.list_for_garages([garage["id"]], include_archived=True)
+        }
         for v in VEHICLES:
             specs = v.pop("specs")
             if v["name"] in existing:
                 print(f"  skip vehicle {v['name']} (already exists)")
                 continue
-            created = vehicle_repo.create(v)
+            created = vehicle_repo.create(garage["id"], v)
             ids[v["name"]] = created["id"]
             vehicle_repo.replace_specs(
                 created["id"], [{"name": n, "value": val} for n, val in specs]
@@ -201,8 +214,55 @@ def cmd_seed(_: list[str]) -> None:
             odo_repo.create(ids[vname], odate, to_km(odo, unit), unit, note=note)
             print(f"  odometer {vname}: {odo} {unit} ({odate})")
 
-    print(f"\nDone. {len(VEHICLES)} vehicles, {len(SERVICES)} services, "
+    print(f"\nDone. 1 garage, {len(VEHICLES)} vehicles, {len(SERVICES)} services, "
           f"{len(ODOMETER)} odometer logs.")
+    print("Add members with: python manage.py add-member <garage> <username> <role>")
+
+
+def cmd_create_garage(args: list[str]) -> None:
+    if len(args) != 1:
+        print("Usage: python manage.py create-garage <name>")
+        sys.exit(1)
+    from torqued.db import get_db, run_migrations
+    from torqued.repositories.garage_repository import GarageRepository
+    run_migrations()
+    with get_db() as db:
+        repo = GarageRepository(db)
+        if repo.get_by_name(args[0]):
+            print(f"Error: garage '{args[0]}' already exists")
+            sys.exit(1)
+        garage = repo.create(args[0])
+    print(f"Garage '{garage['name']}' created (id {garage['id']}).")
+
+
+def cmd_add_member(args: list[str]) -> None:
+    if len(args) not in (2, 3):
+        print("Usage: python manage.py add-member <garage-name> <username> [owner|member|readonly]")
+        sys.exit(1)
+    garage_name, username = args[0], args[1]
+    role = args[2] if len(args) == 3 else "member"
+    from torqued.db import get_db
+    from torqued.repositories.garage_repository import ROLES, GarageRepository
+    from torqued.repositories.user_repository import UserRepository
+    if role not in ROLES:
+        print(f"Error: role must be one of {', '.join(ROLES)}")
+        sys.exit(1)
+    with get_db() as db:
+        garage = GarageRepository(db).get_by_name(garage_name)
+        if not garage:
+            print(f"Error: garage '{garage_name}' not found")
+            sys.exit(1)
+        user = UserRepository(db).get_by_username(username)
+        if not user:
+            print(f"Error: user '{username}' not found")
+            sys.exit(1)
+        existing_role = GarageRepository(db).member_role(garage["id"], user["id"])
+        if existing_role:
+            GarageRepository(db).set_member_role(garage["id"], user["id"], role)
+            print(f"'{username}' role in '{garage_name}' changed to {role}.")
+        else:
+            GarageRepository(db).add_member(garage["id"], user["id"], role)
+            print(f"'{username}' added to '{garage_name}' as {role}.")
 
 
 def cmd_rename_user(args: list[str]) -> None:
@@ -312,7 +372,7 @@ def cmd_reset_db(args: list[str]) -> None:
         tables = [
             "photos", "service_log_history", "vehicle_history",
             "odometer_logs", "service_logs", "vehicle_specs", "vehicles",
-            "schema_migrations", "users",
+            "garage_members", "garages", "schema_migrations", "users",
         ]
         for table in tables:
             db.execute(f"DROP TABLE IF EXISTS {table}")
@@ -321,6 +381,8 @@ def cmd_reset_db(args: list[str]) -> None:
 
 COMMANDS: dict[str, Callable[[list[str]], None]] = {
     "create-user": cmd_create_user,
+    "create-garage": cmd_create_garage,
+    "add-member": cmd_add_member,
     "list-users":  cmd_list_users,
     "rename-user": cmd_rename_user,
     "delete-user": cmd_delete_user,

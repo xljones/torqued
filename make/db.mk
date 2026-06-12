@@ -16,6 +16,24 @@ else
 	docker compose run --rm backend python manage.py create-user $(username) $(password)
 endif
 
+.PHONY: create-garage
+# create a garage: make create-garage name=<name>
+create-garage:
+ifdef PYTHONANYWHERE_SITE
+	venv/bin/python backend-src/manage.py create-garage "$(name)"
+else
+	docker compose run --rm backend python manage.py create-garage "$(name)"
+endif
+
+.PHONY: add-member
+# add a user to a garage: make add-member garage=<name> username=<user> role=<owner|member|readonly>
+add-member:
+ifdef PYTHONANYWHERE_SITE
+	venv/bin/python backend-src/manage.py add-member "$(garage)" $(username) $(or $(role),member)
+else
+	docker compose run --rm backend python manage.py add-member "$(garage)" $(username) $(or $(role),member)
+endif
+
 .PHONY: create-admin
 # create an admin user: make create-admin username=<name> password=<pass>
 create-admin:
