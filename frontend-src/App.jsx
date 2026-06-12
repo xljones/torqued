@@ -12,7 +12,6 @@ import ServiceList from './components/ServiceList.jsx';
 import ServiceDetail from './components/ServiceDetail.jsx';
 import ServiceForm from './components/ServiceForm.jsx';
 import CodeLookup from './components/CodeLookup.jsx';
-import MembersPage from './components/MembersPage.jsx';
 import AdminPage from './components/AdminPage.jsx';
 import AccountPage from './components/AccountPage.jsx';
 import { FormMode, ROLE_LABELS } from './constants.js';
@@ -50,7 +49,7 @@ function UserBadges() {
 }
 
 function Nav() {
-  const { user, logout, currentGarage } = useAuth();
+  const { user, logout } = useAuth();
 
   return (
     <nav className="sidebar">
@@ -65,7 +64,6 @@ function Nav() {
       <NavLink to="/vehicles">Vehicles</NavLink>
       <NavLink to="/services">Service log</NavLink>
       <NavLink to="/codes">Fault codes</NavLink>
-      {currentGarage && <NavLink to="/members">Members</NavLink>}
       <div className="mt-auto">
         <div className="sidebar-user">
           <div className="sidebar-user-row">
@@ -86,7 +84,7 @@ function Nav() {
 }
 
 function BottomNav() {
-  const { user, logout, currentGarage } = useAuth();
+  const { user, logout } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
   const closeMore = () => setMoreOpen(false);
 
@@ -100,9 +98,6 @@ function BottomNav() {
               <GarageSwitcher />
             </div>
             <NavLink to="/codes" className="sidebar-nav-btn" onClick={closeMore}>Fault codes</NavLink>
-            {currentGarage && (
-              <NavLink to="/members" className="sidebar-nav-btn" onClick={closeMore}>Members</NavLink>
-            )}
             <div className="sidebar-user">
               <div className="sidebar-user-row">
                 <div className="text-sm fw-600">{user?.username}</div>
@@ -182,7 +177,6 @@ function AppShell() {
           <Route path="/services/:id" element={<ServiceDetail />} />
           <Route path="/services/:id/edit" element={<ServiceForm mode={FormMode.EDIT} />} />
           <Route path="/codes" element={<CodeLookup />} />
-          <Route path="/members" element={<MembersPage />} />
           {user.is_admin && <Route path="/admin" element={<AdminPage />} />}
           <Route path="/account" element={<AccountPage />} />
         </Routes>
