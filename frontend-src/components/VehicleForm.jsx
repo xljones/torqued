@@ -78,7 +78,7 @@ export default function VehicleForm({ mode }) {
     setFetching(true);
     try {
       if (isEdit) {
-        const r = await api.refreshMot(id);
+        await api.refreshMot(id);
         setBaseline((await api.getVehicle(id)).mot_baseline);
         toast('MOT data refreshed');
       } else {
