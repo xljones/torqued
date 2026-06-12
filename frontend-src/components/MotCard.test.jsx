@@ -22,6 +22,11 @@ const mot = {
   primary_colour: 'Blue',
   has_outstanding_recall: 'Unknown',
   fetched_at: '2026-06-11 12:00:00',
+  raw: {
+    registration: 'LR53UHD',
+    make: 'VOLKSWAGEN',
+    motTests: [{ completedDate: '2024.11.05 10:01:00', testResult: 'PASSED' }],
+  },
   tests: [
     {
       id: 11, completed_date: '2024-11-05T10:01:00.000Z', test_result: 'PASSED',
@@ -90,6 +95,44 @@ describe('MotCard', () => {
     expect(screen.getByText('Tyre worn close to limit')).toBeInTheDocument();
   });
 
+  it('colours the summary tiles by MOT expiry and recall status', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT expires')).toBeInTheDocument());
+
+    // Fixture expiry (2025-11-04) is in the past → danger (red)
+    expect(screen.getByText('MOT expires').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--danger');
+    // has_outstanding_recall: 'Unknown' → tile hidden entirely
+    expect(screen.queryByText('Outstanding recall')).not.toBeInTheDocument();
+  });
+
+  it('shows a green recall tile when there is no outstanding recall', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot: { ...mot, has_outstanding_recall: 'No' } });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('Outstanding recall')).toBeInTheDocument());
+    expect(screen.getByText('Outstanding recall').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--ok');
+  });
+
+  it('warns when the MOT expires within a month and flags an outstanding recall', async () => {
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 14);
+    const expiring = {
+      ...mot,
+      has_outstanding_recall: 'Yes',
+      tests: [{ ...mot.tests[0], expiry_date: soon.toISOString().slice(0, 10) }],
+    };
+    api.getMot.mockResolvedValue({ configured: true, mot: expiring });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT expires')).toBeInTheDocument());
+
+    expect(screen.getByText('MOT expires').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--warn');
+    expect(screen.getByText('Outstanding recall').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--danger');
+  });
+
   it('refreshes from the DVSA and reports synced readings', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     api.refreshMot.mockResolvedValue({ configured: true, mot });
@@ -101,6 +144,29 @@ describe('MotCard', () => {
       expect(api.refreshMot).toHaveBeenCalledWith(1);
       expect(onSynced).toHaveBeenCalled();
     });
+  });
+
+  it('browses the raw DVSA record as an expandable tree, with nested arrays collapsed', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('DVSA record')).toBeInTheDocument());
+
+    // Open the JSON panel (defaults to the Formatted tree)
+    await userEvent.click(screen.getByText('DVSA record'));
+
+    // Top-level keys are visible; nested array starts collapsed
+    expect(screen.getByText('motTests')).toBeInTheDocument();
+    expect(screen.getByText('1 item')).toBeInTheDocument();
+    expect(screen.queryByText('completedDate')).not.toBeInTheDocument();
+
+    // Expanding the array reveals its (still-collapsed) element object
+    await userEvent.click(screen.getByText('1 item'));
+    expect(screen.getByText('2 keys')).toBeInTheDocument();
+    expect(screen.queryByText('completedDate')).not.toBeInTheDocument();
+
+    // Expanding that element reveals the leaf values
+    await userEvent.click(screen.getByText('2 keys'));
+    expect(screen.getByText('completedDate')).toBeInTheDocument();
   });
 
   it('hides the refresh button for readonly members', async () => {

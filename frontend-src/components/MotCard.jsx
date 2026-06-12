@@ -18,6 +18,24 @@ function defectClass(type) {
   return 'mot-defect-minor';
 }
 
+function expiryTileClass(expiry) {
+  if (!expiry) return '';
+  const date = new Date(expiry);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const inAMonth = new Date(now);
+  inAMonth.setMonth(inAMonth.getMonth() + 1);
+  if (date < now) return 'pressure-tile--danger';     // out of date
+  if (date <= inAMonth) return 'pressure-tile--warn'; // ≤ 1 month to go
+  return 'pressure-tile--ok';                          // all good
+}
+
+function recallTileClass(value) {
+  return String(value).toLowerCase() === 'yes'
+    ? 'pressure-tile--danger'
+    : 'pressure-tile--ok'; // No / Unknown / Unavailable → green
+}
+
 function TestRow({ test, unit }) {
   const [open, setOpen] = useState(false);
   const passed = (test.test_result || '').toUpperCase() === 'PASSED';
@@ -57,21 +75,67 @@ function TestRow({ test, unit }) {
   );
 }
 
-function esc(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function JsonLeaf({ value }) {
+  if (value === null) return <span className="json-val json-val--null">null</span>;
+  if (typeof value === 'boolean') return <span className="json-val json-val--bool">{String(value)}</span>;
+  if (typeof value === 'number') return <span className="json-val json-val--num">{String(value)}</span>;
+  if (typeof value === 'string') return <span className="json-val json-val--str">{value === '' ? '—' : value}</span>;
+  return <span className="json-val">{String(value)}</span>;
 }
 
-function jsonHighlight(data) {
-  return esc(JSON.stringify(data, null, 2)).replace(
-    /("(?:\\.|[^"\\])*"(?=\s*:))|("(?:\\.|[^"\\])*")|(-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)|(true|false)|(null)/g,
-    (_, key, str, num, bool, nul) => {
-      if (key) return `<span class="jkey">${key}</span>`;
-      if (str) return `<span class="jstr">${str}</span>`;
-      if (num) return `<span class="jnum">${num}</span>`;
-      if (bool) return `<span class="jbool">${bool}</span>`;
-      if (nul) return `<span class="jnull">${nul}</span>`;
-      return _;
-    },
+function JsonNode({ name, value, depth }) {
+  const [open, setOpen] = useState(depth === 0);
+  const isBranch = value !== null && typeof value === 'object';
+
+  if (!isBranch) {
+    return (
+      <div className="json-row json-row--leaf">
+        <span className="json-caret" aria-hidden="true" />
+        {name != null && <span className="json-key">{name}</span>}
+        <JsonLeaf value={value} />
+      </div>
+    );
+  }
+
+  const isArray = Array.isArray(value);
+  const entries = isArray ? value.map((v, i) => [i, v]) : Object.entries(value);
+  const noun = isArray ? 'item' : 'key';
+  const summary = `${entries.length} ${noun}${entries.length === 1 ? '' : 's'}`;
+  const toggle = () => setOpen(v => !v);
+
+  return (
+    <div className="json-node">
+      <div
+        className="json-row json-row--branch"
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle())}
+      >
+        <span className={`json-caret${open ? ' json-caret--open' : ''}`} aria-hidden="true">▶</span>
+        {name != null && <span className="json-key">{name}</span>}
+        <span className={`json-summary json-summary--${isArray ? 'array' : 'object'}`}>{summary}</span>
+      </div>
+      {open && (
+        <div className="json-children">
+          {entries.map(([k, v]) => (
+            <JsonNode key={k} name={k} value={v} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JsonTree({ data }) {
+  const isContainer = data !== null && typeof data === 'object';
+  const entries = Array.isArray(data) ? data.map((v, i) => [i, v]) : Object.entries(data ?? {});
+  return (
+    <div className="json-tree mt-2">
+      {isContainer
+        ? entries.map(([k, v]) => <JsonNode key={k} name={k} value={v} depth={1} />)
+        : <JsonNode name={null} value={data} depth={1} />}
+    </div>
   );
 }
 
@@ -136,15 +200,17 @@ export default function MotCard({ vehicle, ro, onSynced }) {
         <>
           <div className="mot-summary">
             {expiry && (
-              <div className="pressure-tile">
+              <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
                 <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
                 <div className="pressure-value">{expiry}</div>
               </div>
             )}
-            <div className="pressure-tile">
-              <div className="pressure-label">Outstanding recall</div>
-              <div className="pressure-value">{mot.has_outstanding_recall ?? 'Unknown'}</div>
-            </div>
+            {String(mot.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown' && (
+              <div className={`pressure-tile ${recallTileClass(mot.has_outstanding_recall)}`}>
+                <div className="pressure-label">Outstanding recall</div>
+                <div className="pressure-value">{mot.has_outstanding_recall}</div>
+              </div>
+            )}
             <div
               className={`pressure-tile dvsa-record-tile${showJson ? ' dvsa-record-tile--open' : ''}`}
               role="button"
@@ -178,8 +244,8 @@ export default function MotCard({ vehicle, ro, onSynced }) {
                 >Raw</button>
               </div>
               {jsonFmt === 'formatted'
-                ? <pre className="dvsa-raw-json mt-2" dangerouslySetInnerHTML={{ __html: jsonHighlight(mot.raw) }} />
-                : <pre className="dvsa-raw-json mt-2">{JSON.stringify(mot.raw)}</pre>
+                ? <JsonTree data={mot.raw} />
+                : <pre className="dvsa-raw-json mt-2">{JSON.stringify(mot.raw, null, 2)}</pre>
               }
             </div>
           )}
