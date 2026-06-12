@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Vehicle history **PDF export**: a rich, printable report covering details, tyres,
+  specs, reminders, mileage (with chart), full service history (incl. fault codes),
+  and MOT history. Photos are opt-in via an "Include photos" toggle in the vehicle's
+  Export dropdown (`GET /api/export/vehicles/<id>/pdf?include_photos=1`).
+
 ## [2.0.0] — 2026-06-11
 
 ### Changed

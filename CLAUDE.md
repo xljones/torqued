@@ -48,7 +48,8 @@ torqued/
   repositories/      GarageRepository, VehicleRepository, ServiceLogRepository,
                      OdometerLogRepository, PhotoRepository, UserRepository — own all SQL
   routes/            Flask Blueprints: admin, auth, garages, vehicles, services, odometer,
-                     mot, photos, codes, export (services CSV/TSV/JSON), search, users
+                     mot, photos, codes, export (services CSV/TSV/JSON, vehicle PDF report),
+                     search, users
 ```
 
 - **Adding a schema change:** drop a new `NNN_description.sql` in `migrations/`. It runs automatically on next startup and is recorded in `schema_migrations`.
