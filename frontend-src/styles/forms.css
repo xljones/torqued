@@ -31,6 +31,7 @@ select { cursor: pointer; }
 .form-actions { display: flex; gap: 8px; margin-top: 8px; }
 .inline-form { display: flex; gap: 8px; align-items: stretch; }
 .inline-form-sm { display: flex; gap: 6px; align-items: stretch; }
+.inline-form-unit { display: inline-flex; align-items: center; color: var(--text2); font-size: 13px; }
 .barcode-input { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; box-sizing: border-box; background: var(--surface); color: var(--text); }
 .barcode-input:focus { outline: none; border-color: var(--accent); }
 .input-sm { flex: 1; padding: 4px 8px; font-size: 12px; line-height: 1; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); box-sizing: border-box; }
@@ -48,6 +49,7 @@ select { cursor: pointer; }
 .form-hint.accent { color: var(--accent); }
 .form-hint.muted { color: var(--text2); }
 .form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+.form-warning { color: #8a6d0a; font-size: 13px; }
 .combo-wrap { position: relative; }
 .combo-dropdown {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 100;

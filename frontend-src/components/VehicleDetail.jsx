@@ -11,7 +11,7 @@ import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
-import { fmtCost, fmtDistance, fmtDistanceBoth, fmtPressure } from '../units.js';
+import { fmtCost, fmtDistance, fmtDistanceBoth, fmtPressure, toKm } from '../units.js';
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
 
@@ -52,6 +52,28 @@ function MileageCard({ vehicle, ro, onLogged }) {
     onLogged?.();
   }
 
+  // An odometer can't go backwards: the new reading must sit between the highest reading
+  // recorded on or before its date and the lowest reading recorded on or after it.
+  const enteredKm = form.odometer === '' ? null : toKm(Number(form.odometer), form.unit);
+  let priorPeak = null; // highest reading dated on/before the entered date
+  let laterFloor = null; // lowest reading dated on/after the entered date
+  if (series && Number.isFinite(enteredKm)) {
+    for (const p of series) {
+      if (p.date <= form.date && (priorPeak === null || p.odometer_km > priorPeak.odometer_km)) {
+        priorPeak = p;
+      }
+      if (p.date >= form.date && (laterFloor === null || p.odometer_km < laterFloor.odometer_km)) {
+        laterFloor = p;
+      }
+    }
+  }
+  let readingWarning = null;
+  if (priorPeak && enteredKm < priorPeak.odometer_km) {
+    readingWarning = { peer: priorPeak, dir: 'lower' };
+  } else if (laterFloor && enteredKm > laterFloor.odometer_km) {
+    readingWarning = { peer: laterFloor, dir: 'higher' };
+  }
+
   return (
     <div className="card card-body mb-6">
       <div className="section-header">
@@ -67,7 +89,7 @@ function MileageCard({ vehicle, ro, onLogged }) {
           <div className="odo-current">{fmtDistance(vehicle.latest_odometer.odometer_km, vehicle.odometer_unit)}</div>
           <div className="odo-current-alt">
             {fmtDistance(vehicle.latest_odometer.odometer_km, vehicle.odometer_unit === 'mi' ? 'km' : 'mi')}
-            {' · '}last logged {vehicle.latest_odometer.date}
+            {' · '}last logged <RelativeTime value={vehicle.latest_odometer.date} />
           </div>
         </>
       ) : (
@@ -85,13 +107,17 @@ function MileageCard({ vehicle, ro, onLogged }) {
             required
             style={{ width: 110 }}
           />
-          <select value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}>
-            <option value="mi">mi</option>
-            <option value="km">km</option>
-          </select>
+          <span className="inline-form-unit">{vehicle.odometer_unit}</span>
           <input placeholder="Note (optional)" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
           <button className="btn btn-primary btn-sm">Log</button>
         </form>
+      )}
+      {!ro && readingWarning && (
+        <p className="form-warning mt-2">
+          ⚠ This is {readingWarning.dir} than the
+          {' '}{fmtDistance(readingWarning.peer.odometer_km, vehicle.odometer_unit)} reading
+          {' '}on {readingWarning.peer.date} — odometers don&rsquo;t usually go backwards. Double-check the value.
+        </p>
       )}
 
       {showLogs && series && (
