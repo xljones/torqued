@@ -31,6 +31,16 @@ function renderCreate() {
   );
 }
 
+function renderEdit() {
+  return render(
+    <MemoryRouter initialEntries={['/vehicles/7/edit']}>
+      <Routes>
+        <Route path="/vehicles/:id/edit" element={<VehicleForm mode={FormMode.EDIT} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 beforeEach(() => vi.clearAllMocks());
 
 describe('VehicleForm DVSA lookup', () => {
@@ -66,5 +76,41 @@ describe('VehicleForm DVSA lookup', () => {
     // Identity fields now hint the DVSA value; leaving them blank uses the baseline
     expect(screen.getByPlaceholderText('DVSA: VOLKSWAGEN')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('DVSA: 1896')).toBeInTheDocument();
+  });
+
+  it('splits each identity field into an editable input and a fixed DVSA value when editing', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue({
+      name: 'Daily', kind: 'car', odometer_unit: 'mi',
+      // No identity overrides set — everything should fall back to the DVSA baseline.
+      mot_baseline: {
+        make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003,
+        colour: 'Blue', fuel_type: 'Diesel', engine_size: '1896',
+        first_used_date: '2003-06-01', registration_date: '2003-05-20',
+      },
+    });
+    const { container } = renderEdit();
+    // The right-hand third shows the fixed DVSA value alongside the editable input.
+    await waitFor(() => expect(screen.getByText('VOLKSWAGEN')).toBeInTheDocument());
+    expect(screen.getByText('2003-06-01')).toBeInTheDocument();
+    expect(screen.getByText('Diesel')).toBeInTheDocument();
+    // One "DVSA" label per populated baseline field (8 grid fields here).
+    expect(screen.getAllByText('DVSA')).toHaveLength(8);
+    // No overrides set, so every split marks the DVSA fallback as the active value.
+    expect(container.querySelectorAll('.dvsa-split.is-dvsa')).toHaveLength(8);
+    expect(container.querySelectorAll('.dvsa-split.is-override')).toHaveLength(0);
+  });
+
+  it('moves the active (green) marker to the input once the user overrides a DVSA value', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue({
+      name: 'Daily', kind: 'car', odometer_unit: 'mi',
+      mot_baseline: { make: 'VOLKSWAGEN' },
+    });
+    const { container } = renderEdit();
+    await waitFor(() => expect(container.querySelector('.dvsa-split')).toHaveClass('is-dvsa'));
+    // Typing a custom make makes the override the active value.
+    await userEvent.type(screen.getByPlaceholderText('e.g. Honda'), 'Lotus');
+    expect(container.querySelector('.dvsa-split')).toHaveClass('is-override');
   });
 });

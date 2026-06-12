@@ -67,6 +67,25 @@ export default function VehicleForm({ mode }) {
     if (!isEdit && baseline?.[key] != null) return `DVSA: ${baseline[key]}`;
     return KIND_HINTS[form.kind]?.[key] ?? '';
   };
+  // In edit mode, split an identity field into a two-thirds editable override (left) and a
+  // one-third fixed DVSA value (right), loaded from the vehicle's stored mot_baseline
+  // (GET /api/vehicles/<id>). With no baseline value the input keeps the full width.
+  const dvsaSplit = (key, input) => {
+    const val = isEdit ? baseline?.[key] : null;
+    if (val == null || val === '') return input;
+    // A green border marks the value that will actually be used: the user's override when set,
+    // otherwise the DVSA baseline it falls back to.
+    const overridden = form[key] != null && String(form[key]).trim() !== '';
+    return (
+      <div className={`dvsa-split ${overridden ? 'is-override' : 'is-dvsa'}`}>
+        {input}
+        <div className="dvsa-fixed" title="From the DVSA MOT record">
+          <span className="dvsa-fixed-label">DVSA</span>
+          <span className="dvsa-fixed-value">{val}</span>
+        </div>
+      </div>
+    );
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -200,19 +219,19 @@ export default function VehicleForm({ mode }) {
             </div>
             <div className="field">
               <label>Make</label>
-              <input value={form.make} onChange={e => set('make', e.target.value)} placeholder={hint('make')} />
+              {dvsaSplit('make', <input value={form.make} onChange={e => set('make', e.target.value)} placeholder={hint('make')} />)}
             </div>
             <div className="field">
               <label>Model</label>
-              <input value={form.model} onChange={e => set('model', e.target.value)} placeholder={hint('model')} />
+              {dvsaSplit('model', <input value={form.model} onChange={e => set('model', e.target.value)} placeholder={hint('model')} />)}
             </div>
             <div className="field">
               <label>Year</label>
-              <input type="number" value={form.year} onChange={e => set('year', e.target.value)} placeholder={hint('year')} />
+              {dvsaSplit('year', <input type="number" value={form.year} onChange={e => set('year', e.target.value)} placeholder={hint('year')} />)}
             </div>
             <div className="field">
               <label>Engine size</label>
-              <input value={form.engine_size} onChange={e => set('engine_size', e.target.value)} placeholder={hint('engine_size')} />
+              {dvsaSplit('engine_size', <input value={form.engine_size} onChange={e => set('engine_size', e.target.value)} placeholder={hint('engine_size')} />)}
             </div>
             <div className="field">
               <label>VIN</label>
@@ -220,19 +239,19 @@ export default function VehicleForm({ mode }) {
             </div>
             <div className="field">
               <label>Colour</label>
-              <input value={form.colour} onChange={e => set('colour', e.target.value)} placeholder={hint('colour')} />
+              {dvsaSplit('colour', <input value={form.colour} onChange={e => set('colour', e.target.value)} placeholder={hint('colour')} />)}
             </div>
             <div className="field">
               <label>Fuel type</label>
-              <input value={form.fuel_type} onChange={e => set('fuel_type', e.target.value)} placeholder={hint('fuel_type')} />
+              {dvsaSplit('fuel_type', <input value={form.fuel_type} onChange={e => set('fuel_type', e.target.value)} placeholder={hint('fuel_type')} />)}
             </div>
             <div className="field">
               <label>First used date</label>
-              <input type="date" value={form.first_used_date} onChange={e => set('first_used_date', e.target.value)} placeholder="" />
+              {dvsaSplit('first_used_date', <input type="date" value={form.first_used_date} onChange={e => set('first_used_date', e.target.value)} placeholder="" />)}
             </div>
             <div className="field">
               <label>First registered date</label>
-              <input type="date" value={form.registration_date} onChange={e => set('registration_date', e.target.value)} placeholder="" />
+              {dvsaSplit('registration_date', <input type="date" value={form.registration_date} onChange={e => set('registration_date', e.target.value)} placeholder="" />)}
             </div>
             <div className="field">
               <label>Odometer display unit</label>

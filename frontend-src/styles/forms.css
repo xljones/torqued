@@ -48,6 +48,25 @@ select { cursor: pointer; }
 .form-hint { margin: 6px 0 0; font-size: 12px; }
 .form-hint.accent { color: var(--accent); }
 .form-hint.muted { color: var(--text2); }
+/* Identity field split: two-thirds editable input + one-third fixed DVSA value. */
+.dvsa-split { display: flex; gap: 8px; align-items: stretch; }
+.dvsa-split > input { flex: 2; min-width: 0; }
+.dvsa-fixed {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface2);
+}
+.dvsa-fixed-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text2);
+}
+.dvsa-fixed-value {
+  font-size: 13px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Green border on whichever value wins: the override input, or the DVSA fallback. */
+.dvsa-split.is-override > input { border-color: #2e7d32; box-shadow: 0 0 0 1px #2e7d32; }
+.dvsa-split.is-dvsa .dvsa-fixed { border-color: #2e7d32; box-shadow: 0 0 0 1px #2e7d32; }
 .form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
 .form-warning { color: #8a6d0a; font-size: 13px; }
 .combo-wrap { position: relative; }

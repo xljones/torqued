@@ -26,6 +26,8 @@
 /* ── Registration lookup (vehicle form) ────────────────────────────────────── */
 .reg-lookup { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .reg-lookup-field { max-width: 260px; }
+/* Match the yellow plate input's height (18px line + 16px padding + 2px border). */
+.reg-lookup .btn { height: 36px; }
 /* Override the base input rule (its :not() chain out-specifies a single class). */
 .reg-plate-input {
   font-family: 'Charles Wright', 'Courier New', monospace !important; font-weight: bold;
