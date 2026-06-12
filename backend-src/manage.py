@@ -367,16 +367,18 @@ def cmd_reset_db(args: list[str]) -> None:
     if confirm.strip() != "YES":
         print("Aborted.")
         sys.exit(0)
-    from torqued.db import get_db
-    with get_db() as db:
-        tables = [
-            "photos", "service_log_history", "vehicle_history",
-            "odometer_logs", "service_logs", "vehicle_specs", "vehicles",
-            "garage_members", "garages", "schema_migrations", "users",
-        ]
-        for table in tables:
-            db.execute(f"DROP TABLE IF EXISTS {table}")
-    print("All tables dropped. Run seed to repopulate.")
+    import os
+
+    from torqued.db import _DEFAULT_DB_PATH, run_migrations
+
+    # Delete the database file outright rather than dropping tables one by one:
+    # a malformed image can't be read, and this also can't miss any tables.
+    db_path = os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
+    for suffix in ("", "-wal", "-shm"):
+        Path(db_path + suffix).unlink(missing_ok=True)
+
+    run_migrations()
+    print("Database reset. Run seed to repopulate.")
 
 
 COMMANDS: dict[str, Callable[[list[str]], None]] = {
