@@ -1,3 +1,20 @@
+/* Base look for every form control, matching .btn (7px pad, --radius, 13px). */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.2;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.1s;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+select { cursor: pointer; }
+
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .form-grid.full { grid-template-columns: 1fr; }
 .field { display: flex; flex-direction: column; gap: 4px; }
@@ -55,8 +72,8 @@
   .form-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   /* Prevent iOS Safari from auto-zooming on input focus (requires font-size >= 16px) */
-  .field input, .field textarea, .field select,
-  .barcode-input, .input-sm, .select-sm, .camera-select, .search-input {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select, textarea {
     font-size: 16px;
   }
 }

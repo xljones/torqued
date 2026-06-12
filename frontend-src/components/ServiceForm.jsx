@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import SuggestInput from './SuggestInput.jsx';
+import FaultCodeInput from './FaultCodeInput.jsx';
 import { FormMode, SERVICE_CATEGORIES } from '../constants.js';
 import { fromKm } from '../units.js';
 
@@ -10,6 +11,7 @@ const EMPTY = {
   date: new Date().toISOString().slice(0, 10),
   title: '', category: '', description: '', performed_by: '', cost: '',
   odometer: '', odometer_unit: 'mi', next_due_date: '', next_due_distance: '',
+  fault_codes: [],
 };
 
 export default function ServiceForm({ mode }) {
@@ -37,6 +39,7 @@ export default function ServiceForm({ mode }) {
           odometer_unit: unit,
           next_due_date: s.next_due_date ?? '',
           next_due_distance: s.next_due_km != null ? +fromKm(s.next_due_km, unit).toFixed(0) : '',
+          fault_codes: (s.fault_codes || []).map(fc => fc.code),
         });
         api.getVehicle(s.vehicle_id).then(setVehicle);
       });
@@ -129,6 +132,11 @@ export default function ServiceForm({ mode }) {
             <div className="field span-2">
               <label>What was done</label>
               <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Parts used, torque values, anything future-you will want to know…" />
+            </div>
+            <div className="field span-2">
+              <label>Fault codes observed</label>
+              <FaultCodeInput codes={form.fault_codes} onChange={v => set('fault_codes', v)} />
+              <p className="form-hint muted">Type a code (e.g. P0016) or search by keyword. Press Enter to add.</p>
             </div>
             <div className="field">
               <label>Next due (date)</label>

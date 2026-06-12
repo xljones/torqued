@@ -1,15 +1,12 @@
 import { useRef, useState } from 'react';
 import { api } from '../api.js';
-import { useAuth } from '../AuthContext.jsx';
 import { useToast } from './Toast.jsx';
 
 /**
  * Photo grid with upload, lightbox, caption editing, and delete.
- * Pass serviceLogId to scope uploads to a service log.
+ * Pass serviceLogId to scope uploads to a service log; ro disables editing.
  */
-export default function PhotoGallery({ photos, vehicleId, serviceLogId, onChange }) {
-  const { user } = useAuth();
-  const ro = user?.is_readonly;
+export default function PhotoGallery({ photos, vehicleId, serviceLogId, ro, onChange }) {
   const toast = useToast();
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);

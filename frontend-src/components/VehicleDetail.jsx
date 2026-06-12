@@ -6,34 +6,18 @@ import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import ExportDropdown from './ExportDropdown.jsx';
 import PhotoGallery from './PhotoGallery.jsx';
+import MotCard from './MotCard.jsx';
+import MileageChart from './MileageChart.jsx';
+import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
 import { fmtCost, fmtDistance, fmtDistanceBoth, fmtPressure } from '../units.js';
 
-function Sparkline({ series, unit }) {
-  if (!series || series.length < 2) return null;
-  const xs = series.map(p => new Date(p.date).getTime());
-  const ys = series.map(p => p.odometer_km);
-  const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
-  const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
-  const W = 600, H = 60, PAD = 4;
-  const px = x => x1 === x0 ? W / 2 : PAD + ((x - x0) / (x1 - x0)) * (W - 2 * PAD);
-  const py = y => y1 === y0 ? H / 2 : H - PAD - ((y - y0) / (y1 - y0)) * (H - 2 * PAD);
-  const points = series.map(p => `${px(new Date(p.date).getTime()).toFixed(1)},${py(p.odometer_km).toFixed(1)}`).join(' ');
-  return (
-    <svg className="sparkline" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
-      aria-label={`Mileage from ${fmtDistance(y0, unit)} to ${fmtDistance(y1, unit)}`}>
-      <polyline points={points} />
-    </svg>
-  );
-}
+const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
 
-function MileageCard({ vehicle, onLogged }) {
-  const { user } = useAuth();
-  const ro = user?.is_readonly;
+function MileageCard({ vehicle, ro, onLogged }) {
   const toast = useToast();
   const [series, setSeries] = useState(null);
-  const [logs, setLogs] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -44,7 +28,6 @@ function MileageCard({ vehicle, onLogged }) {
 
   const refresh = useCallback(() => {
     api.getMileage(vehicle.id).then(setSeries);
-    api.getOdometerLogs(vehicle.id).then(setLogs);
   }, [vehicle.id]);
   useEffect(refresh, [refresh]);
 
@@ -73,9 +56,9 @@ function MileageCard({ vehicle, onLogged }) {
     <div className="card card-body mb-6">
       <div className="section-header">
         <h2 className="section-title">Mileage</h2>
-        {logs?.length > 0 && (
+        {series?.length > 0 && (
           <button className="btn btn-secondary btn-sm" onClick={() => setShowLogs(v => !v)}>
-            {showLogs ? 'Hide entries' : `Entries (${logs.length})`}
+            {showLogs ? 'Hide entries' : `Entries (${series.length})`}
           </button>
         )}
       </div>
@@ -90,7 +73,7 @@ function MileageCard({ vehicle, onLogged }) {
       ) : (
         <p className="text-muted text-sm">No readings yet — log one below.</p>
       )}
-      <Sparkline series={series} unit={vehicle.odometer_unit} />
+      <MileageChart series={series} unit={vehicle.odometer_unit} />
 
       {!ro && (
         <form onSubmit={handleAdd} className="inline-form-sm mt-3" style={{ flexWrap: 'wrap' }}>
@@ -111,18 +94,21 @@ function MileageCard({ vehicle, onLogged }) {
         </form>
       )}
 
-      {showLogs && logs && (
+      {showLogs && series && (
         <div className="table-wrap mt-3">
           <table>
-            <thead><tr><th>Date</th><th>Reading</th><th>Note</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Reading</th><th>Source</th><th>Note</th><th></th></tr></thead>
             <tbody>
-              {logs.map(l => (
-                <tr key={l.id}>
+              {[...series].reverse().map(l => (
+                <tr key={`${l.source}-${l.id}`}>
                   <td>{l.date}</td>
                   <td>{fmtDistanceBoth(l.odometer_km, l.unit)}</td>
+                  <td><span className={`badge badge-source-${l.source}`}>{SOURCE_LABEL[l.source] ?? l.source}</span></td>
                   <td>{l.note || '—'}</td>
                   <td className="col-shrink">
-                    {!ro && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(l.id)}>Delete</button>}
+                    {!ro && l.source === 'manual' && (
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(l.id)}>Delete</button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -134,9 +120,7 @@ function MileageCard({ vehicle, onLogged }) {
   );
 }
 
-function SpecsCard({ vehicle, onSaved }) {
-  const { user } = useAuth();
-  const ro = user?.is_readonly;
+function SpecsCard({ vehicle, ro, onSaved }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState([]);
@@ -201,8 +185,7 @@ function SpecsCard({ vehicle, onSaved }) {
 }
 
 export default function VehicleDetail() {
-  const { user } = useAuth();
-  const ro = user?.is_readonly;
+  const { roleFor } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -235,14 +218,16 @@ export default function VehicleDetail() {
 
   if (!vehicle) return <SkeletonPage />;
 
+  const ro = roleFor(vehicle.garage_id) === 'readonly';
   const unit = vehicle.odometer_unit;
   const dueReminders = vehicle.reminders.filter(r => r.status !== 'upcoming');
+  const fieldProps = { vehicle, baseline: vehicle.mot_baseline, ro };
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <div className="back-link"><Link to="/vehicles">← Garage</Link></div>
+          <div className="back-link"><Link to="/vehicles">← Vehicles</Link></div>
           <h1 className="page-title">
             {vehicle.name}{' '}
             <span className={`badge badge-${vehicle.kind}`}>{KIND_LABELS[vehicle.kind]}</span>
@@ -284,12 +269,18 @@ export default function VehicleDetail() {
 
       <div className="card card-body mb-6">
         <div className="form-grid">
-          <div className="field"><label>Make / model</label><span>{[vehicle.make, vehicle.model].filter(Boolean).join(' ') || '—'}</span></div>
-          <div className="field"><label>Year</label><span>{vehicle.year ?? '—'}</span></div>
-          <div className="field"><label>Registration</label><span>{vehicle.registration ? <span className="reg-plate">{vehicle.registration}</span> : '—'}</span></div>
+          <MotField label="Make" fieldKey="make" {...fieldProps} />
+          <MotField label="Model" fieldKey="model" {...fieldProps} />
+          <MotField label="Year" fieldKey="year" {...fieldProps} />
+          <MotField label="Registration" fieldKey="registration" {...fieldProps}
+            render={v => <span className="reg-plate">{v}</span>} />
+          <MotField label="Engine size" fieldKey="engine_size" {...fieldProps}
+            render={v => (/^\d+$/.test(String(v)) ? `${v} cc` : v)} />
+          <MotField label="Colour" fieldKey="colour" {...fieldProps} />
+          <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} />
+          <MotField label="First used" fieldKey="first_used_date" {...fieldProps} />
+          <MotField label="First registered" fieldKey="registration_date" {...fieldProps} />
           <div className="field"><label>VIN</label><span>{vehicle.vin || '—'}</span></div>
-          <div className="field"><label>Colour</label><span>{vehicle.colour || '—'}</span></div>
-          <div className="field"><label>Fuel</label><span>{vehicle.fuel_type || '—'}</span></div>
           <div className="field"><label>Purchased</label><span>{vehicle.purchase_date || '—'}</span></div>
           <div className="field"><label>Updated</label><span><RelativeTime value={vehicle.updated_at} /></span></div>
           {vehicle.notes && <div className="field span-2"><label>Notes</label><span>{vehicle.notes}</span></div>}
@@ -317,8 +308,9 @@ export default function VehicleDetail() {
         </div>
       )}
 
-      <SpecsCard vehicle={vehicle} onSaved={refresh} />
-      <MileageCard vehicle={vehicle} onLogged={refresh} />
+      <SpecsCard vehicle={vehicle} ro={ro} onSaved={refresh} />
+      <MileageCard vehicle={vehicle} ro={ro} onLogged={refresh} />
+      <MotCard vehicle={vehicle} ro={ro} onSynced={refresh} />
 
       <div className="section-header">
         <h2 className="section-title">Service history ({services?.length ?? 0})</h2>
@@ -346,7 +338,7 @@ export default function VehicleDetail() {
       </div>
 
       <div className="mb-6">
-        <PhotoGallery photos={vehicle.photos} vehicleId={vehicle.id} onChange={refresh} />
+        <PhotoGallery photos={vehicle.photos} vehicleId={vehicle.id} ro={ro} onChange={refresh} />
       </div>
 
       <div className="mt-4">

@@ -9,8 +9,7 @@ import { SkeletonPage } from './Skeleton.jsx';
 import { fmtCost, fmtDistance, fmtDistanceBoth } from '../units.js';
 
 export default function ServiceDetail() {
-  const { user } = useAuth();
-  const ro = user?.is_readonly;
+  const { roleFor } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -40,6 +39,7 @@ export default function ServiceDetail() {
 
   if (!log) return <SkeletonPage />;
 
+  const ro = roleFor(log.garage_id) === 'readonly';
   const unit = log.odometer_unit || log.vehicle_odometer_unit || 'mi';
 
   return (
@@ -83,8 +83,23 @@ export default function ServiceDetail() {
         </div>
       </div>
 
+      {log.fault_codes?.length > 0 && (
+        <div className="card card-body mb-6">
+          <h3 className="card-title mb-3">Fault codes</h3>
+          <div className="fault-code-detail">
+            {log.fault_codes.map(fc => (
+              <div key={fc.code} className="fault-code-detail-row">
+                <span className="dtc-code dtc-code-sm">{fc.code}</span>
+                <span>{fc.description ?? 'No description — check vehicle service manual'}</span>
+                {fc.system && <span className="fault-code-system">{fc.system}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
-        <PhotoGallery photos={log.photos} vehicleId={log.vehicle_id} serviceLogId={log.id} onChange={refresh} />
+        <PhotoGallery photos={log.photos} vehicleId={log.vehicle_id} serviceLogId={log.id} ro={ro} onChange={refresh} />
       </div>
 
       <div className="mt-4">
