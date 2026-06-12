@@ -175,7 +175,15 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   return (
     <div className="card card-body mb-6">
       <div className="section-header">
-        <h2 className="section-title">MOT history</h2>
+        <div className="mot-header-left">
+          <h2 className="section-title">MOT history</h2>
+          {mot && (
+            <span className="mot-reauth text-muted text-sm">
+              <span className="mot-reauth-dot" aria-hidden="true">•</span>
+              {' '}refreshed <RelativeTime value={mot.fetched_at} />
+            </span>
+          )}
+        </div>
         {!ro && data.configured && (
           <button className="btn btn-secondary btn-sm" onClick={handleRefresh} disabled={busy}>
             {busy ? 'Refreshing…' : mot ? 'Refresh from DVSA' : 'Fetch from DVSA'}
@@ -260,10 +268,6 @@ export default function MotCard({ vehicle, ro, onSynced }) {
               )}
             </div>
           )}
-
-          <p className="text-muted text-sm mt-2">
-            Source: DVSA MOT history · refreshed <RelativeTime value={mot.fetched_at} />
-          </p>
         </>
       )}
     </div>

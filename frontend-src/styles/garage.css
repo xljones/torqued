@@ -204,6 +204,8 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .badge-source-manual { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
 .badge-source-mot    { background: #ddeeff; color: #1a4a80; }
 .badge-source-service { background: #fdf3d7; color: #7a5a0a; }
+.mot-header-left { display: flex; align-items: baseline; gap: 8px; }
+.mot-reauth-dot { color: var(--text2); }
 .mot-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .mot-test { border-bottom: 1px solid var(--border); padding: 8px 0; }
 .mot-test:last-child { border-bottom: none; }
