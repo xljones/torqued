@@ -30,7 +30,7 @@
 .reg-plate-input {
   font-family: 'Charles Wright', 'Courier New', monospace !important; font-weight: bold;
   text-transform: uppercase; letter-spacing: 1.5px; font-size: 18px !important;
-  line-height: 1 !important;
+  line-height: 1 !important; padding: 10px 10px 6px !important;
   text-align: center; color: #000 !important;
   background: #fdd835 !important; border: 1px solid #c6a700 !important;
 }
@@ -77,7 +77,7 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .reg-plate {
   font-family: 'Charles Wright', 'Courier New', monospace; font-size: 12px; font-weight: bold;
   background: #fdd835; border: 1px solid #c6a700; color: #000;
-  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  padding: 4px 6px 2px; border-radius: 4px; white-space: nowrap;
 }
 
 /* ── Tyre pressures ────────────────────────────────────────────────────────── */
