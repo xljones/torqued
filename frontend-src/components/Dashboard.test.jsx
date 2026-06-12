@@ -1,7 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
+
+function LocationDisplay() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}</div>;
+}
 
 vi.mock('../AuthContext.jsx', () => ({
   useAuth: () => ({
@@ -76,6 +82,25 @@ describe('Dashboard', () => {
     await waitFor(() => {
       expect(screen.getAllByText('100 mi').length).toBeGreaterThan(0);
     });
+  });
+
+  it('shows a road-tax reminder and deep-links to the vehicle, not a service', async () => {
+    const { api } = await import('../api.js');
+    // Permanent (not …Once): the shared useAuth mock hands back a fresh
+    // currentGarage each render, so Dashboard's effect refetches reminders.
+    api.getReminders.mockResolvedValue([{
+      id: 'tax-1', source: 'tax', vehicle_id: 1, vehicle_name: 'Street Triple',
+      title: 'Road tax', category: null, date: '2026-06-12', status: 'due_soon',
+      next_due_date: '2099-12-31', next_due_km: null, km_remaining: null,
+      vehicle_odometer_unit: 'mi',
+    }]);
+    render(<MemoryRouter><Dashboard /><LocationDisplay /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText('Street Triple — Road tax')).toBeInTheDocument());
+    expect(screen.getByText(/Road tax.*due 2099-12-31/)).toBeInTheDocument();
+
+    // source === 'tax' deep-links to the vehicle, not /services/<id>
+    await userEvent.click(screen.getByText('Street Triple — Road tax'));
+    expect(screen.getByTestId('location')).toHaveTextContent('/vehicles/1');
   });
 
   it('falls back to mot_baseline for make/model/year when vehicle columns are null', async () => {
