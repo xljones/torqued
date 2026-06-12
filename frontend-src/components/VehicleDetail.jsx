@@ -193,6 +193,7 @@ export default function VehicleDetail() {
   const [services, setServices] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState(null);
+  const [inclPhotos, setInclPhotos] = useState(false);
 
   const refresh = useCallback(() => {
     api.getVehicle(id).then(setVehicle);
@@ -236,11 +237,14 @@ export default function VehicleDetail() {
         </div>
         <div className="btn-group">
           <ExportDropdown
-            label="Export services"
+            label="Export"
             options={[
               { label: 'Comma separated values (.csv)', onClick: () => { window.location.href = `/api/export/services?vehicle_id=${id}`; } },
               { label: 'Tab separated values (.tsv)', onClick: () => { window.location.href = `/api/export/services?vehicle_id=${id}&format=tsv`; } },
               { label: 'JSON (.json)', onClick: () => { window.location.href = `/api/export/services?vehicle_id=${id}&format=json`; } },
+              { divider: true },
+              { type: 'checkbox', label: 'Include photos', checked: inclPhotos, onChange: e => setInclPhotos(e.target.checked) },
+              { label: 'Vehicle report (.pdf)', note: 'Full history', onClick: () => { window.location.href = `/api/export/vehicles/${id}/pdf${inclPhotos ? '?include_photos=1' : ''}`; } },
             ]}
           />
           {!ro && <Link to={`/vehicles/${id}/edit`} className="btn btn-secondary">Edit</Link>}
