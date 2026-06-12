@@ -10,7 +10,11 @@ export default function CodeLookup() {
 
   useEffect(() => {
     const q = query.trim();
-    if (!q) { setResult(null); setMatches(null); return; }
+    if (!q) {
+      setResult(null);
+      api.listCodes().then(setMatches).catch(() => setMatches(null));
+      return;
+    }
     const timer = setTimeout(() => {
       if (CODE_RE.test(q)) {
         api.lookupCode(q).then(r => { setResult(r); setMatches(null); }).catch(() => setResult(null));

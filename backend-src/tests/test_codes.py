@@ -66,8 +66,26 @@ def test_search_caps_results(auth_client: FlaskClient) -> None:
     assert len(r.json) == 25
 
 
-def test_search_empty_query(auth_client: FlaskClient) -> None:
-    assert auth_client.get("/api/codes").json == []
+def test_empty_query_lists_all_codes(auth_client: FlaskClient) -> None:
+    """No query (the pre-search browse state) returns the full code list, not []."""
+    r = auth_client.get("/api/codes")
+    assert r.status_code == 200
+    assert len(r.json) == len(dtc._codes())
+    assert any(m["code"] == "P0016" for m in r.json)
+
+
+def test_blank_query_lists_all_codes(auth_client: FlaskClient) -> None:
+    assert len(auth_client.get("/api/codes?q=%20").json) == len(dtc._codes())
+
+
+def test_search_with_empty_query_returns_empty() -> None:
+    assert dtc.search("  ") == []
+
+
+def test_list_all_returns_every_code() -> None:
+    rows = dtc.list_all()
+    assert len(rows) == len(dtc._codes())
+    assert {"code": "P0300", "description": "Random/Multiple Cylinder Misfire Detected"} in rows
 
 
 def test_lookup_requires_auth(client: FlaskClient) -> None:

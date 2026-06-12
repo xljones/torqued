@@ -15,10 +15,22 @@ vi.mock('../api.js', () => ({
     searchCodes: vi.fn().mockResolvedValue([
       { code: 'P0300', description: 'Random/Multiple Cylinder Misfire Detected' },
     ]),
+    listCodes: vi.fn().mockResolvedValue([
+      { code: 'P0001', description: 'Fuel Volume Regulator Control Circuit/Open' },
+      { code: 'P0002', description: 'Fuel Volume Regulator Control Circuit Range/Performance' },
+    ]),
   },
 }));
 
 describe('CodeLookup', () => {
+  it('shows the full code list before searching', async () => {
+    render(<CodeLookup />);
+    await waitFor(() => {
+      expect(screen.getByText('Fuel Volume Regulator Control Circuit/Open')).toBeInTheDocument();
+      expect(screen.getByText('P0002')).toBeInTheDocument();
+    });
+  });
+
   it('looks up a full code and shows its description', async () => {
     render(<CodeLookup />);
     await userEvent.type(screen.getByPlaceholderText(/P0016/), 'P0016');

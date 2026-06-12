@@ -19,4 +19,7 @@ def lookup_code(raw_code: str) -> ResponseReturnValue:
 @bp.get("/api/codes")
 @login_required
 def search_codes() -> Response:
-    return jsonify(dtc.search(request.args.get("q", "")))
+    q = request.args.get("q", "")
+    if not q.strip():
+        return jsonify(dtc.list_all())
+    return jsonify(dtc.search(q))

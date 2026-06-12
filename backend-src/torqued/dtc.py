@@ -80,6 +80,11 @@ def lookup(raw: str) -> dict[str, Any] | None:
     }
 
 
+def list_all() -> list[dict[str, str]]:
+    """Return every known code as {code, description}, in dataset order."""
+    return [{"code": code, "description": description} for code, description in _codes().items()]
+
+
 def search(query: str, limit: int = 25) -> list[dict[str, str]]:
     """Return codes whose code or description contains the query, capped at limit."""
     q = query.strip().lower()

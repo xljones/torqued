@@ -114,6 +114,7 @@ export const api = {
   // Fault codes
   lookupCode:  (code) => req('GET', `/codes/${encodeURIComponent(code)}`),
   searchCodes: (q)    => req('GET', `/codes?q=${encodeURIComponent(q)}`),
+  listCodes:   ()     => req('GET', '/codes'),
 
   // Utilities
   search:  (q) => req('GET', `/search?q=${encodeURIComponent(q)}`),
