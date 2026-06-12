@@ -12,6 +12,7 @@ def test_login_success(client: FlaskClient, app: Flask) -> None:
     r = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
     assert r.status_code == 200
     assert r.json["username"] == "alice"
+    assert r.json["memberships"] == []
 
 
 def test_login_wrong_password(client: FlaskClient, app: Flask) -> None:
@@ -47,6 +48,9 @@ def test_me_authenticated(auth_client: FlaskClient) -> None:
     r = auth_client.get("/api/auth/me")
     assert r.status_code == 200
     assert r.json["username"] == "testuser"
+    assert r.json["memberships"] == [
+        {"garage_id": 1, "garage_name": "Test Garage", "role": "member"}
+    ]
 
 
 def test_logout(auth_client: FlaskClient) -> None:

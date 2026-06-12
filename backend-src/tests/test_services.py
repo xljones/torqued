@@ -80,6 +80,19 @@ def test_list_all_and_per_vehicle(auth_client: FlaskClient) -> None:
     assert [s["title"] for s in per] == ["Chain adjust"]
 
 
+def test_list_garage_filter(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    mk_service(auth_client, v["id"])
+    listed = auth_client.get(f"/api/services?garage_id={v['garage_id']}").json
+    assert len(listed) == 1
+    assert auth_client.get("/api/services?garage_id=999").status_code == 404
+    assert auth_client.get("/api/services?garage_id=abc").status_code == 400
+
+
+def test_history_404(auth_client: FlaskClient) -> None:
+    assert auth_client.get("/api/services/999/history").status_code == 404
+
+
 def test_list_per_vehicle_404(auth_client: FlaskClient) -> None:
     assert auth_client.get("/api/vehicles/999/services").status_code == 404
 
@@ -249,3 +262,78 @@ def test_reminders_sorted_most_urgent_first(auth_client: FlaskClient) -> None:
     mk_service(auth_client, v["id"], category="Service", next_due_date="2020-01-01")
     statuses = [r["status"] for r in _vehicle_reminders(auth_client, v["id"])]
     assert statuses == ["overdue", "upcoming"]
+
+
+# ── fault codes ──────────────────────────────────────────────────────────────
+
+def test_create_with_fault_codes(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_service(auth_client, v["id"], fault_codes=["P0016", "U0100"])
+    assert len(s["fault_codes"]) == 2
+    assert s["fault_codes"][0]["code"] == "P0016"
+    assert "description" in s["fault_codes"][0]
+    assert s["fault_codes"][1]["code"] == "U0100"
+
+
+def test_fault_codes_on_get(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_service(auth_client, v["id"], fault_codes=["P0300"])
+    detail = auth_client.get(f"/api/services/{s['id']}").json
+    assert len(detail["fault_codes"]) == 1
+    assert detail["fault_codes"][0]["code"] == "P0300"
+    assert "system" in detail["fault_codes"][0]
+
+
+def test_fault_codes_on_list(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    mk_service(auth_client, v["id"], fault_codes=["P0016"])
+    services = auth_client.get(f"/api/vehicles/{v['id']}/services").json
+    assert services[0]["fault_codes"][0]["code"] == "P0016"
+    all_services = auth_client.get("/api/services").json
+    codes = [s for s in all_services if s["fault_codes"]]
+    assert len(codes) >= 1
+
+
+def test_update_fault_codes(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_service(auth_client, v["id"], fault_codes=["P0016"])
+    r = auth_client.put(f"/api/services/{s['id']}", json={
+        "date": s["date"], "title": s["title"], "fault_codes": ["P0300", "P0420"],
+    })
+    assert r.status_code == 200
+    assert [fc["code"] for fc in r.json["fault_codes"]] == ["P0300", "P0420"]
+
+
+def test_clear_fault_codes(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_service(auth_client, v["id"], fault_codes=["P0016"])
+    r = auth_client.put(f"/api/services/{s['id']}", json={
+        "date": s["date"], "title": s["title"], "fault_codes": [],
+    })
+    assert r.status_code == 200
+    assert r.json["fault_codes"] == []
+
+
+def test_fault_codes_unknown_code_no_description(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_service(auth_client, v["id"], fault_codes=["P1234"])
+    fc = s["fault_codes"][0]
+    assert fc["code"] == "P1234"
+    assert "description" not in fc
+
+
+def test_fault_codes_deleted_with_service(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_service(auth_client, v["id"], fault_codes=["P0016"])
+    assert auth_client.delete(f"/api/services/{s['id']}").status_code == 204
+    new_s = mk_service(auth_client, v["id"])
+    assert new_s["fault_codes"] == []
+
+
+def test_fault_codes_must_be_list(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    r = auth_client.post(f"/api/vehicles/{v['id']}/services", json={
+        "date": "2025-01-01", "title": "x", "fault_codes": "P0016",
+    })
+    assert r.status_code == 400
+    assert "list" in r.json["error"]

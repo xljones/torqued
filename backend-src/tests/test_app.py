@@ -16,11 +16,13 @@ from torqued.repositories.user_repository import UserRepository
 # ── domain model ─────────────────────────────────────────────────────────────
 
 def test_domain_models_importable() -> None:
+    from torqued.domain.garage import Garage
     from torqued.domain.odometer_log import OdometerLog
     from torqued.domain.photo import Photo
     from torqued.domain.service_log import ServiceLog
     from torqued.domain.vehicle import Vehicle
 
+    assert Garage(id=1, name="Home").name == "Home"
     assert Vehicle(id=1, name="Daily").name == "Daily"
     assert ServiceLog(id=1, vehicle_id=1, date="2025-01-01", title="Oil").title == "Oil"
     assert OdometerLog(id=1, vehicle_id=1, date="2025-01-01", odometer_km=100.0).odometer_km == 100.0
@@ -91,19 +93,16 @@ def test_enforce_auth_invalid_expires_at_ignored(client: FlaskClient) -> None:
     assert r.status_code == 200
 
 
-def test_enforce_auth_readonly_blocks_write(client: FlaskClient) -> None:
-    with get_db() as db:
-        UserRepository(db).create("reader", "pass", is_readonly=True)
-    client.post("/api/auth/login", json={"username": "reader", "password": "pass"})
-    assert client.post("/api/vehicles", json={"name": "Bike"}).status_code == 403
+def test_readonly_member_blocked_from_writes(readonly_client: FlaskClient) -> None:
+    garage_id = readonly_client.get("/api/garages").json[0]["id"]
+    r = readonly_client.post("/api/vehicles", json={"name": "Bike", "garage_id": garage_id})
+    assert r.status_code == 403
+    assert "read-only" in r.json["error"].lower()
 
 
-def test_enforce_auth_readonly_allows_password_change(client: FlaskClient) -> None:
-    with get_db() as db:
-        UserRepository(db).create("reader", "pass", is_readonly=True)
-    client.post("/api/auth/login", json={"username": "reader", "password": "pass"})
-    r = client.put("/api/auth/password", json={
-        "current_password": "pass", "new_password": "newpass123"
+def test_readonly_member_can_change_password(readonly_client: FlaskClient) -> None:
+    r = readonly_client.put("/api/auth/password", json={
+        "current_password": "testpass", "new_password": "newpass123"
     })
     assert r.status_code == 204
 

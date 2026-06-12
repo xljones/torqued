@@ -3,6 +3,9 @@ from flask.testing import FlaskClient
 
 
 def mk_vehicle(client: FlaskClient, **overrides) -> dict:
+    if "garage_id" not in overrides:
+        garages = client.get("/api/garages").json
+        overrides["garage_id"] = garages[0]["id"]
     body = {"name": "Street Triple", "kind": "motorcycle", **overrides}
     r = client.post("/api/vehicles", json=body)
     assert r.status_code == 201, r.json
@@ -34,30 +37,72 @@ def test_create_full(auth_client: FlaskClient) -> None:
     assert v["odometer_unit"] == "km"
 
 
+def test_create_persists_mot_override_fields(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(
+        auth_client, engine_size="765",
+        first_used_date="2021-03-01", registration_date="2021-03-05",
+    )
+    got = auth_client.get(f"/api/vehicles/{v['id']}").json
+    assert got["engine_size"] == "765"
+    assert got["first_used_date"] == "2021-03-01"
+    assert got["registration_date"] == "2021-03-05"
+    # No MOT fetched, so there is no baseline to fall back to
+    assert got["mot_baseline"] is None
+
+
+def test_clear_override_field(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client, make="Triumph", engine_size="765")
+    body = {**v, "engine_size": None}
+    assert auth_client.put(f"/api/vehicles/{v['id']}", json=body).status_code == 200
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["engine_size"] is None
+
+
 def test_create_requires_name(auth_client: FlaskClient) -> None:
-    r = auth_client.post("/api/vehicles", json={"name": "  "})
+    garage_id = auth_client.get("/api/garages").json[0]["id"]
+    r = auth_client.post("/api/vehicles", json={"name": "  ", "garage_id": garage_id})
     assert r.status_code == 400
     assert "name" in r.json["error"]
 
 
+def test_create_requires_garage_id(auth_client: FlaskClient) -> None:
+    r = auth_client.post("/api/vehicles", json={"name": "Bike"})
+    assert r.status_code == 400
+    assert "garage_id" in r.json["error"]
+
+
+def test_create_in_inaccessible_garage_404(auth_client: FlaskClient) -> None:
+    assert auth_client.post(
+        "/api/vehicles", json={"name": "Bike", "garage_id": 999}
+    ).status_code == 404
+
+
 def test_create_rejects_bad_kind(auth_client: FlaskClient) -> None:
-    r = auth_client.post("/api/vehicles", json={"name": "Boat", "kind": "boat"})
+    garage_id = auth_client.get("/api/garages").json[0]["id"]
+    r = auth_client.post("/api/vehicles", json={"name": "Boat", "kind": "boat", "garage_id": garage_id})
     assert r.status_code == 400
 
 
 def test_create_rejects_bad_unit(auth_client: FlaskClient) -> None:
-    r = auth_client.post("/api/vehicles", json={"name": "Bike", "odometer_unit": "leagues"})
+    garage_id = auth_client.get("/api/garages").json[0]["id"]
+    r = auth_client.post(
+        "/api/vehicles", json={"name": "Bike", "odometer_unit": "leagues", "garage_id": garage_id}
+    )
     assert r.status_code == 400
 
 
 def test_create_rejects_non_numeric_year(auth_client: FlaskClient) -> None:
-    r = auth_client.post("/api/vehicles", json={"name": "Bike", "year": "twenty"})
+    garage_id = auth_client.get("/api/garages").json[0]["id"]
+    r = auth_client.post(
+        "/api/vehicles", json={"name": "Bike", "year": "twenty", "garage_id": garage_id}
+    )
     assert r.status_code == 400
 
 
 def test_create_rejects_non_numeric_pressure(auth_client: FlaskClient) -> None:
+    garage_id = auth_client.get("/api/garages").json[0]["id"]
     r = auth_client.post(
-        "/api/vehicles", json={"name": "Bike", "tyre_pressure_front_psi": "squishy"}
+        "/api/vehicles",
+        json={"name": "Bike", "tyre_pressure_front_psi": "squishy", "garage_id": garage_id},
     )
     assert r.status_code == 400
 
@@ -73,6 +118,15 @@ def test_list_excludes_archived_by_default(auth_client: FlaskClient) -> None:
     assert "Sold bike" not in names
     all_names = [v["name"] for v in auth_client.get("/api/vehicles?archived=1").json]
     assert "Sold bike" in all_names
+
+
+def test_list_garage_filter(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    listed = auth_client.get(f"/api/vehicles?garage_id={v['garage_id']}").json
+    assert [x["id"] for x in listed] == [v["id"]]
+    assert listed[0]["garage_name"] == "Test Garage"
+    assert auth_client.get("/api/vehicles?garage_id=999").status_code == 404
+    assert auth_client.get("/api/vehicles?garage_id=abc").status_code == 400
 
 
 def test_list_includes_counts_and_latest_odometer(auth_client: FlaskClient) -> None:
@@ -99,6 +153,13 @@ def test_get_detail(auth_client: FlaskClient) -> None:
 
 def test_get_404(auth_client: FlaskClient) -> None:
     assert auth_client.get("/api/vehicles/999").status_code == 404
+
+
+def test_repository_get_detail_missing(auth_client: FlaskClient) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.vehicle_repository import VehicleRepository
+    with get_db() as db:
+        assert VehicleRepository(db).get_detail(999) is None
 
 
 def test_update(auth_client: FlaskClient) -> None:
@@ -197,6 +258,20 @@ def test_revert_unknown_version(auth_client: FlaskClient) -> None:
 
 
 # ── reminders endpoint ────────────────────────────────────────────────────────
+
+def test_history_404(auth_client: FlaskClient) -> None:
+    assert auth_client.get("/api/vehicles/999/history").status_code == 404
+
+
+def test_reminders_garage_filter(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    auth_client.post(f"/api/vehicles/{v['id']}/services", json={
+        "date": "2020-01-01", "title": "Oil change", "next_due_date": "2020-06-01",
+    })
+    assert len(auth_client.get(f"/api/reminders?garage_id={v['garage_id']}").json) == 1
+    assert auth_client.get("/api/reminders?garage_id=999").status_code == 404
+    assert auth_client.get("/api/reminders?garage_id=abc").status_code == 400
+
 
 def test_all_reminders_endpoint(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
