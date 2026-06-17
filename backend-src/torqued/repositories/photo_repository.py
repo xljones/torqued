@@ -18,17 +18,16 @@ class PhotoRepository(BaseRepository):
         uploaded_by: int | None = None,
     ) -> dict[str, Any]:
         """Insert a photo record for an already-saved upload file."""
-        cur = self.db.execute(
+        inserted = self.db.execute(
             "INSERT INTO photos (vehicle_id, service_log_id, filename, original_name,"
-            " caption, uploaded_by) VALUES (?,?,?,?,?,?)",
+            " caption, uploaded_by) VALUES (?,?,?,?,?,?) RETURNING id",
             (vehicle_id, service_log_id, filename, original_name, caption, uploaded_by),
-        )
-        row_id = cur.lastrowid
-        if row_id is None:  # pragma: no cover
+        ).fetchone()
+        if inserted is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
-        photo = self.get_by_id(row_id)
+        photo = self.get_by_id(inserted["id"])
         if photo is None:  # pragma: no cover
-            raise RuntimeError(f"Row {row_id} not found after INSERT")
+            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
         return photo
 
     def update_caption(self, photo_id: int, caption: str | None) -> dict[str, Any] | None:

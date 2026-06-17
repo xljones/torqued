@@ -1,11 +1,9 @@
-import sqlite3
-
 from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
 from torqued.access import garage_role
-from torqued.db import get_db
+from torqued.db import IntegrityError, get_db
 from torqued.repositories.garage_repository import ROLES, GarageRepository
 from torqued.repositories.user_repository import UserRepository
 
@@ -39,7 +37,7 @@ def create_garage() -> ResponseReturnValue:
         with get_db() as db:
             garage = GarageRepository(db).create(name)
         return jsonify(garage), 201
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return jsonify(error="Garage name already exists"), 409
 
 
@@ -58,7 +56,7 @@ def rename_garage(garage_id: int) -> ResponseReturnValue:
             if garage_role(db, current_user, garage_id) != "owner":
                 return jsonify(error="Garage owner access required"), 403
             return jsonify(repo.rename(garage_id, name))
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return jsonify(error="Garage name already exists"), 409
 
 
@@ -98,20 +96,20 @@ def add_member(garage_id: int) -> ResponseReturnValue:
         return jsonify(error="username is required"), 400
     if role not in ROLES:
         return jsonify(error=f"role must be one of {', '.join(ROLES)}"), 400
-    with get_db() as db:
-        repo = GarageRepository(db)
-        if not repo.get_by_id(garage_id):
-            return jsonify(error="Not found"), 404
-        if garage_role(db, current_user, garage_id) != "owner":
-            return jsonify(error="Garage owner access required"), 403
-        user = UserRepository(db).get_by_username(username)
-        if not user:
-            return jsonify(error="No user with that username"), 404
-        try:
+    try:
+        with get_db() as db:
+            repo = GarageRepository(db)
+            if not repo.get_by_id(garage_id):
+                return jsonify(error="Not found"), 404
+            if garage_role(db, current_user, garage_id) != "owner":
+                return jsonify(error="Garage owner access required"), 403
+            user = UserRepository(db).get_by_username(username)
+            if not user:
+                return jsonify(error="No user with that username"), 404
             member = repo.add_member(garage_id, user["id"], role)
-        except sqlite3.IntegrityError:
-            return jsonify(error="Already a member of this garage"), 409
         return jsonify(member), 201
+    except IntegrityError:
+        return jsonify(error="Already a member of this garage"), 409
 
 
 @bp.put("/api/garages/<int:garage_id>/members/<int:user_id>")

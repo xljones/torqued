@@ -4,13 +4,14 @@ Roles: 'owner' manages the garage's members and settings; 'member' has full
 read-write on its vehicles; 'readonly' can only view. Site admins
 (users.is_admin) act as owners of every garage.
 """
-import sqlite3
 from typing import Any
+
+from torqued.db import Connection
 
 WRITE_ROLES = ("owner", "member")
 
 
-def garage_role(db: sqlite3.Connection, user: Any, garage_id: int) -> str | None:
+def garage_role(db: Connection, user: Any, garage_id: int) -> str | None:
     """Return the user's effective role in a garage, or None if no access."""
     if user.is_admin:
         return "owner"
@@ -19,7 +20,7 @@ def garage_role(db: sqlite3.Connection, user: Any, garage_id: int) -> str | None
     return GarageRepository(db).member_role(garage_id, user.id)
 
 
-def vehicle_role(db: sqlite3.Connection, user: Any, vehicle_id: int) -> str | None:
+def vehicle_role(db: Connection, user: Any, vehicle_id: int) -> str | None:
     """Return the user's effective role for the garage owning a vehicle, or None."""
     row = db.execute("SELECT garage_id FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
     if not row:
@@ -32,7 +33,7 @@ def can_write(role: str | None) -> bool:
     return role in WRITE_ROLES
 
 
-def accessible_garage_ids(db: sqlite3.Connection, user: Any) -> list[int]:
+def accessible_garage_ids(db: Connection, user: Any) -> list[int]:
     """Garage IDs visible to the user (all garages for site admins)."""
     from torqued.repositories.garage_repository import GarageRepository
 

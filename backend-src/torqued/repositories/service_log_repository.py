@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from torqued import dtc
+from torqued.db import utcnow_text
 from torqued.repositories.base import BaseRepository
 
 SERVICE_FIELDS: list[str] = [
@@ -119,13 +120,13 @@ class ServiceLogRepository(BaseRepository):
         """Insert a new service log and record its initial history snapshot."""
         cols = ",".join(SERVICE_FIELDS)
         marks = ",".join("?" * len(SERVICE_FIELDS))
-        cur = self.db.execute(
-            f"INSERT INTO service_logs ({cols}) VALUES ({marks})",
+        inserted = self.db.execute(
+            f"INSERT INTO service_logs ({cols}) VALUES ({marks}) RETURNING id",
             tuple(data.get(f) for f in SERVICE_FIELDS),
-        )
-        row_id = cur.lastrowid
-        if row_id is None:  # pragma: no cover
+        ).fetchone()
+        if inserted is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
+        row_id = inserted["id"]
         fault_codes = data.get("fault_codes") or []
         if fault_codes:
             self._replace_fault_codes(row_id, fault_codes)
@@ -142,8 +143,8 @@ class ServiceLogRepository(BaseRepository):
         fields = [f for f in SERVICE_FIELDS if f != "vehicle_id"]
         sets = ",".join(f"{f}=?" for f in fields)
         self.db.execute(
-            f"UPDATE service_logs SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (*(data.get(f) for f in fields), log_id),
+            f"UPDATE service_logs SET {sets}, updated_at=? WHERE id=?",
+            (*(data.get(f) for f in fields), utcnow_text(), log_id),
         )
         if "fault_codes" in data:
             self._replace_fault_codes(log_id, data["fault_codes"] or [])
@@ -229,7 +230,8 @@ class ServiceLogRepository(BaseRepository):
                   AND NOT EXISTS (
                       SELECT 1 FROM service_logs n
                       WHERE n.vehicle_id = s.vehicle_id
-                        AND n.category IS s.category
+                        AND (n.category = s.category
+                             OR (n.category IS NULL AND s.category IS NULL))
                         AND (n.date > s.date OR (n.date = s.date AND n.id > s.id))
                   )
                   {where}
@@ -275,8 +277,8 @@ class ServiceLogRepository(BaseRepository):
                 f"""
                 {_VEHICLE_JOIN}
                 WHERE v.garage_id IN ({placeholders})
-                  AND (s.title LIKE ? OR s.description LIKE ? OR s.category LIKE ?
-                       OR s.performed_by LIKE ?)
+                  AND (LOWER(s.title) LIKE LOWER(?) OR LOWER(s.description) LIKE LOWER(?)
+                       OR LOWER(s.category) LIKE LOWER(?) OR LOWER(s.performed_by) LIKE LOWER(?))
                 LIMIT 10
                 """,
                 (*garage_ids, q, q, q, q),

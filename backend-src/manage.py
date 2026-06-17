@@ -3,6 +3,7 @@
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -308,18 +309,32 @@ def cmd_delete_user(args: list[str]) -> None:
     print(f"User '{username}' deleted.")
 
 
+def _active_url() -> Any:
+    """Return the active database URL (SQLAlchemy URL object)."""
+    from sqlalchemy.engine import make_url
+    from torqued.db import database_url
+
+    return make_url(database_url())
+
+
+def _backup_dir(url: Any) -> Path:
+    """Where backups live: next to the SQLite file, or data/ for everything else."""
+    if url.get_backend_name() == "sqlite":
+        return Path(url.database).parent
+    return Path("data")
+
+
 def cmd_db_restore(args: list[str]) -> None:
-    import os
-    import sqlite3 as _sqlite3
+    import subprocess
 
     if len(args) != 1:
         print("Usage: python manage.py db-restore <backup-file>")
         sys.exit(1)
 
-    db_path = os.environ.get("DB_PATH", "data/garage.db")
+    url = _active_url()
     backup_path = Path(args[0])
     if not backup_path.is_absolute():
-        backup_path = Path(db_path).parent / args[0]
+        backup_path = _backup_dir(url) / args[0]
 
     if not backup_path.exists():
         print(f"Error: backup file not found: {backup_path}")
@@ -330,28 +345,46 @@ def cmd_db_restore(args: list[str]) -> None:
         print("Aborted.")
         sys.exit(0)
 
-    sql = backup_path.read_text()
-    Path(db_path).unlink(missing_ok=True)
-    con = _sqlite3.connect(db_path)
-    con.executescript(sql)
-    con.close()
+    if url.get_backend_name() == "sqlite":
+        import sqlite3 as _sqlite3
+
+        Path(url.database).unlink(missing_ok=True)
+        con = _sqlite3.connect(url.database)
+        con.executescript(backup_path.read_text())
+        con.close()
+    else:
+        dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
+        subprocess.run(
+            ["psql", dsn, "-v", "ON_ERROR_STOP=1",
+             "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"],
+            check=True,
+        )
+        subprocess.run(["psql", dsn, "-v", "ON_ERROR_STOP=1", "-f", str(backup_path)], check=True)
     print(f"Database restored from {backup_path}")
 
 
 def cmd_db_backup(_: list[str]) -> None:
     import datetime
-    import os
-    import sqlite3 as _sqlite3
+    import subprocess
 
-    db_path = os.environ.get("DB_PATH", "data/garage.db")
+    url = _active_url()
+    backup_dir = _backup_dir(url)
+    backup_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = str(Path(db_path).parent / f"db-backup-{ts}.sql")
+    backup_path = backup_dir / f"db-backup-{ts}.sql"
 
-    con = _sqlite3.connect(db_path)
-    with open(backup_path, "w") as f:
-        for line in con.iterdump():
-            f.write(line + "\n")
-    con.close()
+    if url.get_backend_name() == "sqlite":
+        import sqlite3 as _sqlite3
+
+        con = _sqlite3.connect(url.database)
+        with open(backup_path, "w") as f:
+            for line in con.iterdump():
+                f.write(line + "\n")
+        con.close()
+    else:
+        dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
+        with open(backup_path, "w") as f:
+            subprocess.run(["pg_dump", dsn], check=True, stdout=f)
     print(f"Backup written to {backup_path}")
 
 
@@ -367,15 +400,19 @@ def cmd_reset_db(args: list[str]) -> None:
     if confirm.strip() != "YES":
         print("Aborted.")
         sys.exit(0)
-    import os
 
-    from torqued.db import _DEFAULT_DB_PATH, run_migrations
+    from torqued.db import get_db, run_migrations
 
-    # Delete the database file outright rather than dropping tables one by one:
-    # a malformed image can't be read, and this also can't miss any tables.
-    db_path = os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
-    for suffix in ("", "-wal", "-shm"):
-        Path(db_path + suffix).unlink(missing_ok=True)
+    url = _active_url()
+    if url.get_backend_name() == "sqlite":
+        # Delete the database file outright rather than dropping tables one by one:
+        # a malformed image can't be read, and this also can't miss any tables.
+        for suffix in ("", "-wal", "-shm"):
+            Path(url.database + suffix).unlink(missing_ok=True)
+    else:
+        with get_db() as db:
+            db.execute("DROP SCHEMA public CASCADE")
+            db.execute("CREATE SCHEMA public")
 
     run_migrations()
     print("Database reset. Run seed to repopulate.")

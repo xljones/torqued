@@ -1,11 +1,10 @@
-import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
-from torqued.db import get_db
+from torqued.db import IntegrityError, get_db
 from torqued.repositories.garage_repository import ROLES, GarageRepository
 from torqued.repositories.user_repository import UserRepository
 
@@ -57,7 +56,7 @@ def create_user() -> ResponseReturnValue:
                 GarageRepository(db).add_member(int(garage_id), user["id"], role)
             user["memberships"] = UserRepository(db).memberships(user["id"])
         return jsonify(user), 201
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return jsonify(error="Username already exists"), 409
 
 

@@ -29,17 +29,16 @@ class OdometerLogRepository(BaseRepository):
         note: str | None = None,
     ) -> dict[str, Any]:
         """Insert a manual odometer reading (stored canonically in km)."""
-        cur = self.db.execute(
+        inserted = self.db.execute(
             "INSERT INTO odometer_logs (vehicle_id, date, odometer_km, unit, note)"
-            " VALUES (?,?,?,?,?)",
+            " VALUES (?,?,?,?,?) RETURNING id",
             (vehicle_id, date, odometer_km, unit, note),
-        )
-        row_id = cur.lastrowid
-        if row_id is None:  # pragma: no cover
+        ).fetchone()
+        if inserted is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
-        log = self.get_by_id(row_id)
+        log = self.get_by_id(inserted["id"])
         if log is None:  # pragma: no cover
-            raise RuntimeError(f"Row {row_id} not found after INSERT")
+            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
         return log
 
     def delete(self, log_id: int) -> bool:

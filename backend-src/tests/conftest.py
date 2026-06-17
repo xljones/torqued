@@ -8,6 +8,11 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
+# Tests always run on a throwaway SQLite file (set per-test via DB_PATH). Drop any
+# ambient DATABASE_URL — e.g. the Postgres one the Docker Compose backend service
+# injects — so it can't take precedence over the test database.
+os.environ.pop("DATABASE_URL", None)
+
 
 @pytest.fixture
 def app() -> Generator[Flask, None, None]:

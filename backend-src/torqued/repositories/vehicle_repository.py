@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from torqued import mot
+from torqued.db import utcnow_text
 from torqued.repositories.base import BaseRepository
 
 # Editable vehicle fields, in schema order. History snapshots mirror this list.
@@ -128,16 +129,15 @@ class VehicleRepository(BaseRepository):
         }}
         cols = ",".join(VEHICLE_FIELDS)
         marks = ",".join("?" * len(VEHICLE_FIELDS))
-        cur = self.db.execute(
-            f"INSERT INTO vehicles (garage_id, {cols}) VALUES (?,{marks})",
+        inserted = self.db.execute(
+            f"INSERT INTO vehicles (garage_id, {cols}) VALUES (?,{marks}) RETURNING id",
             (garage_id, *(data.get(f) for f in VEHICLE_FIELDS)),
-        )
-        row_id = cur.lastrowid
-        if row_id is None:  # pragma: no cover
+        ).fetchone()
+        if inserted is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
-        vehicle = self.get_by_id(row_id)
+        vehicle = self.get_by_id(inserted["id"])
         if vehicle is None:  # pragma: no cover
-            raise RuntimeError(f"Row {row_id} not found after INSERT")
+            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
         self._record_history(vehicle, changed_by)
         return vehicle
 
@@ -147,8 +147,8 @@ class VehicleRepository(BaseRepository):
         """Update vehicle fields, record a history snapshot, and return the updated row."""
         sets = ",".join(f"{f}=?" for f in VEHICLE_FIELDS)
         self.db.execute(
-            f"UPDATE vehicles SET {sets}, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (*(data.get(f) for f in VEHICLE_FIELDS), vehicle_id),
+            f"UPDATE vehicles SET {sets}, updated_at=? WHERE id=?",
+            (*(data.get(f) for f in VEHICLE_FIELDS), utcnow_text(), vehicle_id),
         )
         vehicle = self.get_by_id(vehicle_id)
         if vehicle is not None:
@@ -267,7 +267,8 @@ class VehicleRepository(BaseRepository):
                 f"""
                 SELECT v.*, 'vehicle' AS type FROM vehicles v
                 WHERE v.garage_id IN ({placeholders})
-                  AND (v.name LIKE ? OR v.make LIKE ? OR v.model LIKE ? OR v.registration LIKE ?)
+                  AND (LOWER(v.name) LIKE LOWER(?) OR LOWER(v.make) LIKE LOWER(?)
+                       OR LOWER(v.model) LIKE LOWER(?) OR LOWER(v.registration) LIKE LOWER(?))
                 LIMIT 10
                 """,
                 (*garage_ids, q, q, q, q),

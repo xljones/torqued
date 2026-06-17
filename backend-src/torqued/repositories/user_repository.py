@@ -1,11 +1,12 @@
-import sqlite3
 from typing import Any
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from torqued.db import Connection
+
 
 class UserRepository:
-    def __init__(self, db: sqlite3.Connection) -> None:
+    def __init__(self, db: Connection) -> None:
         self.db = db
 
     def get_by_id(self, user_id: int) -> dict[str, Any] | None:
@@ -23,7 +24,7 @@ class UserRepository:
     def get_by_username(self, username: str) -> dict[str, Any] | None:
         """Return a user by username (case-insensitive) including password_hash, or None."""
         r = self.db.execute(
-            "SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,)
+            "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (username,)
         ).fetchone()
         return dict(r) if r else None
 
@@ -67,16 +68,16 @@ class UserRepository:
         expires_at: str | None = None,
     ) -> dict[str, Any]:
         """Insert a new user with a hashed password and return the created user (no hash)."""
-        cur = self.db.execute(
-            "INSERT INTO users (username, password_hash, is_admin, expires_at) VALUES (?,?,?,?)",
+        inserted = self.db.execute(
+            "INSERT INTO users (username, password_hash, is_admin, expires_at)"
+            " VALUES (?,?,?,?) RETURNING id",
             (username, generate_password_hash(password), int(is_admin), expires_at),
-        )
-        row_id = cur.lastrowid
-        if row_id is None:  # pragma: no cover
+        ).fetchone()
+        if inserted is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
-        user = self.get_by_id(row_id)
+        user = self.get_by_id(inserted["id"])
         if user is None:  # pragma: no cover
-            raise RuntimeError(f"Row {row_id} not found after INSERT")
+            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
         return user
 
     def rename(self, user_id: int, new_username: str) -> None:
