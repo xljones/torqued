@@ -19,6 +19,14 @@
 - **PDF report** appends "cc" to bare DVSA engine-size numbers, mirroring the web UI.
 
 ### Changed
+- **Database migrated from SQLite to PostgreSQL.** The backend now talks to its database
+  through SQLAlchemy Core (psycopg v3 driver) and is database-agnostic: PostgreSQL in
+  development (a `db` service in Docker Compose) and production, SQLite in the test suite,
+  selected by `DATABASE_URL` / `DB_PATH`. Repositories keep their `execute("… ? …", (args,))`
+  style via a thin dialect-aware `Connection` wrapper. Schema is now managed by **Alembic**
+  (`backend-src/migrations/`) instead of the bespoke SQL-file runner; `run_migrations()` runs
+  `alembic upgrade head` on startup. `make db-backup` / `db-restore` detect the backend
+  (`pg_dump`/`psql` for Postgres, `sqlite3` dump for SQLite). Configure via [.env.example](.env.example).
 - `RelativeTime` renders future dates in human-friendly units (e.g. MOT expiry reads
   "next month" rather than "in 3,043,741 seconds"); the MOT card shows expiry relatively.
 

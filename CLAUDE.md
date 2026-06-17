@@ -6,12 +6,23 @@
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.14, Flask, SQLite (built-in `sqlite3`) |
+| Backend | Python 3.14, Flask, PostgreSQL via SQLAlchemy Core (psycopg v3 driver) |
+| Migrations | Alembic (`backend-src/migrations/`); portable across Postgres and SQLite |
 | Frontend | React 18, Vite, React Router |
 | Auth | Flask-Login + `werkzeug.security` password hashing |
 | Lint / typecheck / test | ruff, mypy, pytest (backend); eslint, vitest (frontend) |
-| Dev environment | Docker Compose (two services: `backend`, `frontend`) |
+| Dev environment | Docker Compose (three services: `db` (Postgres), `backend`, `frontend`) |
 | Deployment | PythonAnywhere (Flask serves built React `dist/`) |
+
+**Database is configurable, not hard-coded.** The backend talks to PostgreSQL in
+development and production and to SQLite in tests, through one SQLAlchemy engine
+chosen by `torqued.db.database_url()`: `DATABASE_URL` (a full SQLAlchemy URL, e.g.
+`postgresql+psycopg://…`) wins, else `DB_PATH` resolves to a `sqlite:///` URL, else
+an on-disk SQLite file. Repositories never import a driver — they get a dialect-agnostic
+`Connection` wrapper from `get_db()` and keep using the `execute("… ? …", (args,))`
+convention; the wrapper handles placeholders, row mapping, and transactions. Dates and
+timestamps are stored as TEXT (ISO strings) and 0/1 flags as INTEGER so values
+round-trip identically on both backends.
 
 ## Domain model
 
@@ -35,15 +46,20 @@
 DDD-inspired layering — routes never write SQL directly.
 
 ```
+backend-src/
+  alembic.ini        Alembic config (URL resolved from the app config, not hard-coded)
+  migrations/        Alembic environment + versions/ (outside the torqued package, so
+                     it stays out of the test-coverage scope)
 torqued/
   __init__.py        create_app() factory; Flask-Login setup, before_request auth guard
-  db.py              get_db(), run_migrations() — migration runner reads migrations/*.sql
+  db.py              DB-agnostic SQLAlchemy layer: database_url() resolution, cached engine,
+                     get_db() Connection wrapper, IntegrityError re-export, run_migrations()
+                     (= alembic upgrade head)
   units.py           mi/km conversion + request payload parsing
   access.py          Per-garage role resolution and write checks (owner/member/readonly)
   dtc.py             OBD-II fault code lookup + SAE J2012 structural decoding
   mot.py             DVSA MOT History API client (OAuth2 + X-API-Key, cached token)
   data/              obd_codes.json — vendored generic DTC descriptions
-  migrations/        Numbered SQL files (001_initial.sql, …)
   domain/            Plain dataclasses: Garage, Vehicle, ServiceLog, OdometerLog, Photo, User
   repositories/      GarageRepository, VehicleRepository, ServiceLogRepository,
                      OdometerLogRepository, PhotoRepository, UserRepository — own all SQL
@@ -52,7 +68,7 @@ torqued/
                      search, users
 ```
 
-- **Adding a schema change:** drop a new `NNN_description.sql` in `migrations/`. It runs automatically on next startup and is recorded in `schema_migrations`.
+- **Adding a schema change:** create an Alembic revision — `alembic revision -m "…"` from `backend-src/`, or hand-write a file in `migrations/versions/`. It runs automatically on next startup (`run_migrations()` → `alembic upgrade head`) and is recorded in `alembic_version`. Keep migrations **portable**: use `sa` types (not raw Postgres DDL) so they also apply to the SQLite test database; the only dialect branch is the `CURRENT_TIMESTAMP` default. SQL itself stays driver-agnostic — qmark (`?`) placeholders, `RETURNING id` instead of `lastrowid`, `LOWER(x) = LOWER(?)` instead of `COLLATE NOCASE`.
 - **Adding an endpoint:** add a method to the relevant repository, call it from the relevant blueprint.
 - **Auth:** Flask-Login guards all routes via `@login_required`; a `before_request` hook in `__init__.py` enforces account expiry (logs the user out). Read-only is per-garage and enforced in routes via `torqued.access`.
 - **Tenancy:** collection endpoints accept an optional `garage_id` query param and otherwise return data for all the user's garages; item endpoints resolve the garage through the vehicle. Out-of-scope resources return 404, write attempts by readonly members return 403.
@@ -87,12 +103,15 @@ components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
 ## Running locally
 
 ```bash
-make run            # start both services
+make run            # start all services (Postgres + backend + frontend)
 make stop           # stop
 make logs           # tail logs (make logs service=backend for one service)
 make build          # rebuild images (needed after requirements.txt or Dockerfile changes)
 make build-frontend # compile React into dist/ (for local production preview)
 ```
+
+`make run` brings up a `db` (Postgres 17) service; the backend connects to it via
+`DATABASE_URL` (set in `compose.yml`). Postgres data persists in the `pgdata` volume.
 
 ### Database & users
 
@@ -123,7 +142,7 @@ make test-frontend     # vitest
 make test              # all of the above (mirrors CI)
 ```
 
-The database is at `data/garage.db` and uploaded photos in `data/uploads/` (both bind-mounted into the backend container).
+Locally the database is PostgreSQL in the `db` container (data in the `pgdata` volume); uploaded photos live in `data/uploads/` (bind-mounted into the backend container). Tests use a throwaway SQLite file per the `DB_PATH` the `conftest` fixture sets. `db-backup`/`db-restore` detect the backend automatically (`pg_dump`/`psql` for Postgres, `sqlite3` dump for SQLite).
 
 ## PythonAnywhere deployment
 

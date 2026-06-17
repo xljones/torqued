@@ -25,14 +25,24 @@ This resets to the latest `origin/deploy`, creates `venv/` if missing, and insta
 
 ### 3. Create your `.env` file
 
+The backend connects to **PostgreSQL** via `DATABASE_URL` (SQLAlchemy URL with the
+psycopg v3 driver). Provision a database first (PythonAnywhere offers Postgres, or use
+any external/managed Postgres), then:
+
 ```bash
 cat > .env <<EOF
 SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 FLASK_DEBUG=0
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/torqued
 EOF
 ```
 
-`.env` is gitignored and will not be overwritten by `make deploy-pa`.
+Replace `USER`, `PASSWORD`, `HOST`, and the database name with your credentials. (If
+`DATABASE_URL` is omitted the app falls back to a local SQLite file at
+`data/garage.db` — fine for a quick try, but use Postgres for a real deployment.)
+
+`.env` is gitignored and will not be overwritten by `make deploy-pa`. See
+[.env.example](.env.example) for the full list of supported variables.
 
 **Optional — admin panel PythonAnywhere stats.** If you want the admin panel to show live PythonAnywhere CPU / web app / scheduled task info, add a [PythonAnywhere API token](https://www.pythonanywhere.com/account/#api_token) and your PythonAnywhere username:
 
@@ -78,7 +88,7 @@ In the **PythonAnywhere Web tab**:
 
 Hit **Reload** in the Web tab. The app will be live at `https://<you>.pythonanywhere.com`.
 
-The database is created automatically at `~/torqued/data/garage.db` on first request, and migrations run on every app startup.
+The schema is created and kept current automatically: `run_migrations()` (Alembic `upgrade head`) runs against your `DATABASE_URL` on every app startup.
 
 ---
 
@@ -114,3 +124,8 @@ make rename-user  username=x new_username=y
 make delete-user  username=x                       # interactive confirm
 make list-users
 ```
+
+`migrate` runs Alembic (`upgrade head`); `reset-db` drops and recreates the schema.
+For a Postgres database, `db-backup` / `db-restore` shell out to `pg_dump` / `psql`, so
+those client tools must be on `PATH` (they ship in the backend Docker image; on
+PythonAnywhere install or use the bundled `postgresql-client`).
