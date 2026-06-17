@@ -13,12 +13,12 @@ import os
 from pathlib import Path
 
 _here = Path(__file__).parent          # backend-src/
-_root = _here.parent                   # project root
 
 if str(_here) not in sys.path:
     sys.path.insert(0, str(_here))
 
-os.environ.setdefault("DB_PATH", str(_root / "data" / "garage.db"))
+# The database is selected by DATABASE_URL (PostgreSQL in production); see
+# torqued.db.database_url(). pa_wsgi.py loads it from the deployment .env.
 os.environ["FLASK_DEBUG"] = "0"
 
 from torqued import create_app
