@@ -96,6 +96,7 @@ def test_neon_stats_not_configured(admin_client: FlaskClient, monkeypatch) -> No
 def test_neon_stats_success(admin_client: FlaskClient, monkeypatch) -> None:
     monkeypatch.setenv("NEON_API_KEY", "key")
     monkeypatch.setenv("NEON_PROJECT_ID", "proj-123")
+    monkeypatch.delenv("NEON_COMPUTE_LIMIT_HOURS", raising=False)
 
     project = {
         "project": {
@@ -122,6 +123,7 @@ def test_neon_stats_success(admin_client: FlaskClient, monkeypatch) -> None:
     assert r.json["storage_bytes"] == 134217728
     assert r.json["storage_limit_bytes"] == 536870912
     assert r.json["cpu_seconds"] == 7200
+    assert r.json["cpu_limit_seconds"] is None
     assert r.json["active_seconds"] == 3600
     assert r.json["quota_reset_at"] == "2026-07-01T00:00:00Z"
     assert r.json["last_active_at"] == "2026-06-21T09:00:00Z"
@@ -130,6 +132,7 @@ def test_neon_stats_success(admin_client: FlaskClient, monkeypatch) -> None:
 def test_neon_stats_success_autodiscover(admin_client: FlaskClient, monkeypatch) -> None:
     monkeypatch.setenv("NEON_API_KEY", "key")
     monkeypatch.delenv("NEON_PROJECT_ID", raising=False)
+    monkeypatch.delenv("NEON_COMPUTE_LIMIT_HOURS", raising=False)
 
     projects = {"projects": [{"id": "proj-abc", "name": "torqued-db"}]}
     # The *_bytes / *_seconds variant names exercise the defensive field fallbacks.
@@ -160,6 +163,39 @@ def test_neon_stats_success_autodiscover(admin_client: FlaskClient, monkeypatch)
     assert r.json["storage_limit_bytes"] is None
     assert r.json["active_seconds"] == 900
     assert r.json["last_active_at"] is None
+
+
+def test_neon_stats_compute_limit_from_env(admin_client: FlaskClient, monkeypatch) -> None:
+    monkeypatch.setenv("NEON_API_KEY", "key")
+    monkeypatch.setenv("NEON_PROJECT_ID", "proj-123")
+    monkeypatch.setenv("NEON_COMPUTE_LIMIT_HOURS", "100")
+
+    project = {"project": {"id": "proj-123", "name": "torqued-db", "cpu_used_sec": 7200}}
+    with patch("torqued.routes.admin.urllib.request.urlopen", side_effect=_mock_urlopen([project])):
+        r = admin_client.get("/api/admin/neon")
+
+    assert r.status_code == 200
+    assert r.json["cpu_limit_seconds"] == 360000  # 100h × 3600
+
+
+def test_neon_stats_compute_limit_invalid_env_falls_back_to_quota(admin_client: FlaskClient, monkeypatch) -> None:
+    monkeypatch.setenv("NEON_API_KEY", "key")
+    monkeypatch.setenv("NEON_PROJECT_ID", "proj-123")
+    monkeypatch.setenv("NEON_COMPUTE_LIMIT_HOURS", "not-a-number")
+
+    project = {
+        "project": {
+            "id": "proj-123",
+            "name": "torqued-db",
+            "cpu_used_sec": 7200,
+            "settings": {"quota": {"compute_time_seconds": 720000}},
+        }
+    }
+    with patch("torqued.routes.admin.urllib.request.urlopen", side_effect=_mock_urlopen([project])):
+        r = admin_client.get("/api/admin/neon")
+
+    assert r.status_code == 200
+    assert r.json["cpu_limit_seconds"] == 720000  # bad env ignored, Neon quota used
 
 
 def test_neon_stats_no_projects(admin_client: FlaskClient, monkeypatch) -> None:

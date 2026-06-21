@@ -58,6 +58,20 @@ def _neon_get(api_key: str, path: str) -> dict:
         return json.loads(resp.read().decode())
 
 
+def _compute_limit_seconds(project: dict) -> int | None:
+    # Neon exposes no plan-inherent compute allowance, so the denominator for the
+    # compute % comes from an explicit NEON_COMPUTE_LIMIT_HOURS (the plan's monthly
+    # compute-hours, e.g. 100 on Free), else a configured consumption quota, else none.
+    override = os.environ.get("NEON_COMPUTE_LIMIT_HOURS", "").strip()
+    if override:
+        try:
+            return int(float(override) * 3600) or None
+        except ValueError:
+            pass
+    quota = project.get("settings", {}).get("quota", {}).get("compute_time_seconds", 0) or 0
+    return int(quota) or None
+
+
 @bp.get("/api/admin/neon")
 @login_required
 def neon_stats() -> ResponseReturnValue:
@@ -98,6 +112,7 @@ def neon_stats() -> ResponseReturnValue:
         storage_bytes=storage or 0,
         storage_limit_bytes=storage_limit,
         cpu_seconds=project.get("cpu_used_sec", 0) or 0,
+        cpu_limit_seconds=_compute_limit_seconds(project),
         active_seconds=active or 0,
         quota_reset_at=project.get("quota_reset_at"),
         last_active_at=project.get("compute_last_active_at"),
