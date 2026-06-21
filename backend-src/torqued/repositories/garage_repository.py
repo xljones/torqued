@@ -43,19 +43,20 @@ class GarageRepository(BaseRepository):
         """Return a garage by name (case-insensitive), or None if not found."""
         return self._row(
             self.db.execute(
-                "SELECT * FROM garages WHERE name = ? COLLATE NOCASE", (name,)
+                "SELECT * FROM garages WHERE LOWER(name) = LOWER(?)", (name,)
             ).fetchone()
         )
 
     def create(self, name: str) -> dict[str, Any]:
         """Insert a new garage and return it."""
-        cur = self.db.execute("INSERT INTO garages (name) VALUES (?)", (name,))
-        row_id = cur.lastrowid
-        if row_id is None:  # pragma: no cover
+        inserted = self.db.execute(
+            "INSERT INTO garages (name) VALUES (?) RETURNING id", (name,)
+        ).fetchone()
+        if inserted is None:  # pragma: no cover
             raise RuntimeError("INSERT returned no row ID")
-        garage = self.get_by_id(row_id)
+        garage = self.get_by_id(inserted["id"])
         if garage is None:  # pragma: no cover
-            raise RuntimeError(f"Row {row_id} not found after INSERT")
+            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
         return garage
 
     def rename(self, garage_id: int, name: str) -> dict[str, Any] | None:

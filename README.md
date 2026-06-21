@@ -71,13 +71,14 @@ backend-src/           Python backend
   app.py               Local dev entry point
   manage.py            CLI (create-user, migrate, seed, db-backup, db-restore, …)
   wsgi.py              WSGI entry point (used by pa_wsgi.py)
+  alembic.ini          Alembic configuration
+  migrations/          Alembic migration environment + versions/
   torqued/
     __init__.py        App factory (Flask-Login, before_request auth/expiry guard)
-    db.py              Connection + migration runner
+    db.py              DB-agnostic SQLAlchemy layer (Postgres / SQLite) + Alembic runner
     units.py           mi/km and psi/bar conversion helpers
     dtc.py             OBD-II fault code lookup (data/obd_codes.json, MIT-licensed dataset)
     mot.py             DVSA MOT history API client (OAuth2 client credentials)
-    migrations/        Versioned SQL files
     access.py          Per-garage role checks (owner / member / readonly)
     domain/            Garage, Vehicle, ServiceLog, OdometerLog, Photo, User dataclasses
     repositories/      All SQL per entity
@@ -98,9 +99,13 @@ scripts/               Deploy/build helper scripts
 pa_wsgi.py             PythonAnywhere WSGI shim (loads .env, imports backend-src/wsgi.py)
 pyproject.toml         Ruff, mypy, pytest config; project version
 
-data/                  SQLite database + uploaded photos (gitignored)
+data/                  Uploaded photos (gitignored); Postgres data lives in a Docker volume
 dist/                  Built frontend (gitignored)
 ```
+
+The backend is **database-agnostic**: it runs on PostgreSQL in development (a `db`
+service in Docker Compose) and production, and on SQLite in the test suite, selected
+by the `DATABASE_URL` / `DB_PATH` environment variables. See `.env.example`.
 
 ## Deployment
 

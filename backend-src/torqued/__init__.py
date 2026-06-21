@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, Response, has_request_context, jsonify, send_from_directory, session
 from flask.typing import ResponseReturnValue
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, logout_user
@@ -14,8 +14,47 @@ _DIST_DIR = str(Path(__file__).parent.parent.parent / "dist")
 login_manager = LoginManager()
 
 
+def _resolve_db_target() -> str | None:
+    """Per-request database target for the dev-only login switcher (see torqued.db).
+
+    Only honoured inside a request and only when the switcher is enabled, so a
+    forged session cookie can never switch the database in a real deployment.
+    """
+    from torqued.db import db_switcher_enabled
+
+    if not db_switcher_enabled() or not has_request_context():
+        return None
+    return "production" if session.get("db_target") == "production" else None
+
+
+# A deploy can briefly take the app offline (e.g. while migrations run). When this
+# flag file exists every request gets a short maintenance page instead. `make
+# deploy-pa` creates it around the migration step and removes it afterwards.
+_MAINTENANCE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torqued — maintenance</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f4f0;
+         color: #1a1714; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+  .box { text-align: center; max-width: 28rem; padding: 2rem; }
+  h1 { margin: 0 0 .5rem; }
+  p { color: #6b6560; }
+</style></head>
+<body><div class="box">
+  <h1>🔧 Down for maintenance</h1>
+  <p>Torqued is being updated — this usually takes under a minute. Please refresh shortly.</p>
+</div></body></html>"""
+
+
+def _maintenance_flag() -> str:
+    return os.environ.get(
+        "MAINTENANCE_FILE", str(Path(__file__).parent.parent.parent / "MAINTENANCE")
+    )
+
+
 def create_app() -> Flask:
-    from torqued.db import get_db, run_migrations
+    from torqued.db import get_db, run_migrations, set_target_resolver
     from torqued.repositories.user_repository import UserRepository
     from torqued.routes import (
         admin,
@@ -33,6 +72,7 @@ def create_app() -> Flask:
     )
 
     run_migrations()
+    set_target_resolver(_resolve_db_target)
 
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
@@ -68,6 +108,15 @@ def create_app() -> Flask:
         return jsonify(error="Authentication required"), 401
 
     @app.before_request
+    def maintenance_gate() -> ResponseReturnValue | None:
+        if os.path.exists(_maintenance_flag()):
+            return Response(
+                _MAINTENANCE_HTML, status=503, mimetype="text/html",
+                headers={"Retry-After": "30"},
+            )
+        return None
+
+    @app.before_request
     def enforce_auth() -> ResponseReturnValue | None:
         # Read-only enforcement is per-garage and handled in the routes via
         # torqued.access; this hook only enforces account expiry.
@@ -97,6 +146,14 @@ def create_app() -> Flask:
         users.bp,
     ):
         app.register_blueprint(bp)
+
+    @app.get("/api/config")
+    def app_config() -> Response:
+        # Public, unauthenticated: lets the login page decide whether to offer the
+        # dev-only "use production database" switch.
+        from torqued.db import db_switcher_enabled
+
+        return jsonify(db_switcher=db_switcher_enabled())
 
     @app.get("/", defaults={"path": ""})
     @app.get("/<path:path>")

@@ -15,3 +15,5 @@ data/db-backup-*.sql
 backend-src/.coverage
 .DS_Store
 backend-src/data
+.coverage
+MAINTENANCE

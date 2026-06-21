@@ -7,6 +7,7 @@ const GARAGE_KEY = 'torqued.garage';
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = loading
   const [garages, setGarages] = useState(null); // null = loading
+  const [dbSwitcher, setDbSwitcher] = useState(false); // dev-only DB picker available?
 
   const refreshGarages = useCallback(() => {
     return api.getGarages().then(setGarages).catch(() => setGarages([]));
@@ -14,6 +15,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     api.getMe().then(setUser).catch(() => setUser(null));
+    api.getConfig().then(c => setDbSwitcher(!!c.db_switcher)).catch(() => setDbSwitcher(false));
   }, []);
 
   useEffect(() => {
@@ -41,8 +43,8 @@ export function AuthProvider({ children }) {
     return user.memberships?.find(m => m.garage_id === garageId)?.role ?? null;
   };
 
-  const login = async (username, password) => {
-    const u = await api.login(username, password);
+  const login = async (username, password, database) => {
+    const u = await api.login(username, password, database);
     setUser(u);
   };
 
@@ -53,7 +55,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthCtx.Provider value={{
-      user, login, logout,
+      user, login, logout, dbSwitcher,
       garages, currentGarage, selectGarage, refreshGarages, roleFor,
     }}>
       {children}

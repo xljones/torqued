@@ -3,8 +3,15 @@
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
+# Load the project .env so CLI commands target the same database as the web app.
+# On PythonAnywhere a console doesn't otherwise have DATABASE_URL set; existing
+# environment variables (e.g. Docker Compose's) are not overridden.
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 def cmd_create_user(args: list[str]) -> None:
@@ -308,74 +315,155 @@ def cmd_delete_user(args: list[str]) -> None:
     print(f"User '{username}' deleted.")
 
 
-def cmd_db_restore(args: list[str]) -> None:
+def _active_url() -> Any:
+    """Return the active database URL (SQLAlchemy URL object)."""
+    from sqlalchemy.engine import make_url
+    from torqued.db import database_url
+
+    return make_url(database_url())
+
+
+def _backup_dir(url: Any) -> Path:
+    """Where backups live: next to the SQLite file, or data/ for everything else."""
+    if url.get_backend_name() == "sqlite":
+        return Path(url.database).parent
+    return Path("data")
+
+
+def _confirm_destructive(url: Any, action: str) -> None:
+    """Abort unless the operator retypes the exact target the action will hit.
+
+    A constant "YES" can't tell the local container apart from production; naming the
+    target host and requiring it back forces a deliberate acknowledgement of *which*
+    database is about to be destroyed — whether ``--prod`` repointed us at
+    PROD_DATABASE_URL or DATABASE_URL already is production (PythonAnywhere).
+    """
+    target = url.host or url.database or "the configured database"
+    print(f"⚠  {action}")
+    print(f"⚠  Target database: {target}")
+    try:
+        confirm = input(f"Type the target '{target}' to confirm (anything else aborts): ")
+    except EOFError:
+        # Non-interactive invocation (no TTY): abort cleanly rather than throwing.
+        confirm = ""
+    if confirm.strip() != target:
+        print("Aborted.")
+        sys.exit(0)
+
+
+def _pg_invocation(url: Any) -> tuple[str, dict[str, str]]:
+    """A (password-free DSN, subprocess env) pair for invoking psql / pg_dump.
+
+    The password travels in PGPASSWORD rather than embedded in the DSN, so it never
+    appears in the process's argv — where ``ps``, shell history, or any argv-capturing
+    log could read it. Query params (e.g. ``?sslmode=require``) stay on the DSN, which
+    is where libpq expects them.
+    """
     import os
-    import sqlite3 as _sqlite3
+
+    from sqlalchemy.engine import URL
+
+    pg_url = url.set(drivername="postgresql")
+    dsn = URL.create(
+        drivername=pg_url.drivername,
+        username=pg_url.username,
+        password=None,
+        host=pg_url.host,
+        port=pg_url.port,
+        database=pg_url.database,
+        query=pg_url.query,
+    ).render_as_string(hide_password=False)
+    env = {**os.environ}
+    if pg_url.password:
+        env["PGPASSWORD"] = pg_url.password
+    return dsn, env
+
+
+def cmd_db_restore(args: list[str]) -> None:
+    import subprocess
 
     if len(args) != 1:
         print("Usage: python manage.py db-restore <backup-file>")
         sys.exit(1)
 
-    db_path = os.environ.get("DB_PATH", "data/garage.db")
+    url = _active_url()
     backup_path = Path(args[0])
     if not backup_path.is_absolute():
-        backup_path = Path(db_path).parent / args[0]
+        backup_path = _backup_dir(url) / args[0]
 
     if not backup_path.exists():
         print(f"Error: backup file not found: {backup_path}")
         sys.exit(1)
 
-    confirm = input(f"Restore from '{backup_path}'? This will overwrite the current database. Type YES to confirm: ")
-    if confirm.strip() != "YES":
-        print("Aborted.")
-        sys.exit(0)
+    _confirm_destructive(url, f"Restore from '{backup_path}' overwrites the current database")
 
-    sql = backup_path.read_text()
-    Path(db_path).unlink(missing_ok=True)
-    con = _sqlite3.connect(db_path)
-    con.executescript(sql)
-    con.close()
+    if url.get_backend_name() == "sqlite":
+        import sqlite3 as _sqlite3
+
+        Path(url.database).unlink(missing_ok=True)
+        con = _sqlite3.connect(url.database)
+        con.executescript(backup_path.read_text())
+        con.close()
+    else:
+        dsn, env = _pg_invocation(url)
+        subprocess.run(
+            ["psql", dsn, "-v", "ON_ERROR_STOP=1",
+             "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"],
+            check=True, env=env,
+        )
+        subprocess.run(
+            ["psql", dsn, "-v", "ON_ERROR_STOP=1", "-f", str(backup_path)], check=True, env=env
+        )
     print(f"Database restored from {backup_path}")
 
 
 def cmd_db_backup(_: list[str]) -> None:
     import datetime
-    import os
-    import sqlite3 as _sqlite3
+    import subprocess
 
-    db_path = os.environ.get("DB_PATH", "data/garage.db")
+    url = _active_url()
+    backup_dir = _backup_dir(url)
+    backup_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = str(Path(db_path).parent / f"db-backup-{ts}.sql")
+    backup_path = backup_dir / f"db-backup-{ts}.sql"
 
-    con = _sqlite3.connect(db_path)
-    with open(backup_path, "w") as f:
-        for line in con.iterdump():
-            f.write(line + "\n")
-    con.close()
+    if url.get_backend_name() == "sqlite":
+        import sqlite3 as _sqlite3
+
+        con = _sqlite3.connect(url.database)
+        with open(backup_path, "w") as f:
+            for line in con.iterdump():
+                f.write(line + "\n")
+        con.close()
+    else:
+        dsn, env = _pg_invocation(url)
+        with open(backup_path, "w") as f:
+            subprocess.run(["pg_dump", dsn], check=True, stdout=f, env=env)
     print(f"Backup written to {backup_path}")
 
 
 def cmd_migrate(_: list[str]) -> None:
     from torqued.db import run_migrations
+
     run_migrations()
     print("Migrations complete.")
 
 
 def cmd_reset_db(args: list[str]) -> None:
-    msg = "This will drop ALL tables including users. Type YES to confirm: "
-    confirm = input(msg)
-    if confirm.strip() != "YES":
-        print("Aborted.")
-        sys.exit(0)
-    import os
+    from torqued.db import get_db, run_migrations
 
-    from torqued.db import _DEFAULT_DB_PATH, run_migrations
+    url = _active_url()
+    _confirm_destructive(url, "Reset drops ALL tables, including users")
 
-    # Delete the database file outright rather than dropping tables one by one:
-    # a malformed image can't be read, and this also can't miss any tables.
-    db_path = os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
-    for suffix in ("", "-wal", "-shm"):
-        Path(db_path + suffix).unlink(missing_ok=True)
+    if url.get_backend_name() == "sqlite":
+        # Delete the database file outright rather than dropping tables one by one:
+        # a malformed image can't be read, and this also can't miss any tables.
+        for suffix in ("", "-wal", "-shm"):
+            Path(url.database + suffix).unlink(missing_ok=True)
+    else:
+        with get_db() as db:
+            db.execute("DROP SCHEMA public CASCADE")
+            db.execute("CREATE SCHEMA public")
 
     run_migrations()
     print("Database reset. Run seed to repopulate.")
@@ -395,8 +483,31 @@ COMMANDS: dict[str, Callable[[list[str]], None]] = {
     "db-restore":  cmd_db_restore,
 }
 
+def _target_production() -> None:
+    """Point every following DB operation at PROD_DATABASE_URL (the `--prod` flag).
+
+    On PythonAnywhere there is no separate PROD_DATABASE_URL — DATABASE_URL already is
+    production — so `--prod` is a local convenience and errors if it is unset.
+    """
+    import os
+
+    from sqlalchemy.engine import make_url
+
+    prod = os.environ.get("PROD_DATABASE_URL")
+    if not prod:
+        print("Error: PROD_DATABASE_URL is not set (it points at the production database).")
+        sys.exit(1)
+    os.environ["DATABASE_URL"] = prod
+    print(f"⚠  Targeting the PRODUCTION database at {make_url(prod).host or '?'} (PROD_DATABASE_URL).")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         print(f"Available commands: {', '.join(COMMANDS)}")
         sys.exit(1)
-    COMMANDS[sys.argv[1]](sys.argv[2:])
+    cmd_args = sys.argv[2:]
+    # `--prod` works for any command — strip it here and repoint the DB once.
+    if "--prod" in cmd_args:
+        cmd_args = [a for a in cmd_args if a != "--prod"]
+        _target_production()
+    COMMANDS[sys.argv[1]](cmd_args)

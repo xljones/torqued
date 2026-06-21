@@ -3,6 +3,23 @@
 ## [Unreleased]
 
 ### Added
+- **Dev-only login database switcher.** In development (`FLASK_DEBUG=1`) with
+  `PROD_DATABASE_URL` set, the login page offers a Local/Production toggle so you can sign
+  in against either the local Postgres container or the real production database without a
+  restart. The choice is stored in the signed session and a per-request resolver routes the
+  backend accordingly; a red "PRODUCTION" banner shows while you're connected to it. The
+  switch is completely inert in a real deployment (gated on dev mode + the env var). The
+  picker is a slider toggle (dev left, prod right). See [.env.example](.env.example).
+- **Run DB/user commands against production.** The database and user `make` commands take an
+  optional `prod=1` flag (e.g. `make create-admin username=x password=y prod=1`,
+  `make migrate prod=1`, `make db-backup prod=1`) to target `PROD_DATABASE_URL` instead of the
+  local DB; `manage.py` handles a global `--prod` that repoints `DATABASE_URL` once and prints
+  the target host. `seed` stays local-only. `manage.py` also loads the project `.env` so CLI
+  commands hit the configured database (previously PythonAnywhere console commands fell back to
+  SQLite).
+- **Maintenance page on deploy.** `make deploy-pa` now runs migrations before rolling out the
+  new code, behind a short maintenance page (a `MAINTENANCE` flag file makes every request
+  return a 503 placeholder; a failed migration leaves it in place).
 - Vehicle history **PDF export**: a rich, printable report covering details, tyres,
   specs, reminders, mileage (with chart), full service history (incl. fault codes),
   and MOT history. Photos are opt-in via an "Include photos" toggle in the vehicle's
@@ -19,6 +36,17 @@
 - **PDF report** appends "cc" to bare DVSA engine-size numbers, mirroring the web UI.
 
 ### Changed
+- **Database migrated from SQLite to PostgreSQL.** The backend now talks to its database
+  through SQLAlchemy Core (psycopg v3 driver) and is database-agnostic: PostgreSQL in
+  development (a `db` service in Docker Compose) and production, SQLite in the test suite,
+  selected by `DATABASE_URL` / `DB_PATH`. Repositories keep their `execute("… ? …", (args,))`
+  style via a thin dialect-aware `Connection` wrapper. Schema is now managed by **Alembic**
+  (`backend-src/migrations/`) instead of the bespoke SQL-file runner; `run_migrations()` runs
+  `alembic upgrade head` on startup. `make db-backup` / `db-restore` detect the backend
+  (`pg_dump`/`psql` for Postgres, `sqlite3` dump for SQLite). Hosted Postgres URLs (Neon,
+  Supabase, …) work verbatim — the psycopg v3 driver is pinned, `?sslmode=…` is honoured, and
+  server-side prepared statements are disabled for transaction-pooler (PgBouncer / Neon
+  `-pooler`) compatibility. Configure via [.env.example](.env.example); see [DEPLOYMENT.md](DEPLOYMENT.md).
 - `RelativeTime` renders future dates in human-friendly units (e.g. MOT expiry reads
   "next month" rather than "in 3,043,741 seconds"); the MOT card shows expiry relatively.
 

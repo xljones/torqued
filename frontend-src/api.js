@@ -33,8 +33,9 @@ async function upload(path, formData) {
 
 export const api = {
   // Auth
+  getConfig:        ()                         => req('GET',  '/config'),
   getMe:            ()                         => req('GET',  '/auth/me'),
-  login:            (username, password)       => req('POST', '/auth/login', { username, password }),
+  login:            (username, password, database) => req('POST', '/auth/login', { username, password, database }),
   logout:           ()                         => req('POST', '/auth/logout'),
   changePassword:   (current_password, new_password) => req('PUT', '/auth/password', { current_password, new_password }),
 
