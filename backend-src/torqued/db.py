@@ -62,17 +62,20 @@ def set_target_resolver(resolver: Callable[[], str | None] | None) -> None:
     _target_resolver = resolver
 
 
-def _dev_mode() -> bool:
-    return os.environ.get("FLASK_DEBUG", "1") != "0"
-
-
 def db_switcher_enabled() -> bool:
     """True when the dev-only "use production DB" login switch is available.
 
-    Requires development mode *and* a configured PROD_DATABASE_URL, so it is always
-    False (inert) in a real deployment — production can't be tricked into switching.
+    Requires an explicit opt-in (``ENABLE_DB_SWITCHER=1``) *and* a configured
+    PROD_DATABASE_URL. Both must be set deliberately, so the switch is inert in any
+    deployment that doesn't ask for it: production never sets ENABLE_DB_SWITCHER, so a
+    forged ``db_target`` cookie can't switch the database there. Crucially this no
+    longer keys off FLASK_DEBUG — the safety is a positive opt-in, not the absence of a
+    debug flag that some entry point forgot to force off.
     """
-    return _dev_mode() and bool(os.environ.get("PROD_DATABASE_URL"))
+    return (
+        os.environ.get("ENABLE_DB_SWITCHER") == "1"
+        and bool(os.environ.get("PROD_DATABASE_URL"))
+    )
 
 
 def _with_psycopg_driver(url: str) -> str:

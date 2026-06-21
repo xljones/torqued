@@ -32,6 +32,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://torqued:torqued@db:5432/torqued
       FLASK_DEBUG: "1"
+      # Opt in to the dev-only login DB switcher (needs PROD_DATABASE_URL from .env
+      # too). Production never sets this, so the switcher stays inert there.
+      ENABLE_DB_SWITCHER: "1"
     depends_on:
       db:
         condition: service_healthy

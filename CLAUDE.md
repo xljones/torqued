@@ -29,14 +29,16 @@ disabled so the app is safe behind a transaction pooler (PgBouncer / Neon's `-po
 endpoint). Migrations are just `alembic upgrade head` (`run_migrations()`), run on startup
 or as an explicit `make migrate` / CI step (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
-**Dev-only DB switcher.** In development (`FLASK_DEBUG=1`) with `PROD_DATABASE_URL` set,
-the login page offers a Local/Production toggle (`GET /api/config` → `db_switcher`). The
-login route stores the choice in the signed session (`db_target`); a per-request resolver
-registered via `db.set_target_resolver()` makes `get_db()` route to `PROD_DATABASE_URL`
-for that session, and a red banner shows while on production. It is inert in a real
-deployment — `db.db_switcher_enabled()` is False, so a forged cookie can't switch the DB,
-and migrations always use the default `DATABASE_URL` (the resolver returns None outside a
-request).
+**Dev-only DB switcher.** With `ENABLE_DB_SWITCHER=1` *and* `PROD_DATABASE_URL` set (both
+wired up in `compose.yml` for local dev), the login page offers a Local/Production toggle
+(`GET /api/config` → `db_switcher`). The login route stores the choice in the signed
+session (`db_target`); a per-request resolver registered via `db.set_target_resolver()`
+makes `get_db()` route to `PROD_DATABASE_URL` for that session, and a red banner shows
+while on production. It is inert in a real deployment — production never sets
+`ENABLE_DB_SWITCHER`, so `db.db_switcher_enabled()` is False and a forged cookie can't
+switch the DB. The gate is a positive opt-in, **not** the absence of `FLASK_DEBUG`, so it
+doesn't depend on an entry point remembering to force debug off. Migrations always use the
+default `DATABASE_URL` (the resolver returns None outside a request).
 
 ## Domain model
 
