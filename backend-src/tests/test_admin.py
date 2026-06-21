@@ -104,6 +104,7 @@ def test_neon_stats_success(admin_client: FlaskClient, monkeypatch) -> None:
             "region_id": "aws-eu-west-2",
             "pg_version": 17,
             "synthetic_storage_size": 134217728,
+            "branch_logical_size_limit_bytes": 536870912,
             "cpu_used_sec": 7200,
             "active_time": 3600,
             "quota_reset_at": "2026-07-01T00:00:00Z",
@@ -119,6 +120,7 @@ def test_neon_stats_success(admin_client: FlaskClient, monkeypatch) -> None:
     assert r.json["project"]["name"] == "torqued-db"
     assert r.json["project"]["region"] == "aws-eu-west-2"
     assert r.json["storage_bytes"] == 134217728
+    assert r.json["storage_limit_bytes"] == 536870912
     assert r.json["cpu_seconds"] == 7200
     assert r.json["active_seconds"] == 3600
     assert r.json["quota_reset_at"] == "2026-07-01T00:00:00Z"
@@ -155,6 +157,7 @@ def test_neon_stats_success_autodiscover(admin_client: FlaskClient, monkeypatch)
     assert r.json["configured"] is True
     assert r.json["project"]["id"] == "proj-abc"
     assert r.json["storage_bytes"] == 268435456
+    assert r.json["storage_limit_bytes"] is None
     assert r.json["active_seconds"] == 900
     assert r.json["last_active_at"] is None
 

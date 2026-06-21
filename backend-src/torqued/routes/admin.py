@@ -86,6 +86,7 @@ def neon_stats() -> ResponseReturnValue:
 
     storage = project.get("synthetic_storage_size", project.get("synthetic_storage_size_bytes", 0))
     active = project.get("active_time", project.get("active_time_seconds", 0))
+    storage_limit = project.get("branch_logical_size_limit_bytes") or None
     return jsonify(
         configured=True,
         project={
@@ -95,6 +96,7 @@ def neon_stats() -> ResponseReturnValue:
             "pg_version": project.get("pg_version"),
         },
         storage_bytes=storage or 0,
+        storage_limit_bytes=storage_limit,
         cpu_seconds=project.get("cpu_used_sec", 0) or 0,
         active_seconds=active or 0,
         quota_reset_at=project.get("quota_reset_at"),
