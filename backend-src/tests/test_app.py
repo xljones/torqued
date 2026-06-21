@@ -64,6 +64,29 @@ def test_create_app_requires_secret_key_in_production(tmp_path: Path) -> None:
             create_app()
 
 
+def test_create_app_skips_startup_migration_on_pythonanywhere(monkeypatch) -> None:
+    """On PythonAnywhere the per-worker startup migration is skipped — migrations are
+    applied explicitly (single process) by `make migrate`, so concurrent web workers
+    can't race to build the schema ('table users already exists' on first boot)."""
+    called = []
+    monkeypatch.setattr("torqued.db.run_migrations", lambda: called.append(1))
+    monkeypatch.setenv("PYTHONANYWHERE_SITE", "xljones.pythonanywhere.com")
+    from torqued import create_app
+    create_app()
+    assert called == []
+
+
+def test_create_app_runs_startup_migration_off_pythonanywhere(monkeypatch) -> None:
+    """Off PythonAnywhere (local / Docker) the app still migrates on startup, so it's
+    ready on first boot with no extra step."""
+    called = []
+    monkeypatch.setattr("torqued.db.run_migrations", lambda: called.append(1))
+    monkeypatch.delenv("PYTHONANYWHERE_SITE", raising=False)
+    from torqued import create_app
+    create_app()
+    assert called == [1]
+
+
 # ── enforce_auth middleware ───────────────────────────────────────────────────
 
 def test_enforce_auth_expired_session(client: FlaskClient) -> None:

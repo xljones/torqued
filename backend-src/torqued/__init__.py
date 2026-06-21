@@ -71,7 +71,14 @@ def create_app() -> Flask:
         vehicles,
     )
 
-    run_migrations()
+    # On PythonAnywhere, migrations are applied explicitly (single process) by
+    # `make migrate` / `make deploy-pa`, behind a maintenance page. Skip the
+    # per-worker startup migration there: PA boots several web workers at once and on
+    # a fresh database they would race to apply the schema, leaving it half-built
+    # (e.g. "table users already exists"). Locally and in Docker the startup migration
+    # stays, so the app is ready on first boot with no extra step.
+    if not os.environ.get("PYTHONANYWHERE_SITE"):
+        run_migrations()
     set_target_resolver(_resolve_db_target)
 
     secret_key = os.environ.get("SECRET_KEY")
