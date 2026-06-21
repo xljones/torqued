@@ -351,6 +351,34 @@ def _confirm_destructive(url: Any, action: str) -> None:
         sys.exit(0)
 
 
+def _pg_invocation(url: Any) -> tuple[str, dict[str, str]]:
+    """A (password-free DSN, subprocess env) pair for invoking psql / pg_dump.
+
+    The password travels in PGPASSWORD rather than embedded in the DSN, so it never
+    appears in the process's argv — where ``ps``, shell history, or any argv-capturing
+    log could read it. Query params (e.g. ``?sslmode=require``) stay on the DSN, which
+    is where libpq expects them.
+    """
+    import os
+
+    from sqlalchemy.engine import URL
+
+    pg_url = url.set(drivername="postgresql")
+    dsn = URL.create(
+        drivername=pg_url.drivername,
+        username=pg_url.username,
+        password=None,
+        host=pg_url.host,
+        port=pg_url.port,
+        database=pg_url.database,
+        query=pg_url.query,
+    ).render_as_string(hide_password=False)
+    env = {**os.environ}
+    if pg_url.password:
+        env["PGPASSWORD"] = pg_url.password
+    return dsn, env
+
+
 def cmd_db_restore(args: list[str]) -> None:
     import subprocess
 
@@ -377,13 +405,15 @@ def cmd_db_restore(args: list[str]) -> None:
         con.executescript(backup_path.read_text())
         con.close()
     else:
-        dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
+        dsn, env = _pg_invocation(url)
         subprocess.run(
             ["psql", dsn, "-v", "ON_ERROR_STOP=1",
              "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"],
-            check=True,
+            check=True, env=env,
         )
-        subprocess.run(["psql", dsn, "-v", "ON_ERROR_STOP=1", "-f", str(backup_path)], check=True)
+        subprocess.run(
+            ["psql", dsn, "-v", "ON_ERROR_STOP=1", "-f", str(backup_path)], check=True, env=env
+        )
     print(f"Database restored from {backup_path}")
 
 
@@ -406,9 +436,9 @@ def cmd_db_backup(_: list[str]) -> None:
                 f.write(line + "\n")
         con.close()
     else:
-        dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
+        dsn, env = _pg_invocation(url)
         with open(backup_path, "w") as f:
-            subprocess.run(["pg_dump", dsn], check=True, stdout=f)
+            subprocess.run(["pg_dump", dsn], check=True, stdout=f, env=env)
     print(f"Backup written to {backup_path}")
 
 
