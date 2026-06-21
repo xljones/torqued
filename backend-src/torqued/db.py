@@ -16,7 +16,7 @@ ordinary ``"… WHERE id = ?"`` + parameter-tuple convention. The wrapper takes
 care of the dialect (placeholder style, row mapping, transactions).
 """
 import os
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,8 +35,10 @@ __all__ = [
     "Connection",
     "IntegrityError",
     "database_url",
+    "db_switcher_enabled",
     "get_db",
     "run_migrations",
+    "set_target_resolver",
     "utcnow_text",
 ]
 
@@ -46,6 +48,31 @@ _MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
 # Engines are cached per-URL: prod reuses one pooled engine, while each test's
 # temporary SQLite file gets its own (keeping test databases isolated).
 _engines: dict[str, Engine] = {}
+
+# Optional per-request hook (set by the Flask app) that returns the database the
+# current request should use — "production" to switch to PROD_DATABASE_URL, else
+# None for the default. It exists only for the dev-only login DB switcher and is
+# never consulted outside a request (manage.py, migrations all use the default).
+_target_resolver: Callable[[], str | None] | None = None
+
+
+def set_target_resolver(resolver: Callable[[], str | None] | None) -> None:
+    """Register (or clear) the per-request database-target resolver."""
+    global _target_resolver
+    _target_resolver = resolver
+
+
+def _dev_mode() -> bool:
+    return os.environ.get("FLASK_DEBUG", "1") != "0"
+
+
+def db_switcher_enabled() -> bool:
+    """True when the dev-only "use production DB" login switch is available.
+
+    Requires development mode *and* a configured PROD_DATABASE_URL, so it is always
+    False (inert) in a real deployment — production can't be tricked into switching.
+    """
+    return _dev_mode() and bool(os.environ.get("PROD_DATABASE_URL"))
 
 
 def _with_psycopg_driver(url: str) -> str:
@@ -63,7 +90,13 @@ def _with_psycopg_driver(url: str) -> str:
 
 
 def database_url() -> str:
-    """Resolve the SQLAlchemy URL for the active database (see module docstring)."""
+    """Resolve the SQLAlchemy URL for the active database (see module docstring).
+
+    If the request-scoped resolver selects "production" (the dev-only switcher), the
+    PROD_DATABASE_URL wins; db_switcher_enabled() guarantees it is set in that case.
+    """
+    if _target_resolver is not None and _target_resolver() == "production":
+        return _with_psycopg_driver(os.environ["PROD_DATABASE_URL"])
     url = os.environ.get("DATABASE_URL")
     if url:
         return _with_psycopg_driver(url)

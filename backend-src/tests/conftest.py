@@ -9,9 +9,10 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 # Tests always run on a throwaway SQLite file (set per-test via DB_PATH). Drop any
-# ambient DATABASE_URL — e.g. the Postgres one the Docker Compose backend service
-# injects — so it can't take precedence over the test database.
+# ambient DATABASE_URL / PROD_DATABASE_URL — e.g. the ones the Docker Compose
+# backend service injects — so they can't take precedence over the test database.
 os.environ.pop("DATABASE_URL", None)
+os.environ.pop("PROD_DATABASE_URL", None)
 
 
 @pytest.fixture
