@@ -89,7 +89,7 @@ torqued/
 - **Auth:** Flask-Login guards all routes via `@login_required`; a `before_request` hook in `__init__.py` enforces account expiry (logs the user out). Read-only is per-garage and enforced in routes via `torqued.access`.
 - **Tenancy:** collection endpoints accept an optional `garage_id` query param and otherwise return data for all the user's garages; item endpoints resolve the garage through the vehicle. Out-of-scope resources return 404, write attempts by readonly members return 403.
 - **Version history:** vehicles and service logs snapshot to `*_history` tables on every create/update; `revert` endpoints restore a snapshot.
-- **Admin-only:** `routes/admin.py` exposes `/api/admin/pythonanywhere` (CPU, web app, scheduled task info — needs `PA_API_TOKEN` and `PA_USERNAME`) and `/api/admin/neon` (Neon database storage / compute usage via the Neon REST API — needs `NEON_API_KEY`, optional `NEON_PROJECT_ID` else the first project is used) — both gated on `current_user.is_admin`.
+- **Admin-only:** `routes/admin.py` exposes `/api/admin/pythonanywhere` (CPU, web app, scheduled task info — needs `PA_API_TOKEN` and `PA_USERNAME`) and `/api/admin/neon` (Neon database storage / compute usage via the Neon REST API — needs `NEON_API_KEY`, optional `NEON_PROJECT_ID` else the first project is used; storage shows as a % of Neon's reported size limit, compute as a % of `NEON_COMPUTE_LIMIT_HOURS` or a configured Neon consumption quota) — both gated on `current_user.is_admin`.
 
 ### Frontend (`frontend-src/`)
 

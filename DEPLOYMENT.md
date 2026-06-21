@@ -55,8 +55,11 @@ echo "PA_USERNAME=<your-username>" >> .env
 
 ```bash
 echo "NEON_API_KEY=<your-api-key>" >> .env
-echo "NEON_PROJECT_ID=<your-project-id>" >> .env   # optional
+echo "NEON_PROJECT_ID=<your-project-id>" >> .env       # optional
+echo "NEON_COMPUTE_LIMIT_HOURS=100" >> .env            # optional — your plan's monthly compute-hours
 ```
+
+Storage shows as a percentage of Neon's reported size limit automatically. Compute has no plan-inherent limit, so to show it as a percentage set `NEON_COMPUTE_LIMIT_HOURS` to your plan's monthly compute-hours allowance (the Free plan includes ≈100); otherwise the card shows a plain compute-hours figure.
 
 **Optional — DVSA MOT history.** To enable the "Refresh from DVSA" button on vehicle pages, [register for the MOT history API](https://documentation.history.mot.api.gov.uk/mot-history-api/register) (free for under 500,000 requests/year; DVSA emails credentials in 1–5 working days) and add:
 
