@@ -3,9 +3,10 @@ import { useAuth } from '../AuthContext.jsx';
 import BuildInfo from './BuildInfo.jsx';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, dbSwitcher } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [database, setDatabase] = useState('local');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -14,7 +15,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(username, password);
+      await login(username, password, dbSwitcher ? database : undefined);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -51,6 +52,25 @@ export default function LoginPage() {
               />
             </div>
           </div>
+          {dbSwitcher && (
+            <div className="field mb-4">
+              <label>Database</label>
+              <select
+                className={database === 'production' ? 'login-db-prod' : undefined}
+                value={database}
+                onChange={e => setDatabase(e.target.value)}
+                aria-label="Database"
+              >
+                <option value="local">Local (dev container)</option>
+                <option value="production">Production (live)</option>
+              </select>
+              {database === 'production' && (
+                <p className="login-db-warning">
+                  ⚠ Signing in to the <strong>production</strong> database — changes are live.
+                </p>
+              )}
+            </div>
+          )}
           {error && <p className="form-error">{error}</p>}
           <button className="btn btn-primary btn-full" disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}

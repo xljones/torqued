@@ -69,3 +69,8 @@ a.core-depth-marker:hover, a.core-depth-marker--active { transform: translate(-5
 
 /* ── Alerts ────────────────────────────────────────────────────────────────── */
 .alert-error { color: var(--danger); background: #fff0f0; border: 1px solid #f5c0c0; border-radius: var(--radius); padding: 12px 16px; }
+
+/* ── Dev database switcher (login) + production banner ───────────────────────── */
+.prod-banner { position: sticky; top: 0; z-index: 200; background: var(--danger); color: #fff; text-align: center; padding: 8px 16px; font-size: 0.9rem; font-weight: 600; letter-spacing: 0.02em; }
+.login-db-warning { margin: 6px 0 0; color: var(--danger); font-size: 0.82rem; }
+select.login-db-prod { border-color: var(--danger); }

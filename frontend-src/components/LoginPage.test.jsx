@@ -3,13 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import LoginPage from './LoginPage';
 
 const mockLogin = vi.fn();
+let mockAuth;
 
 vi.mock('../AuthContext.jsx', () => ({
-  useAuth: () => ({ login: mockLogin }),
+  useAuth: () => mockAuth,
 }));
 
 beforeEach(() => {
   mockLogin.mockReset();
+  mockAuth = { login: mockLogin, dbSwitcher: false };
 });
 
 function fillForm(username, password) {
@@ -25,14 +27,14 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
-  it('calls login with entered credentials', async () => {
+  it('calls login with entered credentials (no DB hint when switcher off)', async () => {
     mockLogin.mockResolvedValue(undefined);
     render(<LoginPage />);
 
     fillForm('alice', 'secret');
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
-    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'secret'));
+    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'secret', undefined));
   });
 
   it('shows error message on failed login', async () => {
@@ -45,5 +47,25 @@ describe('LoginPage', () => {
     await waitFor(() =>
       expect(screen.getByText('Invalid username or password')).toBeInTheDocument()
     );
+  });
+
+  it('hides the database switcher when not enabled', () => {
+    render(<LoginPage />);
+    expect(screen.queryByLabelText('Database')).not.toBeInTheDocument();
+  });
+
+  it('offers the switcher in dev mode and logs in against the chosen database', async () => {
+    mockAuth = { login: mockLogin, dbSwitcher: true };
+    mockLogin.mockResolvedValue(undefined);
+    render(<LoginPage />);
+
+    const select = screen.getByLabelText('Database');
+    fireEvent.change(select, { target: { value: 'production' } });
+    expect(screen.getByText(/changes are live/i)).toBeInTheDocument();
+
+    fillForm('alice', 'secret');
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'secret', 'production'));
   });
 });
