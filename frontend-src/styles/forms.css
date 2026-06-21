@@ -67,6 +67,22 @@ select { cursor: pointer; }
 /* Green border on whichever value wins: the override input, or the DVSA fallback. */
 .dvsa-split.is-override > input { border-color: var(--btn-success); box-shadow: 0 0 0 1px var(--btn-success); }
 .dvsa-split.is-dvsa .dvsa-fixed { border-color: var(--btn-success); box-shadow: 0 0 0 1px var(--btn-success); }
+/* Tyre pressure: front + rear inputs on one row with a psi/bar unit toggle between them. */
+.pressure-entry { display: flex; gap: 8px; align-items: stretch; }
+.pressure-entry > input { flex: 1; min-width: 0; text-align: center; }
+.unit-toggle {
+  display: inline-flex; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.unit-toggle button {
+  appearance: none; border: 0; border-left: 1px solid var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface2); color: var(--text2); cursor: pointer;
+  padding: 0 14px; font-size: 12px; font-weight: 600; font-family: inherit;
+  text-transform: uppercase; letter-spacing: 0.04em; transition: background 0.1s, color 0.1s;
+}
+.unit-toggle button:first-child { border-left: 0; }
+.unit-toggle button.is-active { background: var(--accent); color: #fff; }
 .form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
 .form-warning { color: var(--warn-fg); font-size: 13px; }
 .combo-wrap { position: relative; }

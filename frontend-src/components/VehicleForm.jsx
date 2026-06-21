@@ -282,20 +282,22 @@ export default function VehicleForm({ mode }) {
               <label>Rear tyre size</label>
               <input value={form.tyre_size_rear} onChange={e => set('tyre_size_rear', e.target.value)} placeholder="e.g. 180/55 ZR17" />
             </div>
-            <div className="field">
-              <label>Pressure unit</label>
-              <select value={pressureUnit} onChange={e => switchPressureUnit(e.target.value)}>
-                <option value="psi">psi</option>
-                <option value="bar">bar</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Front pressure ({pressureUnit})</label>
-              <input type="number" step="any" value={form.tyre_pressure_front} onChange={e => set('tyre_pressure_front', e.target.value)} />
-            </div>
-            <div className="field">
-              <label>Rear pressure ({pressureUnit})</label>
-              <input type="number" step="any" value={form.tyre_pressure_rear} onChange={e => set('tyre_pressure_rear', e.target.value)} />
+            <div className="field span-2">
+              <label>Tyre pressure</label>
+              <div className="pressure-entry">
+                <input type="number" step="any" aria-label="Front tyre pressure" placeholder="Front"
+                  value={form.tyre_pressure_front} onChange={e => set('tyre_pressure_front', e.target.value)} />
+                <div className="unit-toggle" role="group" aria-label="Pressure unit">
+                  {['psi', 'bar'].map(u => (
+                    <button key={u} type="button" className={pressureUnit === u ? 'is-active' : ''}
+                      aria-pressed={pressureUnit === u} onClick={() => switchPressureUnit(u)}>
+                      {u}
+                    </button>
+                  ))}
+                </div>
+                <input type="number" step="any" aria-label="Rear tyre pressure" placeholder="Rear"
+                  value={form.tyre_pressure_rear} onChange={e => set('tyre_pressure_rear', e.target.value)} />
+              </div>
             </div>
           </div>
 
