@@ -394,21 +394,9 @@ def cmd_db_backup(_: list[str]) -> None:
     print(f"Backup written to {backup_path}")
 
 
-def cmd_migrate(args: list[str]) -> None:
-    import os
-
+def cmd_migrate(_: list[str]) -> None:
     from torqued.db import run_migrations
 
-    # `--prod` migrates the production database identified by PROD_DATABASE_URL. On
-    # PythonAnywhere there is no separate PROD_DATABASE_URL — DATABASE_URL already is
-    # production — so plain `migrate` is the production migration there.
-    if "--prod" in args:
-        prod = os.environ.get("PROD_DATABASE_URL")
-        if not prod:
-            print("Error: PROD_DATABASE_URL is not set (it points at the production database).")
-            sys.exit(1)
-        os.environ["DATABASE_URL"] = prod
-        print("Migrating the production database (PROD_DATABASE_URL)…")
     run_migrations()
     print("Migrations complete.")
 
@@ -451,8 +439,31 @@ COMMANDS: dict[str, Callable[[list[str]], None]] = {
     "db-restore":  cmd_db_restore,
 }
 
+def _target_production() -> None:
+    """Point every following DB operation at PROD_DATABASE_URL (the `--prod` flag).
+
+    On PythonAnywhere there is no separate PROD_DATABASE_URL — DATABASE_URL already is
+    production — so `--prod` is a local convenience and errors if it is unset.
+    """
+    import os
+
+    from sqlalchemy.engine import make_url
+
+    prod = os.environ.get("PROD_DATABASE_URL")
+    if not prod:
+        print("Error: PROD_DATABASE_URL is not set (it points at the production database).")
+        sys.exit(1)
+    os.environ["DATABASE_URL"] = prod
+    print(f"⚠  Targeting the PRODUCTION database at {make_url(prod).host or '?'} (PROD_DATABASE_URL).")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         print(f"Available commands: {', '.join(COMMANDS)}")
         sys.exit(1)
-    COMMANDS[sys.argv[1]](sys.argv[2:])
+    cmd_args = sys.argv[2:]
+    # `--prod` works for any command — strip it here and repoint the DB once.
+    if "--prod" in cmd_args:
+        cmd_args = [a for a in cmd_args if a != "--prod"]
+        _target_production()
+    COMMANDS[sys.argv[1]](cmd_args)
