@@ -24,6 +24,22 @@ function formatHours(seconds) {
   return hours < 10 ? hours.toFixed(2) : Math.round(hours).toLocaleString();
 }
 
+function StorageBar({ used, limit }) {
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const color = pct > 80 ? '#e74c3c' : pct > 50 ? '#f39c12' : '#27ae60';
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span className="text-sm">{pct.toFixed(1)}% used</span>
+        <span className="text-sm text-muted">{formatBytes(used)} / {formatBytes(limit)}</span>
+      </div>
+      <div style={{ background: 'var(--border)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, background: color, height: '100%', borderRadius: 4, transition: 'width 0.3s' }} />
+      </div>
+    </div>
+  );
+}
+
 function SkeletonCard() {
   return (
     <div className="card card-body mb-6">
@@ -85,7 +101,7 @@ export default function NeonStats() {
     );
   }
 
-  const { project, storage_bytes, cpu_seconds, active_seconds, quota_reset_at } = stats;
+  const { project, storage_bytes, storage_limit_bytes, cpu_seconds, active_seconds, quota_reset_at } = stats;
 
   return (
     <div className="card card-body mb-6">
@@ -94,7 +110,11 @@ export default function NeonStats() {
       <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
         <div>
           <div className="scan-field-label mb-2">Storage</div>
-          <div className="text-sm">{formatBytes(storage_bytes)}</div>
+          {storage_limit_bytes ? (
+            <StorageBar used={storage_bytes} limit={storage_limit_bytes} />
+          ) : (
+            <div className="text-sm">{formatBytes(storage_bytes)}</div>
+          )}
           <p className="text-sm text-muted mt-2">Logical + WAL, all branches</p>
         </div>
 
