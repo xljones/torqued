@@ -105,6 +105,7 @@ export const api = {
 
   // Admin
   getPythonAnywhereStats: () => req('GET', '/admin/pythonanywhere'),
+  getNeonStats:           () => req('GET', '/admin/neon'),
 
   // Users
   getUsers:          ()             => req('GET',    '/users'),

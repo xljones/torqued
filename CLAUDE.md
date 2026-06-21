@@ -89,7 +89,7 @@ torqued/
 - **Auth:** Flask-Login guards all routes via `@login_required`; a `before_request` hook in `__init__.py` enforces account expiry (logs the user out). Read-only is per-garage and enforced in routes via `torqued.access`.
 - **Tenancy:** collection endpoints accept an optional `garage_id` query param and otherwise return data for all the user's garages; item endpoints resolve the garage through the vehicle. Out-of-scope resources return 404, write attempts by readonly members return 403.
 - **Version history:** vehicles and service logs snapshot to `*_history` tables on every create/update; `revert` endpoints restore a snapshot.
-- **Admin-only:** `routes/admin.py` exposes `/api/admin/pythonanywhere` (CPU, web app, scheduled task info) — gated on `current_user.is_admin`. Requires `PA_API_TOKEN` and `PA_USERNAME` env vars.
+- **Admin-only:** `routes/admin.py` exposes `/api/admin/pythonanywhere` (CPU, web app, scheduled task info — needs `PA_API_TOKEN` and `PA_USERNAME`) and `/api/admin/neon` (Neon database storage / compute usage via the Neon REST API — needs `NEON_API_KEY`, optional `NEON_PROJECT_ID` else the first project is used; storage shows as a % of Neon's reported size limit, compute as a % of `NEON_COMPUTE_LIMIT_HOURS` or a configured Neon consumption quota) — both gated on `current_user.is_admin`.
 
 ### Frontend (`frontend-src/`)
 
@@ -104,9 +104,9 @@ styles/              Per-concern CSS modules (base, buttons, cards, forms, layou
 components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
                      ServiceList, ServiceDetail, ServiceForm, CodeLookup, LoginPage,
                      AccountPage, AdminPage (site admin: garages + users +
-                     memberships + PythonAnywhere stats)
+                     memberships + PythonAnywhere stats + Neon stats)
                      Shared: PhotoGallery, MotCard, MotField, MileageChart, FaultCodeInput,
-                     SuggestInput, ExportDropdown, PythonAnywhereStats, RelativeTime,
+                     SuggestInput, ExportDropdown, PythonAnywhereStats, NeonStats, RelativeTime,
                      Skeleton, BuildInfo, Toast
 ```
 
@@ -114,7 +114,7 @@ components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
 - **VehicleDetail** — reminders, info card, tyre pressures (psi & bar), editable spec list, mileage card (interactive chart with per-point source tooltips, year-boundary markers, and a quick-add form that warns when a reading would go backwards relative to a dated neighbour), MOT history card (DVSA refresh, summary tiles, per-test defects), service history, photos, version history.
 - **ServiceList** — garage-scoped service history, filterable by free text and by a specific vehicle.
 - **Garage switcher** — in the sidebar (and mobile More menu); list pages (Dashboard, VehicleList, ServiceList) are scoped to `currentGarage`, detail pages derive the role from the resource's `garage_id` via `roleFor`.
-- **AdminPage** — site-admin page at `/admin`: create/rename/delete garages; create/delete users (optionally assigning a garage + role); manage an existing user's garage memberships and roles via the per-user editor (`addMember`/`setMemberRole`/`removeMember`); PythonAnywhere stats. This is now the only UI for membership management — the former per-garage Members page was removed. The owner-role member endpoints (`POST/PUT/DELETE /api/garages/<id>/members`) still exist server-side, reachable via this admin UI or `make add-member`.
+- **AdminPage** — site-admin page at `/admin`: create/rename/delete garages; create/delete users (optionally assigning a garage + role); manage an existing user's garage memberships and roles via the per-user editor (`addMember`/`setMemberRole`/`removeMember`); PythonAnywhere stats; Neon database stats. This is now the only UI for membership management — the former per-garage Members page was removed. The owner-role member endpoints (`POST/PUT/DELETE /api/garages/<id>/members`) still exist server-side, reachable via this admin UI or `make add-member`.
 
 ## Running locally
 
