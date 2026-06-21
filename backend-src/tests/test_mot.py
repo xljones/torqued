@@ -10,7 +10,7 @@ from tests.test_vehicles import mk_vehicle
 from torqued import mot
 
 SAMPLE: dict[str, Any] = {
-    "registration": "LR53UHD",
+    "registration": "A1XYZ",
     "make": "VOLKSWAGEN",
     "model": "PASSAT",
     "firstUsedDate": "2003-11-21",
@@ -43,7 +43,7 @@ SAMPLE: dict[str, Any] = {
 }
 
 NEW_REG: dict[str, Any] = {
-    "registration": "WA64XPW",
+    "registration": "A2XYZ",
     "make": "PORSCHE",
     "model": "CAYMAN",
     "manufactureYear": 2024,
@@ -92,7 +92,7 @@ def test_is_configured(monkeypatch: pytest.MonkeyPatch, mot_env: None) -> None:
 
 
 def test_normalise_registration() -> None:
-    assert mot.normalise_registration("lr53 uhd") == "LR53UHD"
+    assert mot.normalise_registration("a1 xyz") == "A1XYZ"
 
 
 def test_fetch_vehicle_success(monkeypatch: pytest.MonkeyPatch, mot_env: None) -> None:
@@ -107,10 +107,10 @@ def test_fetch_vehicle_success(monkeypatch: pytest.MonkeyPatch, mot_env: None) -
         return FakeResponse(SAMPLE)
 
     monkeypatch.setattr(mot.urllib.request, "urlopen", fake_urlopen)
-    assert mot.fetch_vehicle("lr53 uhd")["registration"] == "LR53UHD"
-    assert calls == ["https://login.example/token", mot.API_BASE + "LR53UHD"]
+    assert mot.fetch_vehicle("a1 xyz")["registration"] == "A1XYZ"
+    assert calls == ["https://login.example/token", mot.API_BASE + "A1XYZ"]
     # The token is cached: a second fetch skips the token endpoint
-    mot.fetch_vehicle("LR53UHD")
+    mot.fetch_vehicle("A1XYZ")
     assert calls.count("https://login.example/token") == 1
 
 
@@ -134,7 +134,7 @@ def test_fetch_vehicle_api_error(monkeypatch: pytest.MonkeyPatch, mot_env: None)
 
     monkeypatch.setattr(mot.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(mot.MotError) as e:
-        mot.fetch_vehicle("LR53UHD")
+        mot.fetch_vehicle("A1XYZ")
     assert e.value.status == 502
 
 
@@ -146,7 +146,7 @@ def test_fetch_vehicle_unreachable(monkeypatch: pytest.MonkeyPatch, mot_env: Non
 
     monkeypatch.setattr(mot.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(mot.MotError) as e:
-        mot.fetch_vehicle("LR53UHD")
+        mot.fetch_vehicle("A1XYZ")
     assert e.value.status == 502
 
 
@@ -156,7 +156,7 @@ def test_token_auth_failure(monkeypatch: pytest.MonkeyPatch, mot_env: None) -> N
 
     monkeypatch.setattr(mot.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(mot.MotError, match="authentication failed"):
-        mot.fetch_vehicle("LR53UHD")
+        mot.fetch_vehicle("A1XYZ")
 
 
 def test_token_endpoint_unreachable(monkeypatch: pytest.MonkeyPatch, mot_env: None) -> None:
@@ -165,7 +165,7 @@ def test_token_endpoint_unreachable(monkeypatch: pytest.MonkeyPatch, mot_env: No
 
     monkeypatch.setattr(mot.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(mot.MotError, match="token endpoint"):
-        mot.fetch_vehicle("LR53UHD")
+        mot.fetch_vehicle("A1XYZ")
 
 
 def test_to_baseline_derives_year_from_registration_date() -> None:
@@ -196,20 +196,20 @@ def test_mot_status(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_lookup_requires_auth(client: FlaskClient) -> None:
-    assert client.get("/api/mot/lookup/LR53UHD").status_code == 401
+    assert client.get("/api/mot/lookup/A1XYZ").status_code == 401
 
 
 def test_lookup_unconfigured(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     for v in ("MOT_CLIENT_ID", "MOT_CLIENT_SECRET", "MOT_TOKEN_URL", "MOT_API_KEY"):
         monkeypatch.delenv(v, raising=False)
-    assert auth_client.get("/api/mot/lookup/LR53UHD").status_code == 503
+    assert auth_client.get("/api/mot/lookup/A1XYZ").status_code == 503
 
 
 def test_lookup_success(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
-    r = auth_client.get("/api/mot/lookup/LR53%20UHD")
+    r = auth_client.get("/api/mot/lookup/A1%20XYZ")
     assert r.status_code == 200
     assert r.json["configured"] is True
     assert r.json["mot_baseline"]["make"] == "VOLKSWAGEN"
@@ -233,7 +233,7 @@ def test_get_mot_vehicle_404(auth_client: FlaskClient) -> None:
 def test_get_mot_empty(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     for v in ("MOT_CLIENT_ID", "MOT_CLIENT_SECRET", "MOT_TOKEN_URL", "MOT_API_KEY"):
         monkeypatch.delenv(v, raising=False)
-    veh = mk_vehicle(auth_client, registration="LR53 UHD")
+    veh = mk_vehicle(auth_client, registration="A1 XYZ")
     r = auth_client.get(f"/api/vehicles/{veh['id']}/mot")
     assert r.status_code == 200
     assert r.json == {"configured": False, "mot": None}
@@ -262,7 +262,7 @@ def test_refresh_without_registration(auth_client: FlaskClient) -> None:
 def test_refresh_unconfigured(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     for env in ("MOT_CLIENT_ID", "MOT_CLIENT_SECRET", "MOT_TOKEN_URL", "MOT_API_KEY"):
         monkeypatch.delenv(env, raising=False)
-    v = mk_vehicle(auth_client, registration="LR53 UHD")
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
     r = auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     assert r.status_code == 503
 
@@ -271,10 +271,10 @@ def test_refresh_relays_dvsa_error(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     def boom(reg: str) -> dict[str, Any]:
-        raise mot.MotError("No MOT record found for registration LR53UHD", 404)
+        raise mot.MotError("No MOT record found for registration A1XYZ", 404)
 
     monkeypatch.setattr(mot, "fetch_vehicle", boom)
-    v = mk_vehicle(auth_client, registration="LR53 UHD")
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
     r = auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     assert r.status_code == 404
     assert "No MOT record" in r.json["error"]
@@ -284,7 +284,7 @@ def test_refresh_stores_and_syncs(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
-    v = mk_vehicle(auth_client, registration="LR53 UHD", odometer_unit="mi")
+    v = mk_vehicle(auth_client, registration="A1 XYZ", odometer_unit="mi")
     # A pre-existing manual log must survive the refresh
     auth_client.post(f"/api/vehicles/{v['id']}/odometer", json={
         "date": "2024-01-01", "odometer": 50, "unit": "mi", "note": "manual",
@@ -297,7 +297,7 @@ def test_refresh_stores_and_syncs(
     m = r.json["mot"]
     assert m["make"] == "VOLKSWAGEN"
     assert m["has_outstanding_recall"] == "Unknown"
-    assert m["raw"]["registration"] == "LR53UHD"
+    assert m["raw"]["registration"] == "A1XYZ"
     assert [t["mot_test_number"] for t in m["tests"]] == ["1234", "1233", "1232"]
     assert m["tests"][0]["odometer_unit"] == "mi"
     assert m["tests"][1]["odometer_unit"] == "km"
@@ -325,14 +325,14 @@ def test_refresh_stores_and_syncs(
     # GET returns the stored snapshot
     g = auth_client.get(f"/api/vehicles/{v['id']}/mot")
     assert g.json["configured"] is True
-    assert g.json["mot"]["registration"] == "LR53UHD"
+    assert g.json["mot"]["registration"] == "A1XYZ"
 
 
 def test_vehicle_detail_exposes_mot_baseline(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
-    v = mk_vehicle(auth_client, registration="LR53 UHD")  # no make/model/etc. set
+    v = mk_vehicle(auth_client, registration="A1 XYZ")  # no make/model/etc. set
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
 
     detail = auth_client.get(f"/api/vehicles/{v['id']}").json
@@ -340,7 +340,7 @@ def test_vehicle_detail_exposes_mot_baseline(
     assert b["make"] == "VOLKSWAGEN"
     assert b["model"] == "PASSAT"
     assert b["year"] == 2003  # derived from manufactureDate (no manufactureYear)
-    assert b["registration"] == "LR53UHD"
+    assert b["registration"] == "A1XYZ"
     assert b["colour"] == "Blue"
     assert b["fuel_type"] == "Diesel"
     assert b["engine_size"] == "1896"
@@ -355,7 +355,7 @@ def test_mot_baseline_prefers_manufacture_year(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: NEW_REG)
-    v = mk_vehicle(auth_client, registration="WA64 XPW")
+    v = mk_vehicle(auth_client, registration="A2 XYZ")
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     assert auth_client.get(f"/api/vehicles/{v['id']}").json["mot_baseline"]["year"] == 2024
 
@@ -364,7 +364,7 @@ def test_user_override_kept_alongside_mot_baseline(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
-    v = mk_vehicle(auth_client, registration="LR53 UHD", colour="Matte Black")
+    v = mk_vehicle(auth_client, registration="A1 XYZ", colour="Matte Black")
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     detail = auth_client.get(f"/api/vehicles/{v['id']}").json
     # Override and baseline coexist; the frontend resolves precedence
@@ -373,7 +373,7 @@ def test_user_override_kept_alongside_mot_baseline(
 
 
 def test_no_mot_baseline_without_snapshot(auth_client: FlaskClient) -> None:
-    v = mk_vehicle(auth_client, registration="LR53 UHD")
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
     assert auth_client.get(f"/api/vehicles/{v['id']}").json["mot_baseline"] is None
 
 
@@ -381,7 +381,7 @@ def test_vehicle_list_includes_mot_baseline(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
-    v = mk_vehicle(auth_client, registration="LR53 UHD")
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
     assert row["mot_baseline"]["make"] == "VOLKSWAGEN"
@@ -391,7 +391,7 @@ def test_refresh_new_reg_vehicle(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: NEW_REG)
-    v = mk_vehicle(auth_client, registration="WA64 XPW")
+    v = mk_vehicle(auth_client, registration="A2 XYZ")
     r = auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     assert r.status_code == 200
     assert "odometer_logs_synced" not in r.json

@@ -76,13 +76,13 @@ describe('VehicleList', () => {
       registration: null, odometer_unit: 'mi', archived: 0, service_count: 0,
       photo_count: 0, cover_photo_id: null, latest_odometer: null,
       mot_baseline: {
-        make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, registration: 'LR53UHD',
+        make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, registration: 'A1XYZ',
       },
     }]);
     renderList();
     await waitFor(() => {
       expect(screen.getByText('2003 VOLKSWAGEN PASSAT')).toBeInTheDocument();
-      expect(screen.getByText('LR53UHD')).toBeInTheDocument();
+      expect(screen.getByText('A1XYZ')).toBeInTheDocument();
     });
     // Baseline values are searchable too
     await userEvent.type(screen.getByPlaceholderText(/Filter by name/), 'volkswagen');

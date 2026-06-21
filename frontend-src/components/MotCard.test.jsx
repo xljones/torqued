@@ -13,17 +13,17 @@ vi.mock('../api.js', () => ({
   },
 }));
 
-const vehicle = { id: 1, registration: 'LR53 UHD', odometer_unit: 'mi' };
+const vehicle = { id: 1, registration: 'A1 XYZ', odometer_unit: 'mi' };
 
 const mot = {
-  registration: 'LR53UHD',
+  registration: 'A1XYZ',
   make: 'VOLKSWAGEN',
   model: 'PASSAT',
   primary_colour: 'Blue',
   has_outstanding_recall: 'Unknown',
   fetched_at: '2026-06-11 12:00:00',
   raw: {
-    registration: 'LR53UHD',
+    registration: 'A1XYZ',
     make: 'VOLKSWAGEN',
     motTests: [{ completedDate: '2024.11.05 10:01:00', testResult: 'PASSED' }],
   },
