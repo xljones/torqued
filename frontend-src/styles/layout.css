@@ -13,9 +13,9 @@
   position: relative; flex-shrink: 0;
 }
 .sidebar-road-wrap .sidebar-version {
-  position: absolute; bottom: 35%; right: 12px;
+  position: absolute; bottom: calc(35% + 20px); left: 12px;
   border-top: none; margin: 0; min-height: auto; padding: 0;
-  justify-content: flex-end;
+  justify-content: flex-start;
   text-shadow: 0 1px 3px rgba(0,0,0,0.25);
 }
 .sidebar-road {
