@@ -130,7 +130,8 @@ make build-frontend # compile React into dist/ (for local production preview)
 ### Database & users
 
 ```bash
-make migrate                                       # apply any pending migrations
+make migrate                                       # apply pending migrations (local DB)
+make migrate prod=1                                # ... against PROD_DATABASE_URL (manage.py migrate --prod)
 make seed                                          # sample data (1 garage, 3 vehicles, 9 services)
 make reset-db                                      # drop all tables (interactive confirm) — including users
 make db-backup                                     # write data/db-backup-<timestamp>.sql
@@ -161,8 +162,15 @@ Locally the database is PostgreSQL in the `db` container (data in the `pgdata` v
 ## PythonAnywhere deployment
 
 ```bash
-make deploy-pa    # checkout deploy branch, reset to origin/deploy, create venv if needed, install deps
+make deploy-pa    # reset to origin/deploy, install deps, migrate the DB (behind a maintenance page), then reload
 ```
+
+`deploy-pa` runs `manage.py migrate` (on PA `DATABASE_URL` *is* production) wrapped in
+`touch MAINTENANCE` / `rm MAINTENANCE`. While that flag file exists, every request gets a
+503 maintenance page (a `before_request` hook in `__init__.py` checks `MAINTENANCE_FILE`,
+defaulting to a `MAINTENANCE` file at the project root) — covering the brief migration
+window. A failed migration leaves the flag in place on purpose. `manage.py` now loads the
+project `.env` (via `python-dotenv`) so CLI commands target the same database as the web app.
 
 All `make` commands listed under **Database & users** above auto-detect the environment: on PythonAnywhere they run via `venv/bin/python backend-src/manage.py` directly; locally they go through Docker. Detection uses `PYTHONANYWHERE_SITE`, an env var PythonAnywhere injects automatically into every console and web process (set to the site's domain, e.g. `username.pythonanywhere.com`).
 

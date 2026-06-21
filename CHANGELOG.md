@@ -8,8 +8,13 @@
   in against either the local Postgres container or the real production database without a
   restart. The choice is stored in the signed session and a per-request resolver routes the
   backend accordingly; a red "PRODUCTION" banner shows while you're connected to it. The
-  switch is completely inert in a real deployment (gated on dev mode + the env var). See
-  [.env.example](.env.example).
+  switch is completely inert in a real deployment (gated on dev mode + the env var). The
+  picker is a slider toggle (dev left, prod right). See [.env.example](.env.example).
+- **Production migrations & maintenance page.** `make migrate prod=1` runs migrations against
+  `PROD_DATABASE_URL` (plain `make migrate` stays on the local DB). `make deploy-pa` now runs
+  migrations before rolling out the new code, behind a short maintenance page (a `MAINTENANCE`
+  flag file makes every request return a 503 placeholder; a failed migration leaves it in
+  place). `manage.py` loads the project `.env` so CLI commands hit the configured database.
 - Vehicle history **PDF export**: a rich, printable report covering details, tyres,
   specs, reminders, mileage (with chart), full service history (incl. fault codes),
   and MOT history. Photos are opt-in via an "Include photos" toggle in the vehicle's

@@ -100,9 +100,9 @@ From a **PythonAnywhere Bash console** inside `~/torqued`:
 make deploy-pa
 ```
 
-This switches to the `deploy` branch, pulls the latest changes (including the freshly built `dist/`), and installs any new Python dependencies. Reload the web app from the PythonAnywhere Web tab to apply the changes.
+This switches to the `deploy` branch, pulls the latest changes (including the freshly built `dist/`), installs any new Python dependencies, and **runs database migrations** (showing a brief maintenance page while they apply — see below). Then reload the web app from the PythonAnywhere Web tab to apply the new code.
 
-Database migrations run automatically on the next request after reload.
+> If a migration fails, the `MAINTENANCE` flag is left in place so the site keeps showing the maintenance page rather than serving against a half-migrated schema. Fix the issue and re-run `make deploy-pa`, or remove the flag with `rm MAINTENANCE` once resolved.
 
 ---
 
@@ -111,7 +111,8 @@ Database migrations run automatically on the next request after reload.
 All commands below work on both PythonAnywhere and locally — they auto-detect the environment based on the `PYTHONANYWHERE_SITE` env var that PythonAnywhere injects into every console and web process.
 
 ```bash
-make migrate                                       # apply pending migrations
+make migrate                                       # apply pending migrations (default DB)
+make migrate prod=1                                # ...against the production DB (PROD_DATABASE_URL)
 make seed                                          # populate sample data
 make reset-db                                      # drop all tables — including users (interactive confirm)
 
@@ -151,16 +152,17 @@ you into `DATABASE_URL`. Using **Neon** as the example:
 Migrations are ordinary Alembic — `run_migrations()` is just `alembic upgrade head`. Pick
 whichever fits your flow:
 
-1. **Automatic on startup (current default).** `create_app()` runs the migrations on every
-   boot, so a PythonAnywhere reload after a deploy applies them. Simplest; fine for a single
-   web worker.
-2. **Explicit, as a deploy step.** Point `DATABASE_URL` at Neon (the direct endpoint is the
-   safe choice) and run it once:
+1. **As part of the deploy.** `make deploy-pa` runs the migration (against `DATABASE_URL`,
+   which is Neon on PythonAnywhere) behind a maintenance page before you reload — see
+   [Updating a deployment](#updating-a-deployment). `create_app()` also runs migrations on
+   boot as a safety net.
+2. **From your laptop, targeting production.** Put the Neon URL in `PROD_DATABASE_URL` (the
+   same var the dev DB switcher uses; the direct endpoint is the safe choice for schema
+   changes) and run:
 
    ```bash
-   export DATABASE_URL='postgresql://USER:PASSWORD@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=require'
-   cd backend-src && alembic upgrade head     # or:  make migrate
+   make migrate prod=1        # = manage.py migrate --prod = alembic upgrade head on PROD_DATABASE_URL
    ```
 
-   This is the recommended approach if you run **multiple app instances** (so they don't race
-   to migrate on startup) or want migrations gated in CI/CD before the app rolls out.
+   Useful to push schema changes to prod ahead of (or without) a full code deploy, or to gate
+   migrations in CI before the app rolls out.
