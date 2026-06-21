@@ -330,6 +330,27 @@ def _backup_dir(url: Any) -> Path:
     return Path("data")
 
 
+def _confirm_destructive(url: Any, action: str) -> None:
+    """Abort unless the operator retypes the exact target the action will hit.
+
+    A constant "YES" can't tell the local container apart from production; naming the
+    target host and requiring it back forces a deliberate acknowledgement of *which*
+    database is about to be destroyed — whether ``--prod`` repointed us at
+    PROD_DATABASE_URL or DATABASE_URL already is production (PythonAnywhere).
+    """
+    target = url.host or url.database or "the configured database"
+    print(f"⚠  {action}")
+    print(f"⚠  Target database: {target}")
+    try:
+        confirm = input(f"Type the target '{target}' to confirm (anything else aborts): ")
+    except EOFError:
+        # Non-interactive invocation (no TTY): abort cleanly rather than throwing.
+        confirm = ""
+    if confirm.strip() != target:
+        print("Aborted.")
+        sys.exit(0)
+
+
 def cmd_db_restore(args: list[str]) -> None:
     import subprocess
 
@@ -346,10 +367,7 @@ def cmd_db_restore(args: list[str]) -> None:
         print(f"Error: backup file not found: {backup_path}")
         sys.exit(1)
 
-    confirm = input(f"Restore from '{backup_path}'? This will overwrite the current database. Type YES to confirm: ")
-    if confirm.strip() != "YES":
-        print("Aborted.")
-        sys.exit(0)
+    _confirm_destructive(url, f"Restore from '{backup_path}' overwrites the current database")
 
     if url.get_backend_name() == "sqlite":
         import sqlite3 as _sqlite3
@@ -402,15 +420,11 @@ def cmd_migrate(_: list[str]) -> None:
 
 
 def cmd_reset_db(args: list[str]) -> None:
-    msg = "This will drop ALL tables including users. Type YES to confirm: "
-    confirm = input(msg)
-    if confirm.strip() != "YES":
-        print("Aborted.")
-        sys.exit(0)
-
     from torqued.db import get_db, run_migrations
 
     url = _active_url()
+    _confirm_destructive(url, "Reset drops ALL tables, including users")
+
     if url.get_backend_name() == "sqlite":
         # Delete the database file outright rather than dropping tables one by one:
         # a malformed image can't be read, and this also can't miss any tables.
