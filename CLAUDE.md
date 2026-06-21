@@ -97,13 +97,15 @@ torqued/
 App.jsx              Shell: checks auth state, renders LoginPage or the main layout (sidebar + bottom nav)
 AuthContext.jsx      Provides user (incl. memberships), garages, currentGarage +
                      selectGarage (persisted to localStorage), roleFor(garageId)
+ThemeContext.jsx     Light/dark/system theme: mode persisted to localStorage (torqued.theme),
+                     resolved + applied as <html data-theme>; System tracks prefers-color-scheme live
 api.js               Thin fetch wrapper (JSON + multipart upload); all calls use credentials: 'include'
 units.js             mi/km + psi/bar conversion and formatting
 constants.js         FormMode, vehicle kinds, service categories, reminder labels
 styles/              Per-concern CSS modules (base, buttons, cards, forms, layout, garage, …)
 components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
                      ServiceList, ServiceDetail, ServiceForm, CodeLookup, LoginPage,
-                     AccountPage, AdminPage (site admin: garages + users +
+                     SettingsPage, AdminPage (site admin: garages + users +
                      memberships + PythonAnywhere stats + Neon stats)
                      Shared: PhotoGallery, MotCard, MotField, MileageChart, FaultCodeInput,
                      SuggestInput, ExportDropdown, PythonAnywhereStats, NeonStats, RelativeTime,
@@ -114,6 +116,7 @@ components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
 - **VehicleDetail** — reminders, info card, tyre pressures (psi & bar), editable spec list, mileage card (interactive chart with per-point source tooltips, year-boundary markers, and a quick-add form that warns when a reading would go backwards relative to a dated neighbour), MOT history card (DVSA refresh, summary tiles, per-test defects), service history, photos, version history.
 - **ServiceList** — garage-scoped service history, filterable by free text and by a specific vehicle.
 - **Garage switcher** — in the sidebar (and mobile More menu); list pages (Dashboard, VehicleList, ServiceList) are scoped to `currentGarage`, detail pages derive the role from the resource's `garage_id` via `roleFor`.
+- **SettingsPage** (`/settings`) — sectioned settings page (Account, Appearance, Password). The **Appearance** section switches the theme (Light / Dark / System) via `ThemeContext`; a one-tap theme cycle button also lives in the sidebar and mobile More menu. Dark mode is driven entirely by CSS custom properties: light values live in `styles/base.css :root`, dark overrides in `styles/dark.css` under `[data-theme="dark"]`.
 - **AdminPage** — site-admin page at `/admin`: create/rename/delete garages; create/delete users (optionally assigning a garage + role); manage an existing user's garage memberships and roles via the per-user editor (`addMember`/`setMemberRole`/`removeMember`); PythonAnywhere stats; Neon database stats. This is now the only UI for membership management — the former per-garage Members page was removed. The owner-role member endpoints (`POST/PUT/DELETE /api/garages/<id>/members`) still exist server-side, reachable via this admin UI or `make add-member`.
 
 ## Running locally

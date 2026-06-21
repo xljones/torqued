@@ -1,0 +1,34 @@
+/* Dark theme. Applied when <html data-theme="dark"> (set by ThemeContext / the FOUC script).
+   Every value here is a token override — components stay theme-agnostic via var().
+   Imported last in index.css so these win cascade ties without !important.
+   Warm-neutral palette to match the warm light theme; surfaces step up in lightness. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b1a17;
+  --surface: #252320;
+  --surface2: #2f2c28;
+  --surface3: #3a3631;
+  --border: #403b35;
+  --text: #ece8e2;
+  --text2: #a8a199;
+  --text-muted: #857f77;
+  --accent: #6b8fc4;
+  --accent-hover: #86a4d2;
+  --accent-light: #9bb8e6;
+  --danger: #e06b6b;
+  --danger-hover: #c45656;
+  --success: #5fae72;
+  --green: #34d058;
+  --shadow: 0 1px 3px rgba(0,0,0,0.5);
+
+  /* Semantic tints — muted dark surfaces with legible light foregrounds. */
+  --tint-info-bg: #16314d;    --tint-info-fg: #a9cdf2;
+  --tint-ok-bg: #16331f;      --tint-ok-fg: #86d6a3;    --tint-ok-border: #244c33;
+  --tint-warn-bg: #3a2f12;    --tint-warn-fg: #e6c473;  --tint-warn-border: #4d3f1c;
+  --tint-bad-bg: #3d1a1a;     --tint-bad-fg: #f0a0a0;   --tint-bad-border: #5a2626;
+  --tint-accent2-bg: #3a2410; --tint-accent2-fg: #e0a877;
+
+  /* Success-action green (lifted for dark) + form-warning text. */
+  --btn-success: #3f9e46;     --btn-success-hover: #4fb257;
+  --warn-fg: #d8b860;
+}

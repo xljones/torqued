@@ -39,8 +39,8 @@
 .reg-plate-input::placeholder { color: rgba(0, 0, 0, 0.4); font-weight: bold; }
 .reg-plate-input:focus { border-color: #b8990a !important; }
 .mot-found {
-  font-size: 13px; color: var(--text); background: #ddf0e6;
-  border: 1px solid #b6dcc4; border-radius: var(--radius); padding: 8px 12px;
+  font-size: 13px; color: var(--text); background: var(--tint-ok-bg);
+  border: 1px solid var(--tint-ok-border); border-radius: var(--radius); padding: 8px 12px;
 }
 
 /* ── MOT-sourced detail fields ─────────────────────────────────────────────── */
@@ -71,11 +71,11 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .vehicle-card.archived { opacity: 0.55; }
 
 /* ── Kind & reminder badges ────────────────────────────────────────────────── */
-.badge-car { background: #ddeeff; color: #1a4a80; }
-.badge-motorcycle { background: #fdeedd; color: #7a3a0a; }
-.badge-overdue { background: #fde2e2; color: #8a1f1f; }
-.badge-due_soon { background: #fdf3d7; color: #7a5a0a; }
-.badge-upcoming { background: #ddf0e6; color: #1a5030; }
+.badge-car { background: var(--tint-info-bg); color: var(--tint-info-fg); }
+.badge-motorcycle { background: var(--tint-accent2-bg); color: var(--tint-accent2-fg); }
+.badge-overdue { background: var(--tint-bad-bg); color: var(--tint-bad-fg); }
+.badge-due_soon { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
+.badge-upcoming { background: var(--tint-ok-bg); color: var(--tint-ok-fg); }
 .reg-plate {
   display: inline-block; line-height: 1;
   font-family: 'Charles Wright', 'Courier New', monospace; font-size: 12px; font-weight: bold;
@@ -87,9 +87,9 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 /* ── Tyre pressures ────────────────────────────────────────────────────────── */
 .pressure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .pressure-tile { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
-.pressure-tile--ok     { background: #ddf0e6; border-color: #b6dcc4; }
-.pressure-tile--warn   { background: #fdf3d7; border-color: #ecd9a0; }
-.pressure-tile--danger { background: #fde2e2; border-color: #f3c4c4; }
+.pressure-tile--ok     { background: var(--tint-ok-bg); border-color: var(--tint-ok-border); }
+.pressure-tile--warn   { background: var(--tint-warn-bg); border-color: var(--tint-warn-border); }
+.pressure-tile--danger { background: var(--tint-bad-bg); border-color: var(--tint-bad-border); }
 .pressure-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text2); margin-bottom: 4px; }
 .pressure-value { font-size: 20px; font-weight: 700; }
 .pressure-alt { font-size: 12px; color: var(--text2); }
@@ -133,8 +133,8 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .mileage-dot:hover, .mileage-dot.is-active { width: 13px; height: 13px; }
 .mileage-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mileage-dot-manual { background: var(--accent); }
-.mileage-dot-service { background: #7a5a0a; }
-.mileage-dot-mot { background: #1a4a80; }
+.mileage-dot-service { background: var(--tint-warn-fg); }
+.mileage-dot-mot { background: var(--tint-info-fg); }
 .mileage-tooltip {
   position: absolute; z-index: 5; pointer-events: none; min-width: 120px; max-width: 220px;
   background: var(--text); color: var(--surface); border-radius: var(--radius);
@@ -208,11 +208,11 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 }
 
 /* ── MOT history ───────────────────────────────────────────────────────────── */
-.badge-passed { background: #ddf0e6; color: #1a5030; }
-.badge-failed { background: #fde2e2; color: #8a1f1f; }
+.badge-passed { background: var(--tint-ok-bg); color: var(--tint-ok-fg); }
+.badge-failed { background: var(--tint-bad-bg); color: var(--tint-bad-fg); }
 .badge-source-manual { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
-.badge-source-mot    { background: #ddeeff; color: #1a4a80; }
-.badge-source-service { background: #fdf3d7; color: #7a5a0a; }
+.badge-source-mot    { background: var(--tint-info-bg); color: var(--tint-info-fg); }
+.badge-source-service { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
 .mot-header-left { display: flex; align-items: baseline; gap: 8px; }
 .mot-reauth-dot { color: var(--text2); }
 .mot-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
@@ -227,11 +227,11 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
   display: inline-block; font-size: 11px; font-weight: 700; text-transform: lowercase;
   border-radius: 99px; padding: 1px 8px; margin-right: 6px;
 }
-.mot-defect-serious { background: #fde2e2; color: #8a1f1f; }
-.mot-defect-minor { background: #ddeeff; color: #1a4a80; }
-.mot-defect-advisory { background: #fdf3d7; color: #7a5a0a; }
+.mot-defect-serious { background: var(--tint-bad-bg); color: var(--tint-bad-fg); }
+.mot-defect-minor { background: var(--tint-info-bg); color: var(--tint-info-fg); }
+.mot-defect-advisory { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
 .dvsa-record-tile { cursor: pointer; user-select: none; transition: background 0.1s; }
-.dvsa-record-tile:hover { background: var(--surface3, #e8e8e8); }
+.dvsa-record-tile:hover { background: var(--surface3); }
 .dvsa-record-tile--open { background: var(--surface2); }
 .dvsa-record-caret { font-size: 10px; opacity: 0.6; margin-left: 4px; }
 .dvsa-json-toolbar { display: flex; gap: 6px; margin-bottom: 2px; }
@@ -271,7 +271,7 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .json-val--num { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .json-val--bool {
   font-size: 11px; font-weight: 700; border-radius: 99px;
-  padding: 0 8px; background: #ddeeff; color: #1a4a80;
+  padding: 0 8px; background: var(--tint-info-bg); color: var(--tint-info-fg);
 }
 .json-val--null {
   font-size: 11px; font-style: italic; border-radius: 99px;
