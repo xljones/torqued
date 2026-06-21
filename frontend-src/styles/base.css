@@ -1,19 +1,35 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  color-scheme: light;
   --bg: #f5f4f0;
   --surface: #ffffff;
   --surface2: #f0ede8;
+  --surface3: #e8e6e1;
   --border: #d8d3cb;
   --text: #1a1714;
   --text2: #6b6560;
+  --text-muted: #8a847d;
   --accent: #3b5a8c;
   --accent-hover: #2e4870;
   --accent-light: #6b8fc4;
   --danger: #b94040;
+  --danger-hover: #9e3636;
   --success: #3a7a4a;
+  --green: #22c55e;
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0,0,0,0.1);
+
+  /* Semantic tints (status / category surfaces). Light values match the original literals. */
+  --tint-info-bg: #ddeeff;    --tint-info-fg: #1a4a80;
+  --tint-ok-bg: #ddf0e6;      --tint-ok-fg: #1a5030;    --tint-ok-border: #b6dcc4;
+  --tint-warn-bg: #fdf3d7;    --tint-warn-fg: #7a5a0a;  --tint-warn-border: #ecd9a0;
+  --tint-bad-bg: #fde2e2;     --tint-bad-fg: #8a1f1f;   --tint-bad-border: #f3c4c4;
+  --tint-accent2-bg: #fdeedd; --tint-accent2-fg: #7a3a0a;
+
+  /* Success-action green (deliberately more saturated than --success) + form-warning text. */
+  --btn-success: #2e7d32;     --btn-success-hover: #1b5e20;
+  --warn-fg: #8a6d0a;
 }
 
 body {

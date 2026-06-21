@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ToastProvider } from './components/Toast.jsx';
 import BuildInfo from './components/BuildInfo.jsx';
 import { AuthProvider, useAuth } from './AuthContext.jsx';
+import { ThemeProvider, useTheme } from './ThemeContext.jsx';
 import LoginPage from './components/LoginPage.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import VehicleList from './components/VehicleList.jsx';
@@ -13,8 +14,26 @@ import ServiceDetail from './components/ServiceDetail.jsx';
 import ServiceForm from './components/ServiceForm.jsx';
 import CodeLookup from './components/CodeLookup.jsx';
 import AdminPage from './components/AdminPage.jsx';
-import AccountPage from './components/AccountPage.jsx';
+import SettingsPage from './components/SettingsPage.jsx';
 import { FormMode, ROLE_LABELS } from './constants.js';
+
+const THEME_ICON = { light: '☀', dark: '☾', system: '◐' };
+const THEME_LABEL = { light: 'Light', dark: 'Dark', system: 'System' };
+
+// One-tap theme rotation, shared by the sidebar and the mobile More menu.
+function ThemeCycleButton() {
+  const { mode, cycle } = useTheme();
+  return (
+    <button
+      type="button"
+      className="sidebar-nav-btn"
+      onClick={cycle}
+      aria-label={`Theme: ${THEME_LABEL[mode]}. Click to change.`}
+    >
+      {THEME_ICON[mode]} Theme: {THEME_LABEL[mode]}
+    </button>
+  );
+}
 
 function GarageSwitcher() {
   const { garages, currentGarage, selectGarage } = useAuth();
@@ -72,7 +91,8 @@ function Nav() {
           </div>
         </div>
         {user?.is_admin && <NavLink to="/admin" className="sidebar-nav-btn">Admin</NavLink>}
-        <NavLink to="/account" className="sidebar-nav-btn">Change password</NavLink>
+        <NavLink to="/settings" className="sidebar-nav-btn">Settings</NavLink>
+        <ThemeCycleButton />
         <button className="sidebar-nav-btn text-danger" onClick={logout}>Sign out</button>
         <div className="sidebar-road-wrap">
           <div className="sidebar-road" aria-hidden="true" />
@@ -107,7 +127,8 @@ function BottomNav() {
             {user?.is_admin && (
               <NavLink to="/admin" className="sidebar-nav-btn" onClick={closeMore}>Admin</NavLink>
             )}
-            <NavLink to="/account" className="sidebar-nav-btn" onClick={closeMore}>Change password</NavLink>
+            <NavLink to="/settings" className="sidebar-nav-btn" onClick={closeMore}>Settings</NavLink>
+            <ThemeCycleButton />
             <button className="sidebar-nav-btn text-danger" onClick={logout}>Sign out</button>
             <BuildInfo className="sidebar-version" />
           </div>
@@ -192,7 +213,7 @@ function AppShell() {
           <Route path="/services/:id/edit" element={<ServiceForm mode={FormMode.EDIT} />} />
           <Route path="/codes" element={<CodeLookup />} />
           {user.is_admin && <Route path="/admin" element={<AdminPage />} />}
-          <Route path="/account" element={<AccountPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
       <BottomNav />
@@ -204,11 +225,13 @@ function AppShell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <ToastProvider>
-          <AppShell />
-        </ToastProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <AppShell />
+          </ToastProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

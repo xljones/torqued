@@ -5,12 +5,12 @@
 }
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-success { background: #2e7d32; color: #fff; }
-.btn-success:hover { background: #1b5e20; }
+.btn-success { background: var(--btn-success); color: #fff; }
+.btn-success:hover { background: var(--btn-success-hover); }
 .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { background: var(--border); }
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #9e3636; }
+.btn-danger:hover { background: var(--danger-hover); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-secondary.btn-active { background: var(--text); color: var(--surface); border-color: var(--text); }
