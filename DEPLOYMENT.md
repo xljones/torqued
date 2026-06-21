@@ -126,6 +126,14 @@ make delete-user  username=x                       # interactive confirm
 make list-users
 ```
 
+**Targeting production from your laptop.** Append `prod=1` to any command above except
+`seed` to run it against the production database (`PROD_DATABASE_URL`) instead of the local
+one — e.g. `make create-admin username=x password=y prod=1`, `make list-users prod=1`,
+`make db-backup prod=1`. A `⚠ Targeting the PRODUCTION database at <host>` line is printed
+first, and the destructive commands (`reset-db`, `db-restore`, `delete-user`) still prompt
+for confirmation. (On PythonAnywhere `DATABASE_URL` already is production, so you don't pass
+`prod=1` there — and it errors, since there's no separate `PROD_DATABASE_URL`.)
+
 `migrate` runs Alembic (`upgrade head`); `reset-db` drops and recreates the schema.
 For a Postgres database, `db-backup` / `db-restore` shell out to `pg_dump` / `psql`, so
 those client tools must be on `PATH` (they ship in the backend Docker image; on

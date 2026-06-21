@@ -10,11 +10,16 @@
   backend accordingly; a red "PRODUCTION" banner shows while you're connected to it. The
   switch is completely inert in a real deployment (gated on dev mode + the env var). The
   picker is a slider toggle (dev left, prod right). See [.env.example](.env.example).
-- **Production migrations & maintenance page.** `make migrate prod=1` runs migrations against
-  `PROD_DATABASE_URL` (plain `make migrate` stays on the local DB). `make deploy-pa` now runs
-  migrations before rolling out the new code, behind a short maintenance page (a `MAINTENANCE`
-  flag file makes every request return a 503 placeholder; a failed migration leaves it in
-  place). `manage.py` loads the project `.env` so CLI commands hit the configured database.
+- **Run DB/user commands against production.** The database and user `make` commands take an
+  optional `prod=1` flag (e.g. `make create-admin username=x password=y prod=1`,
+  `make migrate prod=1`, `make db-backup prod=1`) to target `PROD_DATABASE_URL` instead of the
+  local DB; `manage.py` handles a global `--prod` that repoints `DATABASE_URL` once and prints
+  the target host. `seed` stays local-only. `manage.py` also loads the project `.env` so CLI
+  commands hit the configured database (previously PythonAnywhere console commands fell back to
+  SQLite).
+- **Maintenance page on deploy.** `make deploy-pa` now runs migrations before rolling out the
+  new code, behind a short maintenance page (a `MAINTENANCE` flag file makes every request
+  return a 503 placeholder; a failed migration leaves it in place).
 - Vehicle history **PDF export**: a rich, printable report covering details, tyres,
   specs, reminders, mileage (with chart), full service history (incl. fault codes),
   and MOT history. Photos are opt-in via an "Include photos" toggle in the vehicle's

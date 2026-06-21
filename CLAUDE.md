@@ -146,6 +146,12 @@ make delete-user  username=x                       # interactive confirm
 make list-users
 ```
 
+Append `prod=1` to any of these except `seed` to run against the production database
+(`PROD_DATABASE_URL`) instead of the local one — e.g. `make create-admin username=x
+password=y prod=1`. `manage.py` strips a global `--prod` and repoints `DATABASE_URL` once
+(printing the target host); destructive commands still prompt. On PythonAnywhere
+`DATABASE_URL` already is production, so `prod=1` isn't used (and errors) there.
+
 ### Dev tooling
 
 ```bash
