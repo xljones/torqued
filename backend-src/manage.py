@@ -5,7 +5,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 sys.path.insert(0, str(Path(__file__).parent))
+# Load the project .env so CLI commands target the same database as the web app.
+# On PythonAnywhere a console doesn't otherwise have DATABASE_URL set; existing
+# environment variables (e.g. Docker Compose's) are not overridden.
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 def cmd_create_user(args: list[str]) -> None:
@@ -388,8 +394,21 @@ def cmd_db_backup(_: list[str]) -> None:
     print(f"Backup written to {backup_path}")
 
 
-def cmd_migrate(_: list[str]) -> None:
+def cmd_migrate(args: list[str]) -> None:
+    import os
+
     from torqued.db import run_migrations
+
+    # `--prod` migrates the production database identified by PROD_DATABASE_URL. On
+    # PythonAnywhere there is no separate PROD_DATABASE_URL — DATABASE_URL already is
+    # production — so plain `migrate` is the production migration there.
+    if "--prod" in args:
+        prod = os.environ.get("PROD_DATABASE_URL")
+        if not prod:
+            print("Error: PROD_DATABASE_URL is not set (it points at the production database).")
+            sys.exit(1)
+        os.environ["DATABASE_URL"] = prod
+        print("Migrating the production database (PROD_DATABASE_URL)…")
     run_migrations()
     print("Migrations complete.")
 

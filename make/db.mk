@@ -1,10 +1,10 @@
 .PHONY: migrate
-# run any pending database migrations
+# run pending migrations on the local DB (default), or production: make migrate prod=1
 migrate:
 ifdef PYTHONANYWHERE_SITE
-	venv/bin/python backend-src/manage.py migrate
+	venv/bin/python backend-src/manage.py migrate $(if $(prod),--prod,)
 else
-	docker compose run --rm backend python manage.py migrate
+	docker compose run --rm backend python manage.py migrate $(if $(prod),--prod,)
 endif
 
 .PHONY: create-user

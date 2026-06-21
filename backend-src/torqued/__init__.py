@@ -27,6 +27,32 @@ def _resolve_db_target() -> str | None:
     return "production" if session.get("db_target") == "production" else None
 
 
+# A deploy can briefly take the app offline (e.g. while migrations run). When this
+# flag file exists every request gets a short maintenance page instead. `make
+# deploy-pa` creates it around the migration step and removes it afterwards.
+_MAINTENANCE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torqued — maintenance</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f4f0;
+         color: #1a1714; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+  .box { text-align: center; max-width: 28rem; padding: 2rem; }
+  h1 { margin: 0 0 .5rem; }
+  p { color: #6b6560; }
+</style></head>
+<body><div class="box">
+  <h1>🔧 Down for maintenance</h1>
+  <p>Torqued is being updated — this usually takes under a minute. Please refresh shortly.</p>
+</div></body></html>"""
+
+
+def _maintenance_flag() -> str:
+    return os.environ.get(
+        "MAINTENANCE_FILE", str(Path(__file__).parent.parent.parent / "MAINTENANCE")
+    )
+
+
 def create_app() -> Flask:
     from torqued.db import get_db, run_migrations, set_target_resolver
     from torqued.repositories.user_repository import UserRepository
@@ -80,6 +106,15 @@ def create_app() -> Flask:
     @login_manager.unauthorized_handler
     def unauthorized() -> tuple[Response, int]:
         return jsonify(error="Authentication required"), 401
+
+    @app.before_request
+    def maintenance_gate() -> ResponseReturnValue | None:
+        if os.path.exists(_maintenance_flag()):
+            return Response(
+                _MAINTENANCE_HTML, status=503, mimetype="text/html",
+                headers={"Retry-After": "30"},
+            )
+        return None
 
     @app.before_request
     def enforce_auth() -> ResponseReturnValue | None:
