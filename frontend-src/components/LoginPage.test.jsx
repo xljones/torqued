@@ -51,16 +51,16 @@ describe('LoginPage', () => {
 
   it('hides the database switcher when not enabled', () => {
     render(<LoginPage />);
-    expect(screen.queryByLabelText('Database')).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
-  it('offers the switcher in dev mode and logs in against the chosen database', async () => {
+  it('offers a toggle in dev mode and logs in against the chosen database', async () => {
     mockAuth = { login: mockLogin, dbSwitcher: true };
     mockLogin.mockResolvedValue(undefined);
     render(<LoginPage />);
 
-    const select = screen.getByLabelText('Database');
-    fireEvent.change(select, { target: { value: 'production' } });
+    const toggle = screen.getByRole('switch', { name: 'Database' });
+    fireEvent.click(toggle); // flip from Local to Production
     expect(screen.getByText(/changes are live/i)).toBeInTheDocument();
 
     fillForm('alice', 'secret');

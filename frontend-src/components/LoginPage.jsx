@@ -55,15 +55,20 @@ export default function LoginPage() {
           {dbSwitcher && (
             <div className="field mb-4">
               <label>Database</label>
-              <select
-                className={database === 'production' ? 'login-db-prod' : undefined}
-                value={database}
-                onChange={e => setDatabase(e.target.value)}
-                aria-label="Database"
-              >
-                <option value="local">Local (dev container)</option>
-                <option value="production">Production (live)</option>
-              </select>
+              <div className="db-toggle">
+                <span className={database === 'local' ? 'db-toggle-active' : ''}>Local</span>
+                <span className={`db-switch${database === 'production' ? ' is-prod' : ''}`}>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Database"
+                    checked={database === 'production'}
+                    onChange={e => setDatabase(e.target.checked ? 'production' : 'local')}
+                  />
+                  <span className="db-switch-knob" aria-hidden="true" />
+                </span>
+                <span className={database === 'production' ? 'db-toggle-active' : ''}>Production</span>
+              </div>
               {database === 'production' && (
                 <p className="login-db-warning">
                   ⚠ Signing in to the <strong>production</strong> database — changes are live.
