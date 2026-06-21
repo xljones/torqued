@@ -51,6 +51,13 @@ echo "PA_API_TOKEN=<your-token>" >> .env
 echo "PA_USERNAME=<your-username>" >> .env
 ```
 
+**Optional — admin panel Neon database stats.** If your database is hosted on [Neon](https://neon.tech) and you want the admin panel to show live storage / compute usage, add a [Neon API key](https://console.neon.tech/app/settings/api-keys) (the project id is optional — the first project on the key is used when omitted):
+
+```bash
+echo "NEON_API_KEY=<your-api-key>" >> .env
+echo "NEON_PROJECT_ID=<your-project-id>" >> .env   # optional
+```
+
 **Optional — DVSA MOT history.** To enable the "Refresh from DVSA" button on vehicle pages, [register for the MOT history API](https://documentation.history.mot.api.gov.uk/mot-history-api/register) (free for under 500,000 requests/year; DVSA emails credentials in 1–5 working days) and add:
 
 ```bash
