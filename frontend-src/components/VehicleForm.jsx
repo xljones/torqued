@@ -63,15 +63,13 @@ export default function VehicleForm({ mode }) {
       engine_size: 'e.g. 765 cc', colour: 'e.g. Black', fuel_type: 'e.g. Petrol',
     },
   };
-  const hint = (key) => {
-    if (!isEdit && baseline?.[key] != null) return `DVSA: ${baseline[key]}`;
-    return KIND_HINTS[form.kind]?.[key] ?? '';
-  };
-  // In edit mode, split an identity field into a two-thirds editable override (left) and a
-  // one-third fixed DVSA value (right), loaded from the vehicle's stored mot_baseline
-  // (GET /api/vehicles/<id>). With no baseline value the input keeps the full width.
+  const hint = (key) => KIND_HINTS[form.kind]?.[key] ?? '';
+  // Split an identity field into a two-thirds editable override (left) and a one-third fixed
+  // DVSA value (right). The baseline is the vehicle's stored mot_baseline when editing
+  // (GET /api/vehicles/<id>) or the result of a create-mode DVSA lookup — either way the field
+  // renders the same way. With no baseline value the input keeps the full width.
   const dvsaSplit = (key, input) => {
-    const val = isEdit ? baseline?.[key] : null;
+    const val = baseline?.[key];
     if (val == null || val === '') return input;
     // A green border marks the value that will actually be used: the user's override when set,
     // otherwise the DVSA baseline it falls back to.
@@ -109,6 +107,13 @@ export default function VehicleForm({ mode }) {
     } finally {
       setFetching(false);
     }
+  }
+
+  // Enter in the registration field fetches DVSA data instead of submitting the form.
+  function handleRegKeyDown(e) {
+    if (e.key !== 'Enter' || !motConfigured) return;
+    e.preventDefault();
+    if (!fetching && form.registration.trim()) handleFetch();
   }
 
   function switchPressureUnit(unit) {
@@ -185,7 +190,8 @@ export default function VehicleForm({ mode }) {
                 className="reg-plate-input"
                 value={form.registration}
                 onChange={e => set('registration', e.target.value)}
-                placeholder="LR53 UHD"
+                onKeyDown={handleRegKeyDown}
+                placeholder="A1 XYZ"
                 autoFocus={!isEdit}
               />
             </div>

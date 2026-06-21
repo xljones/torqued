@@ -48,34 +48,49 @@ describe('VehicleForm DVSA lookup', () => {
     api.getMotStatus.mockResolvedValue({ configured: true });
     renderCreate();
     await waitFor(() => expect(screen.getByText('Fetch from DVSA')).toBeInTheDocument());
-    const plate = screen.getByPlaceholderText('LR53 UHD');
+    const plate = screen.getByPlaceholderText('A1 XYZ');
     expect(plate).toHaveClass('reg-plate-input');
   });
 
   it('hides the fetch button when DVSA is not configured', async () => {
     api.getMotStatus.mockResolvedValue({ configured: false });
     renderCreate();
-    await waitFor(() => expect(screen.getByPlaceholderText('LR53 UHD')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByPlaceholderText('A1 XYZ')).toBeInTheDocument());
     expect(screen.queryByText('Fetch from DVSA')).not.toBeInTheDocument();
   });
 
-  it('fetches the DVSA baseline and surfaces it as a summary and field placeholders', async () => {
+  it('fetches the DVSA baseline and shows each identity field as an editable / fixed-DVSA split', async () => {
     api.getMotStatus.mockResolvedValue({ configured: true });
     api.lookupMot.mockResolvedValue({
       configured: true,
       mot_baseline: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, colour: 'Blue', engine_size: '1896' },
     });
-    renderCreate();
-    const plate = await screen.findByPlaceholderText('LR53 UHD');
-    await userEvent.type(plate, 'LR53 UHD');
+    const { container } = renderCreate();
+    const plate = await screen.findByPlaceholderText('A1 XYZ');
+    await userEvent.type(plate, 'A1 XYZ');
     await userEvent.click(screen.getByText('Fetch from DVSA'));
     await waitFor(() => {
-      expect(api.lookupMot).toHaveBeenCalledWith('LR53 UHD');
+      expect(api.lookupMot).toHaveBeenCalledWith('A1 XYZ');
       expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument();
     });
-    // Identity fields now hint the DVSA value; leaving them blank uses the baseline
-    expect(screen.getByPlaceholderText('DVSA: VOLKSWAGEN')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('DVSA: 1896')).toBeInTheDocument();
+    // Create mode now renders the same split as edit mode: a fixed DVSA value beside each input.
+    expect(screen.getByText('VOLKSWAGEN')).toBeInTheDocument();
+    expect(screen.getByText('1896')).toBeInTheDocument();
+    // make, model, year, colour, engine_size each have a baseline value → 5 DVSA-active splits.
+    expect(container.querySelectorAll('.dvsa-split.is-dvsa')).toHaveLength(5);
+    expect(container.querySelectorAll('.dvsa-split.is-override')).toHaveLength(0);
+  });
+
+  it('fetches from the DVSA when Enter is pressed in the registration field', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.lookupMot.mockResolvedValue({ configured: true, mot_baseline: { make: 'VOLKSWAGEN' } });
+    api.createVehicle.mockResolvedValue({ id: 1 });
+    renderCreate();
+    const plate = await screen.findByPlaceholderText('A1 XYZ');
+    await userEvent.type(plate, 'A1 XYZ{Enter}');
+    // Enter looks up the plate instead of submitting the half-filled form.
+    await waitFor(() => expect(api.lookupMot).toHaveBeenCalledWith('A1 XYZ'));
+    expect(api.createVehicle).not.toHaveBeenCalled();
   });
 
   it('splits each identity field into an editable input and a fixed DVSA value when editing', async () => {
