@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- **Dev-only login database switcher.** In development (`FLASK_DEBUG=1`) with
+  `PROD_DATABASE_URL` set, the login page offers a Local/Production toggle so you can sign
+  in against either the local Postgres container or the real production database without a
+  restart. The choice is stored in the signed session and a per-request resolver routes the
+  backend accordingly; a red "PRODUCTION" banner shows while you're connected to it. The
+  switch is completely inert in a real deployment (gated on dev mode + the env var). See
+  [.env.example](.env.example).
 - Vehicle history **PDF export**: a rich, printable report covering details, tyres,
   specs, reminders, mileage (with chart), full service history (incl. fault codes),
   and MOT history. Photos are opt-in via an "Include photos" toggle in the vehicle's
