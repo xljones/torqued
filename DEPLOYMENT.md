@@ -129,3 +129,38 @@ make list-users
 For a Postgres database, `db-backup` / `db-restore` shell out to `pg_dump` / `psql`, so
 those client tools must be on `PATH` (they ship in the backend Docker image; on
 PythonAnywhere install or use the bundled `postgresql-client`).
+
+---
+
+## Hosted Postgres (Neon, Supabase, …)
+
+A managed Postgres connection string works as-is — paste the one your provider gives
+you into `DATABASE_URL`. Using **Neon** as the example:
+
+- **Driver & SSL.** Neon hands you `postgresql://…?sslmode=require&channel_binding=require`.
+  You don't need to add `+psycopg`: the app pins the psycopg v3 driver automatically, and
+  the `sslmode` / `channel_binding` query params are passed straight through to libpq.
+- **Pooled vs direct endpoint.** Neon exposes a direct host and a pooled host (the one with
+  `-pooler` in the hostname). Both work — the app disables psycopg's server-side prepared
+  statements so it is safe behind the transaction pooler. Use the **pooled** endpoint for the
+  running app; either endpoint is fine for migrations (Neon recommends the **direct** one for
+  schema changes).
+
+### Running migrations against Neon
+
+Migrations are ordinary Alembic — `run_migrations()` is just `alembic upgrade head`. Pick
+whichever fits your flow:
+
+1. **Automatic on startup (current default).** `create_app()` runs the migrations on every
+   boot, so a PythonAnywhere reload after a deploy applies them. Simplest; fine for a single
+   web worker.
+2. **Explicit, as a deploy step.** Point `DATABASE_URL` at Neon (the direct endpoint is the
+   safe choice) and run it once:
+
+   ```bash
+   export DATABASE_URL='postgresql://USER:PASSWORD@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=require'
+   cd backend-src && alembic upgrade head     # or:  make migrate
+   ```
+
+   This is the recommended approach if you run **multiple app instances** (so they don't race
+   to migrate on startup) or want migrations gated in CI/CD before the app rolls out.

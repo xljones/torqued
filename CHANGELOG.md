@@ -26,7 +26,10 @@
   style via a thin dialect-aware `Connection` wrapper. Schema is now managed by **Alembic**
   (`backend-src/migrations/`) instead of the bespoke SQL-file runner; `run_migrations()` runs
   `alembic upgrade head` on startup. `make db-backup` / `db-restore` detect the backend
-  (`pg_dump`/`psql` for Postgres, `sqlite3` dump for SQLite). Configure via [.env.example](.env.example).
+  (`pg_dump`/`psql` for Postgres, `sqlite3` dump for SQLite). Hosted Postgres URLs (Neon,
+  Supabase, …) work verbatim — the psycopg v3 driver is pinned, `?sslmode=…` is honoured, and
+  server-side prepared statements are disabled for transaction-pooler (PgBouncer / Neon
+  `-pooler`) compatibility. Configure via [.env.example](.env.example); see [DEPLOYMENT.md](DEPLOYMENT.md).
 - `RelativeTime` renders future dates in human-friendly units (e.g. MOT expiry reads
   "next month" rather than "in 3,043,741 seconds"); the MOT card shows expiry relatively.
 

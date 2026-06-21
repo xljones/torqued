@@ -48,11 +48,25 @@ _MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
 _engines: dict[str, Engine] = {}
 
 
+def _with_psycopg_driver(url: str) -> str:
+    """Pin the psycopg v3 driver on a bare PostgreSQL URL.
+
+    Lets a hosted-provider connection string (Neon, Heroku, Railway, …) be used
+    verbatim: those come as ``postgres://`` or ``postgresql://``, for which
+    SQLAlchemy would otherwise pick the (uninstalled) psycopg2 driver.
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
+
+
 def database_url() -> str:
     """Resolve the SQLAlchemy URL for the active database (see module docstring)."""
     url = os.environ.get("DATABASE_URL")
     if url:
-        return url
+        return _with_psycopg_driver(url)
     db_path = os.environ.get("DB_PATH", _DEFAULT_DB_PATH)
     return URL.create("sqlite", database=db_path).render_as_string(hide_password=False)
 
@@ -68,7 +82,10 @@ def _create_engine(url: str) -> Engine:
             cursor.close()
 
         return engine
-    return create_engine(url, pool_pre_ping=True)
+    # prepare_threshold=None disables psycopg's server-side prepared statements,
+    # which don't survive a transaction-pooling proxy such as PgBouncer or Neon's
+    # `-pooler` endpoint (otherwise: "prepared statement … does not exist").
+    return create_engine(url, pool_pre_ping=True, connect_args={"prepare_threshold": None})
 
 
 def get_engine() -> Engine:

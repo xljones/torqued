@@ -22,7 +22,12 @@ an on-disk SQLite file. Repositories never import a driver — they get a dialec
 `Connection` wrapper from `get_db()` and keep using the `execute("… ? …", (args,))`
 convention; the wrapper handles placeholders, row mapping, and transactions. Dates and
 timestamps are stored as TEXT (ISO strings) and 0/1 flags as INTEGER so values
-round-trip identically on both backends.
+round-trip identically on both backends. A bare hosted-provider URL
+(`postgres://`/`postgresql://`, e.g. Neon) is accepted verbatim — the psycopg v3 driver is
+pinned and `?sslmode=…` passes through to libpq — and server-side prepared statements are
+disabled so the app is safe behind a transaction pooler (PgBouncer / Neon's `-pooler`
+endpoint). Migrations are just `alembic upgrade head` (`run_migrations()`), run on startup
+or as an explicit `make migrate` / CI step (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ## Domain model
 

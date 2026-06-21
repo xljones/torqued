@@ -9,6 +9,17 @@ def test_database_url_prefers_explicit_database_url(monkeypatch: pytest.MonkeyPa
     assert db.database_url() == url
 
 
+def test_database_url_pins_psycopg_driver_on_provider_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Hosted providers (Neon, Heroku, …) hand out driverless URLs; pin psycopg v3 so
+    # they can be pasted in verbatim, query string (e.g. ?sslmode=require) preserved.
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@ep-x.neon.tech/db?sslmode=require")
+    assert db.database_url() == "postgresql+psycopg://u:p@ep-x.neon.tech/db?sslmode=require"
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@ep-x.neon.tech/db")
+    assert db.database_url() == "postgresql+psycopg://u:p@ep-x.neon.tech/db"
+
+
 def test_database_url_falls_back_to_sqlite_db_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: object
 ) -> None:
