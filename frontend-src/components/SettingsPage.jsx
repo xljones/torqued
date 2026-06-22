@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useTheme } from '../ThemeContext.jsx';
+import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { useToast } from './Toast.jsx';
 
 const THEME_LABELS = { light: 'Light', dark: 'Dark', system: 'System' };
@@ -9,6 +10,7 @@ const THEME_LABELS = { light: 'Light', dark: 'Dark', system: 'System' };
 export default function SettingsPage() {
   const { user } = useAuth();
   const { mode, setMode, MODES } = useTheme();
+  const { titleCaseNames, setTitleCaseNames } = useDisplayPrefs();
   const toast = useToast();
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
   const [saving, setSaving] = useState(false);
@@ -67,6 +69,32 @@ export default function SettingsPage() {
                   onClick={() => setMode(m)}
                 >
                   {THEME_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-field">
+            <div>
+              <div className="fw-600">Tidy up vehicle names</div>
+              <div className="meta">
+                Official DVSA records come in capitals (e.g. “VOLKSWAGEN PASSAT”). With this on,
+                makes, models, colours and fuel types from the DVSA show in title case
+                (“Volkswagen Passat”). It only changes how they&apos;re displayed — the stored
+                record is untouched, anything you type yourself shows exactly as entered, and a
+                few names (BMW, McLaren) won&apos;t capitalise perfectly.
+              </div>
+            </div>
+            <div className="btn-group" role="radiogroup" aria-label="Tidy up vehicle names">
+              {[['On', true], ['Off', false]].map(([label, val]) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="radio"
+                  aria-checked={titleCaseNames === val}
+                  className={`btn btn-secondary${titleCaseNames === val ? ' btn-active' : ''}`}
+                  onClick={() => setTitleCaseNames(val)}
+                >
+                  {label}
                 </button>
               ))}
             </div>

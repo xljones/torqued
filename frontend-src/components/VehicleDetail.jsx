@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import ExportDropdown from './ExportDropdown.jsx';
@@ -213,6 +214,7 @@ function SpecsCard({ vehicle, ro, onSaved }) {
 
 export default function VehicleDetail() {
   const { roleFor } = useAuth();
+  const { formatName } = useDisplayPrefs();
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -300,15 +302,15 @@ export default function VehicleDetail() {
 
       <div className="card card-body mb-6">
         <div className="form-grid">
-          <MotField label="Make" fieldKey="make" {...fieldProps} />
-          <MotField label="Model" fieldKey="model" {...fieldProps} />
+          <MotField label="Make" fieldKey="make" {...fieldProps} format={formatName} />
+          <MotField label="Model" fieldKey="model" {...fieldProps} format={formatName} />
           <MotField label="Year" fieldKey="year" {...fieldProps} />
           <MotField label="Registration" fieldKey="registration" {...fieldProps}
             render={v => <RegPlate reg={v} />} />
           <MotField label="Engine size" fieldKey="engine_size" {...fieldProps}
             render={v => (/^\d+$/.test(String(v)) ? `${v} cc` : v)} />
-          <MotField label="Colour" fieldKey="colour" {...fieldProps} />
-          <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} />
+          <MotField label="Colour" fieldKey="colour" {...fieldProps} format={formatName} />
+          <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} format={formatName} />
           <MotField label="First used" fieldKey="first_used_date" {...fieldProps} />
           <MotField label="First registered" fieldKey="registration_date" {...fieldProps} />
           <div className="field"><label>VIN</label><span>{vehicle.vin || '—'}</span></div>
