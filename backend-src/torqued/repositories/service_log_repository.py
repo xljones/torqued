@@ -207,7 +207,10 @@ class ServiceLogRepository(BaseRepository):
         A service log with a next_due_date or next_due_km creates a reminder. The
         reminder is closed once a newer log exists for the same vehicle and category.
         Status is 'overdue', 'due_soon' (within DUE_SOON_DAYS / DUE_SOON_KM of the
-        vehicle's latest odometer reading), or 'upcoming'.
+        vehicle's latest odometer reading), or 'upcoming'. Each carries type='service'.
+
+        MOT-expiry reminders (type='mot') are merged in alongside, so a vehicle's
+        upcoming or lapsed MOT surfaces here too.
         """
         today = today or date.today()
         if not garage_ids:
@@ -261,7 +264,14 @@ class ServiceLogRepository(BaseRepository):
                 status = "overdue"
             elif due_soon:
                 status = "due_soon"
-            reminders.append({**s, "status": status, "km_remaining": km_remaining})
+            reminders.append(
+                {**s, "type": "service", "status": status, "km_remaining": km_remaining}
+            )
+        from torqued.repositories.mot_repository import MotRepository
+
+        reminders.extend(
+            MotRepository(self.db).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
+        )
         order = {"overdue": 0, "due_soon": 1, "upcoming": 2}
         reminders.sort(key=lambda r: (order[r["status"]], r["next_due_date"] or "9999-12-31"))
         return reminders

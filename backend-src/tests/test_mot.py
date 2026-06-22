@@ -1,6 +1,7 @@
 """Tests for the DVSA MOT history integration: client, storage, and routes."""
 import json
 import urllib.error
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -398,3 +399,99 @@ def test_refresh_new_reg_vehicle(
     assert r.json["mot"]["mot_test_due_date"] == "2027-09-01"
     assert r.json["mot"]["manufacture_year"] == 2024
     assert r.json["mot"]["tests"] == []
+
+
+# ── MOT reminders ───────────────────────────────────────────────────────────────
+
+def _store_mot(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Create a vehicle and persist the given DVSA payload against it."""
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: payload)
+    v = mk_vehicle(auth_client, registration=payload["registration"])
+    r = auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    assert r.status_code == 200, r.json
+    return v
+
+
+def _mot_reminders(auth_client: FlaskClient) -> list[dict[str, Any]]:
+    return [r for r in auth_client.get("/api/reminders").json if r["type"] == "mot"]
+
+
+def _passed(expiry: str | None) -> dict[str, Any]:
+    return {"registration": "A1XYZ", "motTests": [
+        {"completedDate": "2024-11-05T10:01:00.000Z", "testResult": "PASSED", "expiryDate": expiry},
+    ]}
+
+
+def test_mot_reminder_due_soon(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    expiry = (date.today() + timedelta(days=30)).isoformat()
+    v = _store_mot(auth_client, monkeypatch, _passed(expiry))
+    [rem] = _mot_reminders(auth_client)
+    assert rem["status"] == "due_soon"
+    assert rem["category"] == "MOT"
+    assert rem["next_due_date"] == expiry
+    assert rem["vehicle_id"] == v["id"]
+    # The same reminder is embedded in the vehicle detail payload
+    detail = auth_client.get(f"/api/vehicles/{v['id']}").json
+    assert [r["status"] for r in detail["reminders"] if r["type"] == "mot"] == ["due_soon"]
+
+
+def test_mot_reminder_overdue(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    expiry = (date.today() - timedelta(days=10)).isoformat()
+    _store_mot(auth_client, monkeypatch, _passed(expiry))
+    [rem] = _mot_reminders(auth_client)
+    assert rem["status"] == "overdue"
+
+
+def test_mot_reminder_outside_window_hidden(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    expiry = (date.today() + timedelta(days=120)).isoformat()
+    _store_mot(auth_client, monkeypatch, _passed(expiry))
+    assert _mot_reminders(auth_client) == []
+
+
+def test_mot_reminder_falls_back_to_due_date(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # Latest test failed (no expiry); the vehicle-level next-due date drives the reminder.
+    due = (date.today() + timedelta(days=20)).isoformat()
+    _store_mot(auth_client, monkeypatch, {
+        "registration": "A1XYZ", "motTestDueDate": due, "motTests": [
+            {"completedDate": "2024-11-05T10:01:00.000Z",
+             "testResult": "FAILED", "expiryDate": None},
+        ],
+    })
+    [rem] = _mot_reminders(auth_client)
+    assert rem["status"] == "due_soon"
+    assert rem["next_due_date"] == due
+
+
+def test_mot_reminder_without_any_date_hidden(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # A snapshot with no expiry and no due date has nothing to remind about.
+    _store_mot(auth_client, monkeypatch, {"registration": "A1XYZ", "motTests": []})
+    assert _mot_reminders(auth_client) == []
+
+
+def test_mot_reminder_excludes_archived_vehicle(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    expiry = (date.today() + timedelta(days=30)).isoformat()
+    v = _store_mot(auth_client, monkeypatch, _passed(expiry))
+    auth_client.put(f"/api/vehicles/{v['id']}", json={"name": v["name"], "archived": True})
+    assert _mot_reminders(auth_client) == []
+
+
+def test_mot_reminders_empty_garages() -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+
+    with get_db() as db:
+        assert MotRepository(db).reminders([]) == []

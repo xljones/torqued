@@ -282,14 +282,18 @@ export default function VehicleDetail() {
       {dueReminders.length > 0 && (
         <div className="card mb-6">
           {dueReminders.map(r => (
-            <div key={r.id} className="reminder-row">
+            <div key={r.type === 'mot' ? 'mot' : r.id} className="reminder-row">
               <div className="reminder-main">
                 <span className="reminder-title">{r.category || r.title}</span>
                 <span className="reminder-sub">
-                  After “{r.title}” ({r.date})
-                  {r.next_due_date && ` — due ${r.next_due_date}`}
-                  {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
-                  {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
+                  {r.type === 'mot'
+                    ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
+                    : <>
+                        After “{r.title}” ({r.date})
+                        {r.next_due_date && ` — due ${r.next_due_date}`}
+                        {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
+                        {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
+                      </>}
                 </span>
               </div>
               <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
