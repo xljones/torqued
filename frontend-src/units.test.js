@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   toKm, fromKm, psiToBar, barToPsi,
-  fmtDistance, fmtDistanceBoth, fmtPressure, fmtCost,
+  fmtDistance, fmtDistanceBoth, fmtPressure, fmtCost, titleCase,
 } from './units.js';
 
 describe('units', () => {
@@ -32,5 +32,15 @@ describe('units', () => {
   it('formats costs', () => {
     expect(fmtCost(342)).toBe('342.00');
     expect(fmtCost(null)).toBeNull();
+  });
+
+  it('title-cases DVSA all-caps text, leaving nullish and empty values untouched', () => {
+    expect(titleCase('VOLKSWAGEN')).toBe('Volkswagen');
+    expect(titleCase('LAND ROVER')).toBe('Land Rover');
+    expect(titleCase('MERCEDES-BENZ')).toBe('Mercedes-Benz');
+    expect(titleCase('')).toBe('');
+    expect(titleCase(null)).toBeNull();
+    expect(titleCase(undefined)).toBeUndefined();
+    expect(titleCase('BMW')).toBe('Bmw'); // documented imperfection for acronym makes
   });
 });

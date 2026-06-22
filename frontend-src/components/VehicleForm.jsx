@@ -2,9 +2,13 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { useToast } from './Toast.jsx';
 import { FormMode, KIND_LABELS } from '../constants.js';
 import { barToPsi, psiToBar } from '../units.js';
+
+// Identity fields whose DVSA baseline preview is tidied by the title-case setting.
+const TIDY_KEYS = ['make', 'model', 'colour', 'fuel_type'];
 
 const EMPTY = {
   name: '', kind: 'car', make: '', model: '', year: '', registration: '', vin: '',
@@ -18,6 +22,7 @@ const EMPTY = {
 export default function VehicleForm({ mode }) {
   const { id } = useParams();
   const { currentGarage } = useAuth();
+  const { formatName } = useDisplayPrefs();
   const navigate = useNavigate();
   const toast = useToast();
   const isEdit = mode === FormMode.EDIT;
@@ -74,12 +79,15 @@ export default function VehicleForm({ mode }) {
     // A green border marks the value that will actually be used: the user's override when set,
     // otherwise the DVSA baseline it falls back to.
     const overridden = form[key] != null && String(form[key]).trim() !== '';
+    // The fixed column shows the DVSA value as it will display elsewhere (tidied per setting);
+    // the editable input keeps the user's exact text.
+    const shown = TIDY_KEYS.includes(key) ? formatName(val) : val;
     return (
       <div className={`dvsa-split ${overridden ? 'is-override' : 'is-dvsa'}`}>
         {input}
         <div className="dvsa-fixed" title="From the DVSA MOT record">
           <span className="dvsa-fixed-label">DVSA</span>
-          <span className="dvsa-fixed-value">{val}</span>
+          <span className="dvsa-fixed-value">{shown}</span>
         </div>
       </div>
     );
@@ -205,9 +213,9 @@ export default function VehicleForm({ mode }) {
           {baseline && (
             <p className="mot-found mb-4">
               Found via DVSA:{' '}
-              <strong>{[baseline.make, baseline.model].filter(Boolean).join(' ') || 'record'}</strong>
+              <strong>{[formatName(baseline.make), formatName(baseline.model)].filter(Boolean).join(' ') || 'record'}</strong>
               {baseline.year ? `, ${baseline.year}` : ''}
-              {baseline.colour ? `, ${baseline.colour}` : ''}
+              {baseline.colour ? `, ${formatName(baseline.colour)}` : ''}
               {baseline.engine_size ? `, ${baseline.engine_size} cc` : ''}. Leave a field blank to use the DVSA value.
             </p>
           )}

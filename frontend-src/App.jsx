@@ -4,6 +4,7 @@ import { ToastProvider } from './components/Toast.jsx';
 import BuildInfo from './components/BuildInfo.jsx';
 import { AuthProvider, useAuth } from './AuthContext.jsx';
 import { ThemeProvider, useTheme } from './ThemeContext.jsx';
+import { DisplayPrefsProvider } from './DisplayPrefsContext.jsx';
 import LoginPage from './components/LoginPage.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import VehicleList from './components/VehicleList.jsx';
@@ -226,11 +227,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AuthProvider>
-          <ToastProvider>
-            <AppShell />
-          </ToastProvider>
-        </AuthProvider>
+        <DisplayPrefsProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <AppShell />
+            </ToastProvider>
+          </AuthProvider>
+        </DisplayPrefsProvider>
       </ThemeProvider>
     </BrowserRouter>
   );

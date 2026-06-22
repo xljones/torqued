@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
 import RegPlate from './RegPlate.jsx';
 import { REMINDER_LABELS } from '../constants.js';
@@ -11,6 +12,7 @@ const statSkeleton = <span className="skeleton-line" style={{ width: 48, height:
 
 export default function Dashboard() {
   const { currentGarage } = useAuth();
+  const { formatName } = useDisplayPrefs();
   const [vehicles, setVehicles] = useState(null);
   const [services, setServices] = useState(null);
   const [reminders, setReminders] = useState(null);
@@ -92,7 +94,7 @@ export default function Dashboard() {
                   return (
                   <tr key={v.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/vehicles/${v.id}`); }}>
                     <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
-                    <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? v.mot_baseline?.make, v.model ?? v.mot_baseline?.model].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? formatName(v.mot_baseline?.make), v.model ?? formatName(v.mot_baseline?.model)].filter(Boolean).join(' ') || '—'}</td>
                     <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
                     <td>{v.service_count}</td>
                   </tr>

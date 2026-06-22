@@ -33,3 +33,13 @@ export function fmtCost(cost) {
   if (cost == null) return null;
   return Number(cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+/** "VOLKSWAGEN PASSAT" → "Volkswagen Passat". Tidies the all-caps text the DVSA returns;
+ *  imperfect for names that aren't plain words (BMW → "Bmw", McLaren → "Mclaren"). Preserves
+ *  null/undefined so callers can pass values straight through. */
+export function titleCase(str) {
+  if (str == null) return str;
+  return String(str)
+    .toLowerCase()
+    .replace(/(^|[\s\-/])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
+}
