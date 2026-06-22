@@ -66,19 +66,30 @@ export default function Dashboard() {
       <div className="card mb-6">
         {reminders === null && <p className="card-message">Loading…</p>}
         {reminders?.length === 0 && <p className="card-message">Nothing on the horizon — ride on 🏁</p>}
-        {reminders?.map(r => (
-          <div key={r.id} className="reminder-row row-clickable" onClick={() => navigate(`/services/${r.id}`)}>
-            <div className="reminder-main">
-              <span className="reminder-title">{r.vehicle_name} — {r.category || r.title}</span>
-              <span className="reminder-sub">
-                After “{r.title}” ({r.date})
-                {r.next_due_date && ` — due ${r.next_due_date}`}
-                {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, r.vehicle_odometer_unit)}`}
-              </span>
+        {reminders?.map(r => {
+          const isMot = r.type === 'mot';
+          return (
+            <div
+              key={isMot ? `mot-${r.vehicle_id}` : r.id}
+              className="reminder-row row-clickable"
+              onClick={() => navigate(isMot ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}
+            >
+              <div className="reminder-main">
+                <span className="reminder-title">{r.vehicle_name} — {r.category || r.title}</span>
+                <span className="reminder-sub">
+                  {isMot
+                    ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
+                    : <>
+                        After “{r.title}” ({r.date})
+                        {r.next_due_date && ` — due ${r.next_due_date}`}
+                        {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, r.vehicle_odometer_unit)}`}
+                      </>}
+                </span>
+              </div>
+              <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
             </div>
-            <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h2 className="section-title mb-3">The garage</h2>

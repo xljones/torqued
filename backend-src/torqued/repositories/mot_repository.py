@@ -1,10 +1,15 @@
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
 _UNIT_MAP = {"MI": "mi", "KM": "km"}
+
+# An MOT surfaces as a maintenance reminder once its expiry is within this window
+# (~2 months) or already lapsed.
+MOT_DUE_SOON_DAYS = 60
 
 
 class MotRepository(BaseRepository):
@@ -30,6 +35,81 @@ class MotRepository(BaseRepository):
             del t["raw_json"]
         snapshot["tests"] = tests
         return snapshot
+
+    def reminders(
+        self,
+        garage_ids: list[int],
+        vehicle_id: int | None = None,
+        today: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return MOT-expiry reminders for in-scope, non-archived vehicles.
+
+        A vehicle with a stored DVSA snapshot yields a reminder when its MOT has
+        lapsed ('overdue') or falls due within MOT_DUE_SOON_DAYS ('due_soon');
+        MOTs further out produce nothing. The due date is the most recent test's
+        expiry, falling back to the DVSA vehicle-level next-due date — the same
+        value the MOT card shows. Shaped (and tagged type='mot') to merge with
+        the service-log reminders.
+        """
+        today = today or date.today()
+        if not garage_ids:
+            return []
+        placeholders = ",".join("?" * len(garage_ids))
+        where = ""
+        params: tuple[Any, ...] = tuple(garage_ids)
+        if vehicle_id is not None:
+            where, params = "AND v.id = ?", (*garage_ids, vehicle_id)
+        rows = self._rows(
+            self.db.execute(
+                f"""
+                SELECT v.id AS vehicle_id, v.name AS vehicle_name, v.kind AS vehicle_kind,
+                       v.garage_id, v.odometer_unit AS vehicle_odometer_unit,
+                       d.mot_test_due_date,
+                       (SELECT t.expiry_date FROM mot_tests t
+                         WHERE t.vehicle_id = v.id
+                         ORDER BY t.completed_date DESC, t.id DESC
+                         LIMIT 1) AS latest_expiry
+                FROM vehicles v
+                JOIN dvsa_vehicles d ON d.vehicle_id = v.id
+                WHERE v.archived = 0
+                  AND v.garage_id IN ({placeholders})
+                  {where}
+                """,
+                params,
+            ).fetchall()
+        )
+        cutoff = (today + timedelta(days=MOT_DUE_SOON_DAYS)).isoformat()
+        today_iso = today.isoformat()
+        reminders: list[dict[str, Any]] = []
+        for r in rows:
+            due = r["latest_expiry"] or r["mot_test_due_date"]
+            if not due:
+                continue
+            if due < today_iso:
+                status = "overdue"
+            elif due <= cutoff:
+                status = "due_soon"
+            else:
+                continue
+            reminders.append(
+                {
+                    "type": "mot",
+                    "id": None,
+                    "vehicle_id": r["vehicle_id"],
+                    "vehicle_name": r["vehicle_name"],
+                    "vehicle_kind": r["vehicle_kind"],
+                    "garage_id": r["garage_id"],
+                    "vehicle_odometer_unit": r["vehicle_odometer_unit"],
+                    "title": "MOT",
+                    "category": "MOT",
+                    "date": None,
+                    "next_due_date": due,
+                    "next_due_km": None,
+                    "km_remaining": None,
+                    "status": status,
+                }
+            )
+        return reminders
 
     def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
         """Store a fresh DVSA response, replacing any previous snapshot and tests."""
