@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import RegPlate from './RegPlate.jsx';
 import { KIND_ICONS, KIND_LABELS } from '../constants.js';
 import { fmtDistanceBoth } from '../units.js';
 
 export default function VehicleList() {
   const { currentGarage } = useAuth();
+  const { formatName } = useDisplayPrefs();
   const ro = currentGarage?.role === 'readonly';
   const [vehicles, setVehicles] = useState(null);
   const [filter, setFilter] = useState('');
@@ -30,6 +32,12 @@ export default function VehicleList() {
   const eff = (v, key) => {
     const o = v[key];
     return o != null && o !== '' ? o : (v.mot_baseline?.[key] ?? null);
+  };
+  // Same, but tidies the DVSA baseline (make/model) per the title-case setting. The user's
+  // own override is returned untouched; only the baseline fallback is formatted.
+  const effName = (v, key) => {
+    const o = v[key];
+    return o != null && o !== '' ? o : formatName(v.mot_baseline?.[key] ?? null);
   };
 
   const q = filter.toLowerCase();
@@ -82,7 +90,7 @@ export default function VehicleList() {
                 {!!v.archived && <span className="badge">Archived</span>}
               </div>
               <div className="vehicle-card-sub">
-                {[eff(v, 'year'), eff(v, 'make'), eff(v, 'model')].filter(Boolean).join(' ') || '—'}
+                {[eff(v, 'year'), effName(v, 'make'), effName(v, 'model')].filter(Boolean).join(' ') || '—'}
               </div>
               {eff(v, 'registration') && <div><RegPlate reg={eff(v, 'registration')} /></div>}
               <div className="vehicle-card-meta">

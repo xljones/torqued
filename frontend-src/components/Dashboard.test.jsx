@@ -70,6 +70,22 @@ describe('Dashboard', () => {
     });
   });
 
+  it('shows an MOT reminder with an expiry sub-line', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([{
+      type: 'mot', id: null, vehicle_id: 1, vehicle_name: 'Street Triple',
+      title: 'MOT', category: 'MOT', date: null, status: 'due_soon',
+      next_due_date: '2026-07-15', next_due_km: null, km_remaining: null,
+      vehicle_odometer_unit: 'mi',
+    }]);
+    renderDashboard();
+    await waitFor(() => {
+      expect(screen.getByText('Street Triple — MOT')).toBeInTheDocument();
+      expect(screen.getByText('Expires 2026-07-15')).toBeInTheDocument();
+      expect(screen.getByText('Due soon')).toBeInTheDocument();
+    });
+  });
+
   it('converts odometer to the vehicle display unit', async () => {
     renderDashboard();
     // 160.9344 km == 100 mi

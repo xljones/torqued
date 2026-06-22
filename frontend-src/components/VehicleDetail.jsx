@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import ExportDropdown from './ExportDropdown.jsx';
@@ -213,6 +214,7 @@ function SpecsCard({ vehicle, ro, onSaved }) {
 
 export default function VehicleDetail() {
   const { roleFor } = useAuth();
+  const { formatName } = useDisplayPrefs();
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -282,14 +284,18 @@ export default function VehicleDetail() {
       {dueReminders.length > 0 && (
         <div className="card mb-6">
           {dueReminders.map(r => (
-            <div key={r.id} className="reminder-row">
+            <div key={r.type === 'mot' ? 'mot' : r.id} className="reminder-row">
               <div className="reminder-main">
                 <span className="reminder-title">{r.category || r.title}</span>
                 <span className="reminder-sub">
-                  After “{r.title}” ({r.date})
-                  {r.next_due_date && ` — due ${r.next_due_date}`}
-                  {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
-                  {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
+                  {r.type === 'mot'
+                    ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
+                    : <>
+                        After “{r.title}” ({r.date})
+                        {r.next_due_date && ` — due ${r.next_due_date}`}
+                        {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
+                        {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
+                      </>}
                 </span>
               </div>
               <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
@@ -300,15 +306,15 @@ export default function VehicleDetail() {
 
       <div className="card card-body mb-6">
         <div className="form-grid">
-          <MotField label="Make" fieldKey="make" {...fieldProps} />
-          <MotField label="Model" fieldKey="model" {...fieldProps} />
+          <MotField label="Make" fieldKey="make" {...fieldProps} format={formatName} />
+          <MotField label="Model" fieldKey="model" {...fieldProps} format={formatName} />
           <MotField label="Year" fieldKey="year" {...fieldProps} />
           <MotField label="Registration" fieldKey="registration" {...fieldProps}
             render={v => <RegPlate reg={v} />} />
           <MotField label="Engine size" fieldKey="engine_size" {...fieldProps}
             render={v => (/^\d+$/.test(String(v)) ? `${v} cc` : v)} />
-          <MotField label="Colour" fieldKey="colour" {...fieldProps} />
-          <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} />
+          <MotField label="Colour" fieldKey="colour" {...fieldProps} format={formatName} />
+          <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} format={formatName} />
           <MotField label="First used" fieldKey="first_used_date" {...fieldProps} />
           <MotField label="First registered" fieldKey="registration_date" {...fieldProps} />
           <div className="field"><label>VIN</label><span>{vehicle.vin || '—'}</span></div>

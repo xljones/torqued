@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import MotField from './MotField';
+import { titleCase } from '../units.js';
 
 const props = (vehicle, baseline, extra = {}) => ({
   label: 'Make', fieldKey: 'make', vehicle, baseline, ...extra,
@@ -36,5 +37,17 @@ describe('MotField', () => {
       })} />,
     );
     expect(screen.getByText('1896 cc')).toBeInTheDocument();
+  });
+
+  it('applies the format prop to a DVSA baseline value', () => {
+    render(<MotField {...props({ make: null }, { make: 'VOLKSWAGEN' }, { format: titleCase })} />);
+    expect(screen.getByText('Volkswagen')).toBeInTheDocument();
+    expect(screen.getByText('DVSA')).toBeInTheDocument();
+  });
+
+  it('never applies the format prop to a user override', () => {
+    render(<MotField {...props({ make: 'McLaren' }, { make: 'MCLAREN' }, { format: titleCase })} />);
+    expect(screen.getByText('McLaren')).toBeInTheDocument();
+    expect(screen.queryByText('Mclaren')).not.toBeInTheDocument();
   });
 });
