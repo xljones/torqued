@@ -70,6 +70,14 @@ echo "MOT_TOKEN_URL=https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/to
 echo "MOT_API_KEY=<api-key>" >> .env
 ```
 
+**Optional — DVLA road tax.** To populate the tax status / due date tiles on vehicle pages (the same "Refresh from DVSA & DVLA" button), [register for the DVLA Vehicle Enquiry Service API](https://register-for-ves.driver-vehicle-licensing.api.gov.uk/) (free; a separate key from the MOT one above) and add:
+
+```bash
+echo "VES_API_KEY=<api-key>" >> .env
+# Optional: point at DVLA's UAT sandbox instead of the live endpoint
+# echo "VES_API_URL=https://uat.driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles" >> .env
+```
+
 ### 4. Create your first user
 
 ```bash

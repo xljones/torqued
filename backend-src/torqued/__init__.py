@@ -67,6 +67,7 @@ def create_app() -> Flask:
         photos,
         search,
         services,
+        tax,
         users,
         vehicles,
     )
@@ -146,6 +147,7 @@ def create_app() -> Flask:
         services.bp,
         odometer.bp,
         mot.bp,
+        tax.bp,
         photos.bp,
         codes.bp,
         export.bp,

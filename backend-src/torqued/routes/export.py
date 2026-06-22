@@ -78,6 +78,7 @@ def export_vehicle_pdf(vehicle_id: int) -> ResponseReturnValue:
     """Export a vehicle's full history as a rich PDF; photos are opt-in."""
     from torqued.pdf_report import build_vehicle_report
     from torqued.routes.photos import upload_dir
+    from torqued.routes.vehicles import collect_reminders
 
     include_photos = request.args.get("include_photos") in ("1", "true")
     with get_db() as db:
@@ -89,7 +90,7 @@ def export_vehicle_pdf(vehicle_id: int) -> ResponseReturnValue:
         assert vehicle is not None  # role check above guarantees it exists
         logs = services.list_for_vehicle(vehicle_id)
         mileage = vehicles.mileage_series(vehicle_id)
-        reminders = services.reminders([vehicle["garage_id"]], vehicle_id=vehicle_id)
+        reminders = collect_reminders(db, [vehicle["garage_id"]], vehicle_id=vehicle_id)
         mot = MotRepository(db).get_for_vehicle(vehicle_id)
 
     pdf = build_vehicle_report(

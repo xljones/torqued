@@ -36,6 +36,13 @@ function recallTileClass(value) {
     : 'pressure-tile--ok'; // No / Unknown / Unavailable → green
 }
 
+function taxStatusTileClass(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'taxed') return 'pressure-tile--ok';
+  if (s) return 'pressure-tile--danger'; // Untaxed / SORN / Not Taxed for on Road Use
+  return '';
+}
+
 function TestRow({ test, unit }) {
   const [open, setOpen] = useState(false);
   const passed = (test.test_result || '').toUpperCase() === 'PASSED';
@@ -142,20 +149,26 @@ function JsonTree({ data }) {
 export default function MotCard({ vehicle, ro, onSynced }) {
   const toast = useToast();
   const [data, setData] = useState(null);
+  const [taxData, setTaxData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [jsonFmt, setJsonFmt] = useState('formatted');
 
-  const load = useCallback(() => { api.getMot(vehicle.id).then(setData); }, [vehicle.id]);
+  const load = useCallback(() => {
+    api.getMot(vehicle.id).then(setData);
+    api.getTax(vehicle.id).then(setTaxData);
+  }, [vehicle.id]);
   useEffect(load, [load]);
 
   async function handleRefresh() {
     setBusy(true);
     try {
-      const result = await api.refreshMot(vehicle.id);
-      setData(result);
-      toast('MOT history refreshed');
+      const jobs = [];
+      if (data?.configured) jobs.push(api.refreshMot(vehicle.id).then(setData));
+      if (taxData?.configured) jobs.push(api.refreshTax(vehicle.id).then(setTaxData));
+      await Promise.all(jobs);
+      toast('Refreshed from DVSA & DVLA');
       onSynced?.();
     } catch (err) {
       toast(err.message, 'error');
@@ -164,9 +177,14 @@ export default function MotCard({ vehicle, ro, onSynced }) {
     }
   }
 
-  if (!data || (!vehicle.registration && !data.mot)) return null;
+  if (!data || !taxData) return null;
 
   const mot = data.mot;
+  const taxRec = taxData.tax;
+  if (!vehicle.registration && !mot && !taxRec) return null;
+
+  const configured = data.configured || taxData.configured;
+  const fetchedAt = mot?.fetched_at ?? taxRec?.fetched_at;
   const tests = mot?.tests ?? [];
   const latest = tests[0];
   const expiry = latest?.expiry_date ?? mot?.mot_test_due_date;
@@ -176,35 +194,35 @@ export default function MotCard({ vehicle, ro, onSynced }) {
     <div className="card card-body mb-6">
       <div className="section-header">
         <div className="mot-header-left">
-          <h2 className="section-title">MOT history</h2>
-          {mot && (
+          <h2 className="section-title">MOT &amp; tax</h2>
+          {fetchedAt && (
             <span className="mot-reauth text-muted text-sm">
               <span className="mot-reauth-dot" aria-hidden="true">•</span>
-              {' '}refreshed <RelativeTime value={mot.fetched_at} />
+              {' '}refreshed <RelativeTime value={fetchedAt} />
             </span>
           )}
         </div>
-        {!ro && data.configured && (
+        {!ro && configured && (
           <button className="btn btn-secondary btn-sm" onClick={handleRefresh} disabled={busy}>
-            {busy ? 'Refreshing…' : mot ? 'Refresh from DVSA' : 'Fetch from DVSA'}
+            {busy ? 'Refreshing…' : (mot || taxRec) ? 'Refresh from DVSA & DVLA' : 'Fetch from DVSA & DVLA'}
           </button>
         )}
       </div>
 
-      {!mot && data.configured && (
+      {!mot && !taxRec && configured && (
         <p className="text-muted text-sm">
-          No MOT data yet — fetch the official test history for {vehicle.registration} from the DVSA.
+          No data yet — fetch the official MOT history and road-tax status for {vehicle.registration} from the DVSA & DVLA.
         </p>
       )}
-      {!mot && !data.configured && (
+      {!mot && !taxRec && !configured && (
         <p className="text-muted text-sm">
           {import.meta.env.DEV
-            ? 'DVSA MOT API credentials are not configured (set MOT_CLIENT_ID, MOT_CLIENT_SECRET, MOT_TOKEN_URL and MOT_API_KEY).'
-            : 'MOT history is unavailable right now.'}
+            ? 'DVSA/DVLA API credentials are not configured (set MOT_CLIENT_ID, MOT_CLIENT_SECRET, MOT_TOKEN_URL, MOT_API_KEY and VES_API_KEY).'
+            : 'MOT and tax data are unavailable right now.'}
         </p>
       )}
 
-      {mot && (
+      {(mot || taxRec) && (
         <>
           <div className="mot-summary">
             {expiry && (
@@ -214,33 +232,48 @@ export default function MotCard({ vehicle, ro, onSynced }) {
                 <div className="pressure-alt"><RelativeTime value={expiry} /></div>
               </div>
             )}
-            {String(mot.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown' && (
+            {taxRec && (
+              <div className={`pressure-tile ${taxStatusTileClass(taxRec.tax_status)}`}>
+                <div className="pressure-label">Tax status</div>
+                <div className="pressure-value">{taxRec.tax_status ?? '—'}</div>
+              </div>
+            )}
+            {taxRec?.tax_due_date && (
+              <div className={`pressure-tile ${expiryTileClass(taxRec.tax_due_date)}`}>
+                <div className="pressure-label">Tax due</div>
+                <div className="pressure-value">{taxRec.tax_due_date}</div>
+                <div className="pressure-alt"><RelativeTime value={taxRec.tax_due_date} /></div>
+              </div>
+            )}
+            {mot && String(mot.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown' && (
               <div className={`pressure-tile ${recallTileClass(mot.has_outstanding_recall)}`}>
                 <div className="pressure-label">Outstanding recall</div>
                 <div className="pressure-value">{mot.has_outstanding_recall}</div>
               </div>
             )}
-            <div
-              className={`pressure-tile dvsa-record-tile${showJson ? ' dvsa-record-tile--open' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => setShowJson(v => !v)}
-              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
-            >
-              <div className="pressure-label">
-                DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
+            {mot && (
+              <div
+                className={`pressure-tile dvsa-record-tile${showJson ? ' dvsa-record-tile--open' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowJson(v => !v)}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
+              >
+                <div className="pressure-label">
+                  DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
+                </div>
+                <div className="pressure-size">
+                  {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
+                  {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
+                  {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
+                  {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
+                  {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
+                </div>
               </div>
-              <div className="pressure-size">
-                {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
-                {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
-                {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
-                {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
-                {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
-              </div>
-            </div>
+            )}
           </div>
 
-          {showJson && (
+          {mot && showJson && (
             <div className="dvsa-json-panel mt-3">
               <div className="dvsa-json-toolbar">
                 <button

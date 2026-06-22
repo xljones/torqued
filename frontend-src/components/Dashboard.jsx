@@ -65,13 +65,17 @@ export default function Dashboard() {
         {reminders === null && <p className="card-message">Loading…</p>}
         {reminders?.length === 0 && <p className="card-message">Nothing on the horizon — ride on 🏁</p>}
         {reminders?.map(r => (
-          <div key={r.id} className="reminder-row row-clickable" onClick={() => navigate(`/services/${r.id}`)}>
+          <div key={r.id} className="reminder-row row-clickable" onClick={() => navigate(r.source === 'tax' ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}>
             <div className="reminder-main">
               <span className="reminder-title">{r.vehicle_name} — {r.category || r.title}</span>
               <span className="reminder-sub">
-                After “{r.title}” ({r.date})
-                {r.next_due_date && ` — due ${r.next_due_date}`}
-                {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, r.vehicle_odometer_unit)}`}
+                {r.source === 'tax'
+                  ? `Road tax${r.next_due_date ? ` — due ${r.next_due_date}` : ''}`
+                  : <>
+                      After “{r.title}” ({r.date})
+                      {r.next_due_date && ` — due ${r.next_due_date}`}
+                      {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, r.vehicle_odometer_unit)}`}
+                    </>}
               </span>
             </div>
             <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>

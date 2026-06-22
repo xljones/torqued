@@ -86,6 +86,11 @@ export const api = {
   getMotStatus: ()               => req('GET',  '/mot/status'),
   lookupMot:    (registration)   => req('GET',  `/mot/lookup/${encodeURIComponent(registration)}`),
 
+  // Vehicle tax (DVLA Vehicle Enquiry Service)
+  getTax:       (vehicleId)      => req('GET',  `/vehicles/${vehicleId}/tax`),
+  refreshTax:   (vehicleId)      => req('POST', `/vehicles/${vehicleId}/tax/refresh`),
+  getTaxStatus: ()               => req('GET',  '/tax/status'),
+
   // Odometer logs
   getOdometerLogs:    (vehicleId)      => req('GET',    `/vehicles/${vehicleId}/odometer`),
   createOdometerLog:  (vehicleId, body)=> req('POST',   `/vehicles/${vehicleId}/odometer`, body),
