@@ -2,7 +2,7 @@
 # Run from a PythonAnywhere Bash console inside ~/torqued
 
 .PHONY: deploy-pa
-# pull latest deploy branch (includes built dist/), install deps, migrate the DB, summarise
+# pull latest deploy branch (includes built dist/), install deps, migrate the DB, reload, summarise
 deploy-pa:
 	git fetch origin && git checkout deploy && git reset --hard origin/deploy
 	[ -d venv ] || python3 -m venv venv
@@ -13,4 +13,7 @@ deploy-pa:
 	touch MAINTENANCE
 	venv/bin/python backend-src/manage.py migrate
 	rm -f MAINTENANCE
+	# Reload the web app so the long-running WSGI process picks up the new Python code.
+	# (The served dist/ refreshes on its own, but route/code changes need this reload.)
+	touch /var/www/$$(echo "$$PYTHONANYWHERE_SITE" | tr . _)_wsgi.py
 	@python3 scripts/deploy_summary.py

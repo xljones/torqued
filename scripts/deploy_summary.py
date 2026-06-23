@@ -42,5 +42,5 @@ if bi:
     print(f"  dist SHA:    {dist_sha}  (built {built_at}{rel})")
 print(f"  Deployed at: {now}")
 print("════════════════════════════════════════════════════")
-print("Reload the web app in the PythonAnywhere Web tab.")
+print("Web app reloaded. If changes don't show, reload again from the PythonAnywhere Web tab.")
 print("")
