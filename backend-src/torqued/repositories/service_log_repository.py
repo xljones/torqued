@@ -1,8 +1,21 @@
 from datetime import date, timedelta
 from typing import Any
 
+from sqlalchemy import Select, and_, delete, func, or_, select, update
+from sqlalchemy.orm import aliased
+
 from torqued import dtc
 from torqued.db import utcnow_text
+from torqued.models import (
+    Garage,
+    Photo,
+    ServiceLog,
+    ServiceLogFaultCode,
+    ServiceLogHistory,
+    User,
+    Vehicle,
+    to_dict,
+)
 from torqued.repositories.base import BaseRepository
 
 SERVICE_FIELDS: list[str] = [
@@ -23,13 +36,36 @@ SERVICE_FIELDS: list[str] = [
 DUE_SOON_DAYS = 30
 DUE_SOON_KM = 500.0
 
-_VEHICLE_JOIN = """
-    SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind, v.garage_id,
-           v.odometer_unit AS vehicle_odometer_unit,
-           (SELECT COUNT(*) FROM photos p WHERE p.service_log_id = s.id) AS photo_count
-    FROM service_logs s
-    JOIN vehicles v ON v.id = s.vehicle_id
-"""
+
+def _log_select() -> Select[Any]:
+    """Base query: each service log joined to its vehicle, plus a per-log photo count."""
+    photo_count = (
+        select(func.count())
+        .select_from(Photo)
+        .where(Photo.service_log_id == ServiceLog.id)
+        .correlate(ServiceLog)
+    ).scalar_subquery()
+    return select(
+        ServiceLog,
+        Vehicle.name.label("vehicle_name"),
+        Vehicle.kind.label("vehicle_kind"),
+        Vehicle.garage_id,
+        Vehicle.odometer_unit.label("vehicle_odometer_unit"),
+        photo_count.label("photo_count"),
+    ).join(Vehicle, Vehicle.id == ServiceLog.vehicle_id)
+
+
+def _log_dict(row: Any) -> dict[str, Any]:
+    """Flatten a _log_select() result row into the dict shape routes expect."""
+    log, vehicle_name, vehicle_kind, garage_id, vehicle_odometer_unit, photo_count = row
+    return {
+        **to_dict(log),
+        "vehicle_name": vehicle_name,
+        "vehicle_kind": vehicle_kind,
+        "garage_id": garage_id,
+        "vehicle_odometer_unit": vehicle_odometer_unit,
+        "photo_count": photo_count,
+    }
 
 
 class ServiceLogRepository(BaseRepository):
@@ -37,12 +73,15 @@ class ServiceLogRepository(BaseRepository):
         """Batch-load fault codes for a set of service log IDs."""
         if not log_ids:
             return {}
-        placeholders = ",".join("?" * len(log_ids))
-        rows = self.execute(
-            f"SELECT service_log_id, code FROM service_log_fault_codes"
-            f" WHERE service_log_id IN ({placeholders}) ORDER BY id",
-            tuple(log_ids),
-        ).fetchall()
+        rows = (
+            self.session.execute(
+                select(ServiceLogFaultCode.service_log_id, ServiceLogFaultCode.code)
+                .where(ServiceLogFaultCode.service_log_id.in_(log_ids))
+                .order_by(ServiceLogFaultCode.id)
+            )
+            .mappings()
+            .all()
+        )
         result: dict[int, list[dict[str, Any]]] = {}
         for r in rows:
             detail = dtc.lookup(r["code"])
@@ -55,84 +94,70 @@ class ServiceLogRepository(BaseRepository):
 
     def _attach_fault_codes(self, logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Attach fault_codes list to each log dict."""
-        ids = [log["id"] for log in logs]
-        codes_map = self._fault_codes_for_logs(ids)
+        codes_map = self._fault_codes_for_logs([log["id"] for log in logs])
         for log in logs:
             log["fault_codes"] = codes_map.get(log["id"], [])
         return logs
 
     def _replace_fault_codes(self, log_id: int, codes: list[str]) -> None:
         """Delete and re-insert fault codes for a service log."""
-        self.execute(
-            "DELETE FROM service_log_fault_codes WHERE service_log_id=?", (log_id,)
+        self.session.execute(
+            delete(ServiceLogFaultCode).where(ServiceLogFaultCode.service_log_id == log_id)
         )
         for code in codes:
             stripped = code.strip().upper()
             if stripped:
-                self.execute(
-                    "INSERT INTO service_log_fault_codes (service_log_id, code) VALUES (?,?)",
-                    (log_id, stripped),
-                )
+                self.session.add(ServiceLogFaultCode(service_log_id=log_id, code=stripped))
 
     def list_for_garages(self, garage_ids: list[int]) -> list[dict[str, Any]]:
         """Return the garages' service logs across vehicles, newest first."""
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        logs = self._rows(
-            self.execute(
-                f"{_VEHICLE_JOIN} WHERE v.garage_id IN ({placeholders})"
-                " ORDER BY s.date DESC, s.id DESC",
-                tuple(garage_ids),
-            ).fetchall()
-        )
-        return self._attach_fault_codes(logs)
+        rows = self.session.execute(
+            _log_select()
+            .where(Vehicle.garage_id.in_(garage_ids))
+            .order_by(ServiceLog.date.desc(), ServiceLog.id.desc())
+        ).all()
+        return self._attach_fault_codes([_log_dict(r) for r in rows])
 
     def list_for_vehicle(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's service logs, newest first."""
-        logs = self._rows(
-            self.execute(
-                f"{_VEHICLE_JOIN} WHERE s.vehicle_id=? ORDER BY s.date DESC, s.id DESC",
-                (vehicle_id,),
-            ).fetchall()
-        )
-        return self._attach_fault_codes(logs)
+        rows = self.session.execute(
+            _log_select()
+            .where(ServiceLog.vehicle_id == vehicle_id)
+            .order_by(ServiceLog.date.desc(), ServiceLog.id.desc())
+        ).all()
+        return self._attach_fault_codes([_log_dict(r) for r in rows])
 
     def get_by_id(self, log_id: int) -> dict[str, Any] | None:
         """Return a single service log with vehicle info, photos, and fault codes."""
-        log = self._row(self.execute(f"{_VEHICLE_JOIN} WHERE s.id=?", (log_id,)).fetchone())
-        if not log:
+        row = self.session.execute(_log_select().where(ServiceLog.id == log_id)).first()
+        if row is None:
             return None
-        log["photos"] = self._rows(
-            self.execute(
-                """
-                SELECT p.*, u.username AS uploaded_by_username
-                FROM photos p LEFT JOIN users u ON u.id = p.uploaded_by
-                WHERE p.service_log_id=? ORDER BY p.created_at DESC, p.id DESC
-                """,
-                (log_id,),
-            ).fetchall()
-        )
+        log = _log_dict(row)
+        photo_rows = self.session.execute(
+            select(Photo, User.username.label("uploaded_by_username"))
+            .outerjoin(User, User.id == Photo.uploaded_by)
+            .where(Photo.service_log_id == log_id)
+            .order_by(Photo.created_at.desc(), Photo.id.desc())
+        ).all()
+        log["photos"] = [
+            {**to_dict(photo), "uploaded_by_username": username} for photo, username in photo_rows
+        ]
         self._attach_fault_codes([log])
         return log
 
     def create(self, data: dict[str, Any], changed_by: int | None = None) -> dict[str, Any]:
         """Insert a new service log and record its initial history snapshot."""
-        cols = ",".join(SERVICE_FIELDS)
-        marks = ",".join("?" * len(SERVICE_FIELDS))
-        inserted = self.execute(
-            f"INSERT INTO service_logs ({cols}) VALUES ({marks}) RETURNING id",
-            tuple(data.get(f) for f in SERVICE_FIELDS),
-        ).fetchone()
-        if inserted is None:  # pragma: no cover
-            raise RuntimeError("INSERT returned no row ID")
-        row_id = inserted["id"]
+        log_row = ServiceLog(**{f: data.get(f) for f in SERVICE_FIELDS})
+        self.session.add(log_row)
+        self.session.flush()
         fault_codes = data.get("fault_codes") or []
         if fault_codes:
-            self._replace_fault_codes(row_id, fault_codes)
-        log = self.get_by_id(row_id)
+            self._replace_fault_codes(log_row.id, fault_codes)
+        log = self.get_by_id(log_row.id)
         if log is None:  # pragma: no cover
-            raise RuntimeError(f"Row {row_id} not found after INSERT")
+            raise RuntimeError(f"Row {log_row.id} not found after INSERT")
         self._record_history(log, changed_by)
         return log
 
@@ -140,12 +165,9 @@ class ServiceLogRepository(BaseRepository):
         self, log_id: int, data: dict[str, Any], changed_by: int | None = None
     ) -> dict[str, Any] | None:
         """Update service log fields, record a history snapshot, and return the updated log."""
-        fields = [f for f in SERVICE_FIELDS if f != "vehicle_id"]
-        sets = ",".join(f"{f}=?" for f in fields)
-        self.execute(
-            f"UPDATE service_logs SET {sets}, updated_at=? WHERE id=?",
-            (*(data.get(f) for f in fields), utcnow_text(), log_id),
-        )
+        values = {f: data.get(f) for f in SERVICE_FIELDS if f != "vehicle_id"}
+        values["updated_at"] = utcnow_text()
+        self.session.execute(update(ServiceLog).where(ServiceLog.id == log_id).values(values))
         if "fault_codes" in data:
             self._replace_fault_codes(log_id, data["fault_codes"] or [])
         log = self.get_by_id(log_id)
@@ -155,45 +177,39 @@ class ServiceLogRepository(BaseRepository):
 
     def delete(self, log_id: int) -> bool:
         """Delete a service log by primary key; return True if a row was removed."""
-        return self.execute("DELETE FROM service_logs WHERE id=?", (log_id,)).rowcount > 0
+        return self.affected(delete(ServiceLog).where(ServiceLog.id == log_id)) > 0
 
     def get_history(self, log_id: int) -> list[dict[str, Any]]:
         """Return full audit history for a service log, newest first, with username."""
-        return self._rows(
-            self.execute(
-                """
-                SELECT sh.*, u.username AS changed_by_username
-                FROM service_log_history sh
-                LEFT JOIN users u ON u.id = sh.changed_by
-                WHERE sh.service_log_id = ?
-                ORDER BY sh.changed_at DESC, sh.id DESC
-                """,
-                (log_id,),
-            ).fetchall()
-        )
+        rows = self.session.execute(
+            select(ServiceLogHistory, User.username.label("changed_by_username"))
+            .outerjoin(User, User.id == ServiceLogHistory.changed_by)
+            .where(ServiceLogHistory.service_log_id == log_id)
+            .order_by(ServiceLogHistory.changed_at.desc(), ServiceLogHistory.id.desc())
+        ).all()
+        return [{**to_dict(h), "changed_by_username": username} for h, username in rows]
 
     def revert(
         self, log_id: int, version_id: int, changed_by: int | None = None
     ) -> dict[str, Any] | None:
         """Restore a service log from a history record; return None if it doesn't exist."""
-        h = self._row(
-            self.execute(
-                "SELECT * FROM service_log_history WHERE id=? AND service_log_id=?",
-                (version_id, log_id),
-            ).fetchone()
-        )
-        if not h:
+        h = self.session.execute(
+            select(ServiceLogHistory).where(
+                ServiceLogHistory.id == version_id, ServiceLogHistory.service_log_id == log_id
+            )
+        ).scalar_one_or_none()
+        if h is None:
             return None
-        return self.update(log_id, h, changed_by=changed_by)
+        return self.update(log_id, to_dict(h), changed_by=changed_by)
 
     def _record_history(self, log: dict[str, Any], changed_by: int | None) -> None:
         """Write a snapshot of the service log's current field values to history."""
-        cols = ",".join(SERVICE_FIELDS)
-        marks = ",".join("?" * len(SERVICE_FIELDS))
-        self.execute(
-            f"INSERT INTO service_log_history (service_log_id, changed_by, {cols})"
-            f" VALUES (?,?,{marks})",
-            (log["id"], changed_by, *(log.get(f) for f in SERVICE_FIELDS)),
+        self.session.add(
+            ServiceLogHistory(
+                service_log_id=log["id"],
+                changed_by=changed_by,
+                **{f: log.get(f) for f in SERVICE_FIELDS},
+            )
         )
 
     def reminders(
@@ -215,34 +231,54 @@ class ServiceLogRepository(BaseRepository):
         today = today or date.today()
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        where = ""
-        params: tuple[Any, ...] = tuple(garage_ids)
-        if vehicle_id is not None:
-            where, params = "AND s.vehicle_id = ?", (*garage_ids, vehicle_id)
-        candidates = self._rows(
-            self.execute(
-                f"""
-                SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind, v.garage_id,
-                       v.odometer_unit AS vehicle_odometer_unit
-                FROM service_logs s
-                JOIN vehicles v ON v.id = s.vehicle_id
-                WHERE (s.next_due_date IS NOT NULL OR s.next_due_km IS NOT NULL)
-                  AND v.archived = 0
-                  AND v.garage_id IN ({placeholders})
-                  AND NOT EXISTS (
-                      SELECT 1 FROM service_logs n
-                      WHERE n.vehicle_id = s.vehicle_id
-                        AND (n.category = s.category
-                             OR (n.category IS NULL AND s.category IS NULL))
-                        AND (n.date > s.date OR (n.date = s.date AND n.id > s.id))
-                  )
-                  {where}
-                ORDER BY s.next_due_date ASC
-                """,
-                params,
-            ).fetchall()
+        newer = aliased(ServiceLog)
+        newer_exists = (
+            select(newer.id)
+            .where(
+                newer.vehicle_id == ServiceLog.vehicle_id,
+                or_(
+                    newer.category == ServiceLog.category,
+                    and_(newer.category.is_(None), ServiceLog.category.is_(None)),
+                ),
+                or_(
+                    newer.date > ServiceLog.date,
+                    and_(newer.date == ServiceLog.date, newer.id > ServiceLog.id),
+                ),
+            )
+            .correlate(ServiceLog)
+            .exists()
         )
+        stmt = (
+            select(
+                ServiceLog,
+                Vehicle.name.label("vehicle_name"),
+                Vehicle.kind.label("vehicle_kind"),
+                Vehicle.garage_id,
+                Vehicle.odometer_unit.label("vehicle_odometer_unit"),
+            )
+            .join(Vehicle, Vehicle.id == ServiceLog.vehicle_id)
+            .where(
+                or_(ServiceLog.next_due_date.is_not(None), ServiceLog.next_due_km.is_not(None)),
+                Vehicle.archived == 0,
+                Vehicle.garage_id.in_(garage_ids),
+                ~newer_exists,
+            )
+            .order_by(ServiceLog.next_due_date.asc())
+        )
+        if vehicle_id is not None:
+            stmt = stmt.where(ServiceLog.vehicle_id == vehicle_id)
+        candidates = [
+            {
+                **to_dict(log),
+                "vehicle_name": vehicle_name,
+                "vehicle_kind": vehicle_kind,
+                "garage_id": garage_id,
+                "vehicle_odometer_unit": vehicle_odometer_unit,
+            }
+            for log, vehicle_name, vehicle_kind, garage_id, vehicle_odometer_unit in (
+                self.session.execute(stmt).all()
+            )
+        ]
         from torqued.repositories.vehicle_repository import VehicleRepository
 
         latest = VehicleRepository(self.session).latest_odometers()
@@ -280,39 +316,38 @@ class ServiceLogRepository(BaseRepository):
         """Return up to 10 in-scope service logs matching title, description, or performer."""
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        q = f"%{query}%"
-        return self._rows(
-            self.execute(
-                f"""
-                {_VEHICLE_JOIN}
-                WHERE v.garage_id IN ({placeholders})
-                  AND (LOWER(s.title) LIKE LOWER(?) OR LOWER(s.description) LIKE LOWER(?)
-                       OR LOWER(s.category) LIKE LOWER(?) OR LOWER(s.performed_by) LIKE LOWER(?))
-                LIMIT 10
-                """,
-                (*garage_ids, q, q, q, q),
-            ).fetchall()
-        )
+        like = f"%{query}%"
+        rows = self.session.execute(
+            _log_select()
+            .where(
+                Vehicle.garage_id.in_(garage_ids),
+                or_(
+                    func.lower(ServiceLog.title).like(func.lower(like)),
+                    func.lower(ServiceLog.description).like(func.lower(like)),
+                    func.lower(ServiceLog.category).like(func.lower(like)),
+                    func.lower(ServiceLog.performed_by).like(func.lower(like)),
+                ),
+            )
+            .limit(10)
+        ).all()
+        return [_log_dict(r) for r in rows]
 
     def performers(self, garage_ids: list[int]) -> list[str]:
         """Return distinct in-scope 'performed_by' values for autocomplete suggestions."""
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        return [
-            r["performed_by"]
-            for r in self.execute(
-                f"""
-                SELECT DISTINCT s.performed_by FROM service_logs s
-                JOIN vehicles v ON v.id = s.vehicle_id
-                WHERE v.garage_id IN ({placeholders})
-                  AND s.performed_by IS NOT NULL AND s.performed_by != ''
-                ORDER BY s.performed_by
-                """,
-                tuple(garage_ids),
-            ).fetchall()
-        ]
+        values = self.session.scalars(
+            select(ServiceLog.performed_by)
+            .join(Vehicle, Vehicle.id == ServiceLog.vehicle_id)
+            .where(
+                Vehicle.garage_id.in_(garage_ids),
+                ServiceLog.performed_by.is_not(None),
+                ServiceLog.performed_by != "",
+            )
+            .distinct()
+            .order_by(ServiceLog.performed_by)
+        ).all()
+        return [p for p in values if p is not None]
 
     def export_flat(
         self, garage_ids: list[int], vehicle_id: int | None = None
@@ -320,24 +355,30 @@ class ServiceLogRepository(BaseRepository):
         """Return flat in-scope export rows for service logs, optionally for one vehicle."""
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        where = ""
-        params: tuple[Any, ...] = tuple(garage_ids)
-        if vehicle_id is not None:
-            where, params = "AND s.vehicle_id = ?", (*garage_ids, vehicle_id)
-        return self._rows(
-            self.execute(
-                f"""
-                SELECT g.name AS garage, v.name AS vehicle, v.make, v.model, v.registration,
-                       s.date, s.title, s.category, s.description, s.performed_by,
-                       s.cost, s.odometer_km, s.odometer_unit,
-                       s.next_due_date, s.next_due_km, s.created_at
-                FROM service_logs s
-                JOIN vehicles v ON v.id = s.vehicle_id
-                JOIN garages g ON g.id = v.garage_id
-                WHERE v.garage_id IN ({placeholders}) {where}
-                ORDER BY v.name ASC, s.date DESC, s.id DESC
-                """,
-                params,
-            ).fetchall()
+        stmt = (
+            select(
+                Garage.name.label("garage"),
+                Vehicle.name.label("vehicle"),
+                Vehicle.make,
+                Vehicle.model,
+                Vehicle.registration,
+                ServiceLog.date,
+                ServiceLog.title,
+                ServiceLog.category,
+                ServiceLog.description,
+                ServiceLog.performed_by,
+                ServiceLog.cost,
+                ServiceLog.odometer_km,
+                ServiceLog.odometer_unit,
+                ServiceLog.next_due_date,
+                ServiceLog.next_due_km,
+                ServiceLog.created_at,
+            )
+            .join(Vehicle, Vehicle.id == ServiceLog.vehicle_id)
+            .join(Garage, Garage.id == Vehicle.garage_id)
+            .where(Vehicle.garage_id.in_(garage_ids))
+            .order_by(Vehicle.name.asc(), ServiceLog.date.desc(), ServiceLog.id.desc())
         )
+        if vehicle_id is not None:
+            stmt = stmt.where(ServiceLog.vehicle_id == vehicle_id)
+        return [dict(r) for r in self.session.execute(stmt).mappings().all()]
