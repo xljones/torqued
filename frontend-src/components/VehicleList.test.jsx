@@ -37,7 +37,11 @@ vi.mock('../AuthContext.jsx', () => ({
 }));
 
 function renderList() {
-  return render(<MemoryRouter><VehicleList /></MemoryRouter>);
+  return render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <VehicleList />
+    </MemoryRouter>,
+  );
 }
 
 describe('VehicleList', () => {

@@ -32,7 +32,11 @@ vi.mock('../AuthContext.jsx', () => ({
 }));
 
 function renderPage() {
-  return render(<MemoryRouter><TyrePressures /></MemoryRouter>);
+  return render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <TyrePressures />
+    </MemoryRouter>,
+  );
 }
 
 describe('TyrePressures', () => {

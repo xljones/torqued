@@ -21,9 +21,11 @@ vi.mock('../api.js', () => ({
   },
 }));
 
+const routerFuture = { v7_startTransition: true, v7_relativeSplatPath: true };
+
 function renderCreate() {
   return render(
-    <MemoryRouter initialEntries={['/vehicles/new']}>
+    <MemoryRouter initialEntries={['/vehicles/new']} future={routerFuture}>
       <Routes>
         <Route path="/vehicles/new" element={<VehicleForm mode={FormMode.CREATE} />} />
       </Routes>
@@ -33,9 +35,10 @@ function renderCreate() {
 
 function renderEdit() {
   return render(
-    <MemoryRouter initialEntries={['/vehicles/7/edit']}>
+    <MemoryRouter initialEntries={['/vehicles/7/edit']} future={routerFuture}>
       <Routes>
         <Route path="/vehicles/:id/edit" element={<VehicleForm mode={FormMode.EDIT} />} />
+        <Route path="/vehicles/:id" element={<div>vehicle detail</div>} />
       </Routes>
     </MemoryRouter>,
   );
