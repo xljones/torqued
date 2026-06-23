@@ -28,25 +28,19 @@ export default function VehicleList() {
     );
   }
 
-  // Effective value = user override, else the DVSA MOT baseline (same rule as the detail panel).
-  const eff = (v, key) => {
-    const o = v[key];
-    return o != null && o !== '' ? o : (v.mot_baseline?.[key] ?? null);
-  };
-  // Same, but tidies the DVSA baseline (make/model) per the title-case setting. The user's
-  // own override is returned untouched; only the baseline fallback is formatted.
-  const effName = (v, key) => {
-    const o = v[key];
-    return o != null && o !== '' ? o : formatName(v.mot_baseline?.[key] ?? null);
-  };
+  // Identity fields are resolved server-side into `effective` (user override else DVSA
+  // baseline), with `effective_source` saying which won. Title-casing tidies the
+  // baseline-sourced value only; a user's own override is shown exactly as typed.
+  const disp = (v, key) =>
+    v.effective_source?.[key] === 'baseline' ? formatName(v.effective?.[key]) : v.effective?.[key];
 
   const q = filter.toLowerCase();
   const visible = q
     ? (vehicles ?? []).filter(v =>
         v.name.toLowerCase().includes(q) ||
-        String(eff(v, 'make') ?? '').toLowerCase().includes(q) ||
-        String(eff(v, 'model') ?? '').toLowerCase().includes(q) ||
-        String(eff(v, 'registration') ?? '').toLowerCase().includes(q)
+        String(v.effective?.make ?? '').toLowerCase().includes(q) ||
+        String(v.effective?.model ?? '').toLowerCase().includes(q) ||
+        String(v.effective?.registration ?? '').toLowerCase().includes(q)
       )
     : (vehicles ?? []);
 
@@ -90,9 +84,9 @@ export default function VehicleList() {
                 {!!v.archived && <span className="badge">Archived</span>}
               </div>
               <div className="vehicle-card-sub">
-                {[eff(v, 'year'), effName(v, 'make'), effName(v, 'model')].filter(Boolean).join(' ') || '—'}
+                {[v.effective?.year, disp(v, 'make'), disp(v, 'model')].filter(Boolean).join(' ') || '—'}
               </div>
-              {eff(v, 'registration') && <div><RegPlate reg={eff(v, 'registration')} /></div>}
+              {v.effective?.registration && <div><RegPlate reg={v.effective.registration} /></div>}
               <div className="vehicle-card-meta">
                 <span>{v.latest_odometer ? fmtDistanceBoth(v.latest_odometer.odometer_km, v.odometer_unit) : 'No mileage yet'}</span>
                 <span>{v.service_count} service{v.service_count !== 1 ? 's' : ''}</span>

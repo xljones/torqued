@@ -37,6 +37,10 @@ export default function Dashboard() {
   const dueCount = reminders === null ? null : reminders.filter(r => r.status !== 'upcoming').length;
   const totalSpent = services === null ? null : services.reduce((sum, s) => sum + (s.cost ?? 0), 0);
   const unitFor = (vehicleId) => vehicles?.find(v => v.id === vehicleId)?.odometer_unit ?? 'mi';
+  // Identity fields are resolved server-side into `effective`; title-case the
+  // baseline-sourced ones only (a user's override is shown as typed).
+  const disp = (v, key) =>
+    v.effective_source?.[key] === 'baseline' ? formatName(v.effective?.[key]) : v.effective?.[key];
 
   return (
     <div>
@@ -101,11 +105,11 @@ export default function Dashboard() {
               {vehicles === null
                 ? <SkeletonRows cols={['25%', '35%', '20%', '40px']} rows={3} />
                 : vehicles.map(v => {
-                  const reg = v.registration || v.mot_baseline?.registration;
+                  const reg = v.effective?.registration;
                   return (
                   <tr key={v.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/vehicles/${v.id}`); }}>
                     <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
-                    <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? formatName(v.mot_baseline?.make), v.model ?? formatName(v.mot_baseline?.model)].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="col-mobile-hide">{[v.effective?.year, disp(v, 'make'), disp(v, 'model')].filter(Boolean).join(' ') || '—'}</td>
                     <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
                     <td>{v.service_count}</td>
                   </tr>

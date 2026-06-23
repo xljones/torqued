@@ -251,7 +251,12 @@ export default function VehicleDetail() {
   const ro = roleFor(vehicle.garage_id) === 'readonly';
   const unit = vehicle.odometer_unit;
   const dueReminders = vehicle.reminders.filter(r => r.status !== 'upcoming');
-  const fieldProps = { vehicle, baseline: vehicle.mot_baseline, ro };
+  // The backend resolves each identity field to its effective value and source; the
+  // field component just displays it (and badges/title-cases baseline-sourced values).
+  const motField = (key) => ({
+    value: vehicle.effective[key],
+    fromBaseline: vehicle.effective_source[key] === 'baseline',
+  });
 
   return (
     <div>
@@ -306,17 +311,17 @@ export default function VehicleDetail() {
 
       <div className="card card-body mb-6">
         <div className="form-grid">
-          <MotField label="Make" fieldKey="make" {...fieldProps} format={formatName} />
-          <MotField label="Model" fieldKey="model" {...fieldProps} format={formatName} />
-          <MotField label="Year" fieldKey="year" {...fieldProps} />
-          <MotField label="Registration" fieldKey="registration" {...fieldProps}
+          <MotField label="Make" {...motField('make')} format={formatName} />
+          <MotField label="Model" {...motField('model')} format={formatName} />
+          <MotField label="Year" {...motField('year')} />
+          <MotField label="Registration" {...motField('registration')}
             render={v => <RegPlate reg={v} />} />
-          <MotField label="Engine size" fieldKey="engine_size" {...fieldProps}
+          <MotField label="Engine size" {...motField('engine_size')}
             render={v => (/^\d+$/.test(String(v)) ? `${v} cc` : v)} />
-          <MotField label="Colour" fieldKey="colour" {...fieldProps} format={formatName} />
-          <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} format={formatName} />
-          <MotField label="First used" fieldKey="first_used_date" {...fieldProps} />
-          <MotField label="First registered" fieldKey="registration_date" {...fieldProps} />
+          <MotField label="Colour" {...motField('colour')} format={formatName} />
+          <MotField label="Fuel" {...motField('fuel_type')} format={formatName} />
+          <MotField label="First used" {...motField('first_used_date')} />
+          <MotField label="First registered" {...motField('registration_date')} />
           <div className="field"><label>VIN</label><span>{vehicle.vin || '—'}</span></div>
           <div className="field"><label>Purchased</label><span>{vehicle.purchase_date || '—'}</span></div>
           <div className="field"><label>Updated</label><span><RelativeTime value={vehicle.updated_at} /></span></div>

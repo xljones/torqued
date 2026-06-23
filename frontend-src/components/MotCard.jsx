@@ -19,17 +19,13 @@ function defectClass(type) {
   return 'mot-defect-minor';
 }
 
-function expiryTileClass(expiry) {
-  if (!expiry) return '';
-  const date = new Date(expiry);
-  if (Number.isNaN(date.getTime())) return '';
-  const now = new Date();
-  const inAMonth = new Date(now);
-  inAMonth.setMonth(inAMonth.getMonth() + 1);
-  if (date < now) return 'pressure-tile--danger';     // out of date
-  if (date <= inAMonth) return 'pressure-tile--warn'; // ≤ 1 month to go
-  return 'pressure-tile--ok';                          // all good
-}
+// MOT expiry status (expired / due_soon / ok) is decided server-side using the same
+// threshold as the reminder list, so the tile and reminders always agree.
+const EXPIRY_TILE_CLASS = {
+  expired: 'pressure-tile--danger',
+  due_soon: 'pressure-tile--warn',
+  ok: 'pressure-tile--ok',
+};
 
 function recallTileClass(value) {
   return String(value).toLowerCase() === 'yes'
@@ -171,7 +167,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const mot = data.mot;
   const tests = mot?.tests ?? [];
   const latest = tests[0];
-  const expiry = latest?.expiry_date ?? mot?.mot_test_due_date;
+  const expiry = mot?.expiry?.expiry_date;
   const visible = showAll ? tests : tests.slice(0, 5);
 
   return (
@@ -210,7 +206,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
         <>
           <div className="mot-summary">
             {expiry && (
-              <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
+              <div className={`pressure-tile ${EXPIRY_TILE_CLASS[mot.expiry?.status] ?? ''}`}>
                 <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
                 <div className="pressure-value">{expiry}</div>
                 <div className="pressure-alt"><RelativeTime value={expiry} /></div>

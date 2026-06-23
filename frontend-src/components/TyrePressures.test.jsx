@@ -6,14 +6,15 @@ import TyrePressures from './TyrePressures';
 
 const vehicles = [
   {
-    id: 1, name: 'Street Triple', make: 'Triumph', model: 'Street Triple',
-    registration: 'AB12 CDE',
+    id: 1, name: 'Street Triple',
+    effective: { make: 'Triumph', model: 'Street Triple', registration: 'AB12 CDE' },
     tyre_size_front: '120/70 ZR17', tyre_size_rear: '180/55 ZR17',
     tyre_pressure_front_psi: 36, tyre_pressure_rear_psi: 42,
   },
   {
-    id: 2, name: 'Daily', make: 'Honda', model: 'Civic',
-    registration: null, mot_baseline: { registration: 'XY19 ZZZ' },
+    id: 2, name: 'Daily',
+    // registration falls back to the DVSA baseline, resolved server-side into `effective`.
+    effective: { make: 'Honda', model: 'Civic', registration: 'XY19 ZZZ' },
     tyre_size_front: null, tyre_size_rear: null,
     tyre_pressure_front_psi: null, tyre_pressure_rear_psi: null,
   },

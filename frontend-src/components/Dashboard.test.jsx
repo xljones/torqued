@@ -15,8 +15,10 @@ vi.mock('../api.js', () => ({
   api: {
     getVehicles: vi.fn().mockResolvedValue([
       {
-        id: 1, name: 'Street Triple', kind: 'motorcycle', make: 'Triumph',
-        model: 'Street Triple RS', year: 2021, odometer_unit: 'mi',
+        id: 1, name: 'Street Triple', kind: 'motorcycle',
+        effective: { make: 'Triumph', model: 'Street Triple RS', year: 2021, registration: null },
+        effective_source: { make: 'override', model: 'override', year: 'override', registration: 'baseline' },
+        odometer_unit: 'mi',
         service_count: 2, photo_count: 0, cover_photo_id: null,
         latest_odometer: { date: '2025-06-01', odometer_km: 160.9344 },
       },
@@ -97,9 +99,12 @@ describe('Dashboard', () => {
   it('falls back to mot_baseline for make/model/year when vehicle columns are null', async () => {
     const { api } = await import('../api.js');
     api.getVehicles.mockResolvedValueOnce([{
-      id: 9, name: 'Passat', kind: 'car', make: null, model: null, year: null,
+      id: 9, name: 'Passat', kind: 'car',
       odometer_unit: 'mi', service_count: 0, photo_count: 0, cover_photo_id: null,
-      latest_odometer: null, mot_baseline: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003 },
+      latest_odometer: null,
+      // Identity resolved from the DVSA baseline server-side.
+      effective: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, registration: null },
+      effective_source: { make: 'baseline', model: 'baseline', year: 'baseline', registration: 'baseline' },
     }]);
     renderDashboard();
     await waitFor(() => {

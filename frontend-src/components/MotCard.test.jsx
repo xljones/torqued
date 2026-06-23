@@ -22,6 +22,8 @@ const mot = {
   primary_colour: 'Blue',
   has_outstanding_recall: 'Unknown',
   fetched_at: '2026-06-11 12:00:00',
+  // Effective expiry + status resolved server-side (2025-11-04 is in the past → expired).
+  expiry: { expiry_date: '2025-11-04', status: 'expired' },
   raw: {
     registration: 'A1XYZ',
     make: 'VOLKSWAGEN',
@@ -115,13 +117,16 @@ describe('MotCard', () => {
       .toHaveClass('pressure-tile--ok');
   });
 
-  it('warns when the MOT expires within a month and flags an outstanding recall', async () => {
+  it('warns when the MOT is due soon and flags an outstanding recall', async () => {
     const soon = new Date();
     soon.setDate(soon.getDate() + 14);
+    const soonDate = soon.toISOString().slice(0, 10);
     const expiring = {
       ...mot,
       has_outstanding_recall: 'Yes',
-      tests: [{ ...mot.tests[0], expiry_date: soon.toISOString().slice(0, 10) }],
+      // The backend classifies a soon-to-expire MOT as 'due_soon'.
+      expiry: { expiry_date: soonDate, status: 'due_soon' },
+      tests: [{ ...mot.tests[0], expiry_date: soonDate }],
     };
     api.getMot.mockResolvedValue({ configured: true, mot: expiring });
     render(<MotCard vehicle={vehicle} ro={false} />);

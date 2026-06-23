@@ -6,15 +6,18 @@ import VehicleList from './VehicleList';
 
 const vehicles = [
   {
-    id: 1, name: 'Street Triple', kind: 'motorcycle', make: 'Triumph',
-    model: 'Street Triple RS', year: 2021, registration: 'LB21 XYZ',
+    id: 1, name: 'Street Triple', kind: 'motorcycle',
+    effective: { make: 'Triumph', model: 'Street Triple RS', year: 2021, registration: 'LB21 XYZ' },
+    effective_source: { make: 'override', model: 'override', year: 'override', registration: 'override' },
     odometer_unit: 'mi', archived: 0, service_count: 4, photo_count: 0,
     cover_photo_id: null,
     latest_odometer: { date: '2025-06-01', odometer_km: 160.9344 },
   },
   {
-    id: 2, name: 'Daily', kind: 'car', make: 'Honda', model: 'Civic', year: 2019,
-    registration: null, odometer_unit: 'mi', archived: 0, service_count: 1,
+    id: 2, name: 'Daily', kind: 'car',
+    effective: { make: 'Honda', model: 'Civic', year: 2019, registration: null },
+    effective_source: { make: 'override', model: 'override', year: 'override', registration: 'baseline' },
+    odometer_unit: 'mi', archived: 0, service_count: 1,
     photo_count: 0, cover_photo_id: null, latest_odometer: null,
   },
 ];
@@ -72,12 +75,12 @@ describe('VehicleList', () => {
 
   it('falls back to the MOT baseline for make/model/year/plate when not overridden', async () => {
     api.getVehicles.mockResolvedValue([{
-      id: 3, name: 'Passat', kind: 'car', make: null, model: null, year: null,
-      registration: null, odometer_unit: 'mi', archived: 0, service_count: 0,
+      id: 3, name: 'Passat', kind: 'car',
+      odometer_unit: 'mi', archived: 0, service_count: 0,
       photo_count: 0, cover_photo_id: null, latest_odometer: null,
-      mot_baseline: {
-        make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, registration: 'A1XYZ',
-      },
+      // The backend resolved every identity field from the DVSA baseline.
+      effective: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, registration: 'A1XYZ' },
+      effective_source: { make: 'baseline', model: 'baseline', year: 'baseline', registration: 'baseline' },
     }]);
     renderList();
     await waitFor(() => {

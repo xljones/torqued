@@ -23,19 +23,14 @@ export default function TyrePressures() {
     );
   }
 
-  // Effective value = user override, else the DVSA MOT baseline (same rule as the detail panel).
-  const eff = (v, key) => {
-    const o = v[key];
-    return o != null && o !== '' ? o : (v.mot_baseline?.[key] ?? null);
-  };
-
+  // Identity fields are resolved server-side (user override else DVSA baseline) into `effective`.
   const q = filter.toLowerCase();
   const visible = q
     ? (vehicles ?? []).filter(v =>
         v.name.toLowerCase().includes(q) ||
-        String(eff(v, 'make') ?? '').toLowerCase().includes(q) ||
-        String(eff(v, 'model') ?? '').toLowerCase().includes(q) ||
-        String(eff(v, 'registration') ?? '').toLowerCase().includes(q)
+        String(v.effective?.make ?? '').toLowerCase().includes(q) ||
+        String(v.effective?.model ?? '').toLowerCase().includes(q) ||
+        String(v.effective?.registration ?? '').toLowerCase().includes(q)
       )
     : (vehicles ?? []);
 
@@ -70,8 +65,10 @@ export default function TyrePressures() {
                 {visible.map(v => (
                   <tr key={v.id}>
                     <td>
-                      <Link to={`/vehicles/${v.id}`}>{v.name}</Link>
-                      {eff(v, 'registration') && <div><RegPlate reg={eff(v, 'registration')} /></div>}
+                      <span className="vehicle-name-cell">
+                        <Link to={`/vehicles/${v.id}`}>{v.name}</Link>
+                        {v.effective?.registration && <RegPlate reg={v.effective.registration} />}
+                      </span>
                     </td>
                     <td>
                       <div>{fmtPressurePsiBar(v.tyre_pressure_front_psi) ?? '—'}</div>

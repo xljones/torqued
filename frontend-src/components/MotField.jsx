@@ -1,19 +1,17 @@
-// A vehicle detail field whose baseline comes from the DVSA MOT record. Shows
-// the user override when set, otherwise the DVSA value badged "DVSA".
-// `format`, when given, is applied to the DVSA baseline only (e.g. title-casing the
-// all-caps make/model) — the user's own override is always shown exactly as typed.
-export default function MotField({ label, fieldKey, vehicle, baseline, render, format }) {
-  const override = vehicle[fieldKey];
-  const hasOverride = override != null && override !== '';
-  const baseVal = baseline?.[fieldKey] ?? null;
-  const value = hasOverride ? override : (format ? format(baseVal) : baseVal);
-  const fromMot = !hasOverride && baseVal != null;
+// A vehicle detail field whose value the backend has already resolved (user override
+// else DVSA MOT baseline). `fromBaseline` says the value came from the DVSA record, so
+// it gets the "DVSA" badge and — when `format` is given — title-casing; a user's own
+// override is shown exactly as typed.
+export default function MotField({ label, value, fromBaseline, render, format }) {
+  const shown = fromBaseline && format ? format(value) : value;
   return (
     <div className="field">
       <label>{label}</label>
       <span>
-        {value != null && value !== '' ? (render ? render(value) : value) : '—'}
-        {fromMot && <span className="field-source" title="From the DVSA MOT record">DVSA</span>}
+        {shown != null && shown !== '' ? (render ? render(shown) : shown) : '—'}
+        {fromBaseline && value != null && (
+          <span className="field-source" title="From the DVSA MOT record">DVSA</span>
+        )}
       </span>
     </div>
   );
