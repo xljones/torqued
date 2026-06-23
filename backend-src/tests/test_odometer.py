@@ -1,5 +1,6 @@
 """Tests for /api/vehicles/<id>/odometer: manual mileage logs."""
 import pytest
+from flask import Flask
 from flask.testing import FlaskClient
 
 from tests.test_vehicles import mk_vehicle
@@ -57,3 +58,13 @@ def test_delete(auth_client: FlaskClient) -> None:
     }).json
     assert auth_client.delete(f"/api/odometer/{log['id']}").status_code == 204
     assert auth_client.delete(f"/api/odometer/{log['id']}").status_code == 404
+
+
+def test_delete_missing_returns_false(app: Flask) -> None:
+    # The HTTP route 404s before reaching the repository, so cover the
+    # repository's "nothing to delete" path directly.
+    from torqued.db import get_db
+    from torqued.repositories.odometer_log_repository import OdometerLogRepository
+
+    with get_db() as db:
+        assert OdometerLogRepository(db).delete(999) is False
