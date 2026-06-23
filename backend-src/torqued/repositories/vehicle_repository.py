@@ -45,12 +45,48 @@ VEHICLE_FIELDS: list[str] = [
 ]
 
 
+# Identity fields the DVSA MOT record can supply a baseline for; the vehicle's own
+# column overrides the baseline when set. Resolved server-side so the UI never
+# re-derives the override/baseline decision.
+EFFECTIVE_FIELDS: list[str] = [
+    "make",
+    "model",
+    "year",
+    "registration",
+    "colour",
+    "fuel_type",
+    "engine_size",
+    "first_used_date",
+    "registration_date",
+]
+
+
 def _mot_km(value: Any, unit: Any) -> Any:
     """SQL expression converting an MOT odometer reading to km (mi readings * 1.609344)."""
     return case(
         (unit == "mi", cast(value, Float) * 1.609344),
         else_=cast(value, Float),
     )
+
+
+def _resolve_effective(
+    vehicle: dict[str, Any], baseline: dict[str, Any] | None
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Resolve each EFFECTIVE_FIELD to its display value and where it came from.
+
+    A non-null, non-empty vehicle column wins ('override'); otherwise the DVSA
+    baseline value is used ('baseline'). The source map lets the UI title-case
+    baseline-sourced names without re-deciding which value to show.
+    """
+    effective: dict[str, Any] = {}
+    source: dict[str, str] = {}
+    for field in EFFECTIVE_FIELDS:
+        override = vehicle.get(field)
+        if override is not None and override != "":
+            effective[field], source[field] = override, "override"
+        else:
+            effective[field], source[field] = (baseline or {}).get(field), "baseline"
+    return effective, source
 
 
 class VehicleRepository(BaseRepository):
@@ -110,6 +146,7 @@ class VehicleRepository(BaseRepository):
         for v in vehicles:
             v["latest_odometer"] = latest.get(v["id"])
             v["mot_baseline"] = baselines.get(v["id"])
+            v["effective"], v["effective_source"] = _resolve_effective(v, v["mot_baseline"])
         return vehicles
 
     def get_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
@@ -149,6 +186,9 @@ class VehicleRepository(BaseRepository):
         ]
         vehicle["latest_odometer"] = self.latest_odometers().get(vehicle_id)
         vehicle["mot_baseline"] = self.mot_baseline(vehicle_id)
+        vehicle["effective"], vehicle["effective_source"] = _resolve_effective(
+            vehicle, vehicle["mot_baseline"]
+        )
         return vehicle
 
     def _specs(self, vehicle_id: int) -> list[dict[str, Any]]:

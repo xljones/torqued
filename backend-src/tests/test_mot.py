@@ -305,6 +305,9 @@ def test_refresh_stores_and_syncs(
     assert m["tests"][1]["location"] == "Test Lane ATF"
     assert m["tests"][0]["defects"][0]["type"] == "ADVISORY"
     assert m["tests"][2]["defects"] == []
+    # The MOT card's expiry tile is now resolved server-side (latest test's expiry).
+    assert m["expiry"]["expiry_date"] == "2025-11-04"
+    assert m["expiry"]["status"] == "expired"  # 2025-11-04 is in the past
 
     # Manual log is the only entry in odometer_logs; MOT readings are not copied
     logs = auth_client.get(f"/api/vehicles/{v['id']}/odometer").json
@@ -379,6 +382,11 @@ def test_vehicle_detail_exposes_mot_baseline(
     # The user hasn't overridden anything, so the stored columns stay null
     assert detail["make"] is None
     assert detail["engine_size"] is None
+    # ...and the backend resolves the effective value to the baseline, tagged as such.
+    assert detail["effective"]["make"] == "VOLKSWAGEN"
+    assert detail["effective"]["engine_size"] == "1896"
+    assert detail["effective_source"]["make"] == "baseline"
+    assert detail["effective_source"]["engine_size"] == "baseline"
 
 
 def test_mot_baseline_prefers_manufacture_year(
@@ -397,14 +405,23 @@ def test_user_override_kept_alongside_mot_baseline(
     v = mk_vehicle(auth_client, registration="A1 XYZ", colour="Matte Black")
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     detail = auth_client.get(f"/api/vehicles/{v['id']}").json
-    # Override and baseline coexist; the frontend resolves precedence
+    # Override and baseline coexist; the backend resolves precedence (override wins).
     assert detail["colour"] == "Matte Black"
     assert detail["mot_baseline"]["colour"] == "Blue"
+    assert detail["effective"]["colour"] == "Matte Black"
+    assert detail["effective_source"]["colour"] == "override"
 
 
 def test_no_mot_baseline_without_snapshot(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client, registration="A1 XYZ")
-    assert auth_client.get(f"/api/vehicles/{v['id']}").json["mot_baseline"] is None
+    detail = auth_client.get(f"/api/vehicles/{v['id']}").json
+    assert detail["mot_baseline"] is None
+    # No override and no baseline: effective value is null, sourced from the (absent) baseline.
+    assert detail["effective"]["make"] is None
+    assert detail["effective_source"]["make"] == "baseline"
+    # The registration the user set on the vehicle is still resolved as an override.
+    assert detail["effective"]["registration"] == "A1 XYZ"
+    assert detail["effective_source"]["registration"] == "override"
 
 
 def test_vehicle_list_includes_mot_baseline(
@@ -415,6 +432,8 @@ def test_vehicle_list_includes_mot_baseline(
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
     assert row["mot_baseline"]["make"] == "VOLKSWAGEN"
+    assert row["effective"]["make"] == "VOLKSWAGEN"
+    assert row["effective_source"]["make"] == "baseline"
 
 
 # ── admin DVSA vehicles list ────────────────────────────────────────────────────
@@ -729,3 +748,32 @@ def test_mot_reminders_empty_garages() -> None:
 
     with get_db() as db:
         assert MotRepository(db).reminders([]) == []
+
+
+# ── effective MOT expiry (resolved server-side, not in the frontend) ────────────
+
+def test_expiry_status_branches() -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MOT_DUE_SOON_DAYS, MotRepository
+
+    today = date(2026, 6, 24)
+    with get_db() as db:
+        repo = MotRepository(db)
+        # No date anywhere → nothing to show.
+        assert repo.expiry_status({"tests": []}, today=today) is None
+        # Latest test already lapsed → expired.
+        past = repo.expiry_status({"tests": [{"expiry_date": "2025-01-01"}]}, today=today)
+        assert past == {"expiry_date": "2025-01-01", "status": "expired"}
+        # Within the due-soon window → due_soon.
+        soon = (today + timedelta(days=MOT_DUE_SOON_DAYS - 1)).isoformat()
+        assert repo.expiry_status({"tests": [{"expiry_date": soon}]}, today=today)["status"] == (
+            "due_soon"
+        )
+        # Comfortably in the future → ok.
+        far = (today + timedelta(days=MOT_DUE_SOON_DAYS + 30)).isoformat()
+        assert repo.expiry_status({"tests": [{"expiry_date": far}]}, today=today)["status"] == "ok"
+        # No test expiry → falls back to the vehicle-level due date.
+        fallback = repo.expiry_status(
+            {"tests": [{"expiry_date": None}], "mot_test_due_date": far}, today=today
+        )
+        assert fallback == {"expiry_date": far, "status": "ok"}

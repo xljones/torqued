@@ -40,7 +40,34 @@ class MotRepository(BaseRepository):
             del t["raw_json"]
             parsed.append(t)
         snapshot["tests"] = parsed
+        snapshot["expiry"] = self.expiry_status(snapshot)
         return snapshot
+
+    def expiry_status(
+        self, snapshot: dict[str, Any], today: date | None = None
+    ) -> dict[str, Any] | None:
+        """Resolve the effective MOT expiry date and its status, or None if unknown.
+
+        The date is the most recent test's expiry, falling back to the DVSA
+        vehicle-level due date. Status is 'expired', 'due_soon' (within
+        MOT_DUE_SOON_DAYS), or 'ok' — the same threshold the reminders use, so the
+        MOT card and the reminder list always agree.
+        """
+        today = today or date.today()
+        tests = snapshot.get("tests") or []
+        latest = tests[0] if tests else None
+        expiry = (latest or {}).get("expiry_date") or snapshot.get("mot_test_due_date")
+        if not expiry:
+            return None
+        cutoff = (today + timedelta(days=MOT_DUE_SOON_DAYS)).isoformat()
+        today_iso = today.isoformat()
+        if expiry < today_iso:
+            status = "expired"
+        elif expiry <= cutoff:
+            status = "due_soon"
+        else:
+            status = "ok"
+        return {"expiry_date": expiry, "status": status}
 
     def list_all(self, page: int = 1, per_page: int = 25) -> dict[str, Any]:
         """Return a page of every stored DVSA snapshot, newest refresh first.
