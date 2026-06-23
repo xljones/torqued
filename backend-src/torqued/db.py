@@ -11,19 +11,19 @@ backing store is chosen entirely by configuration:
 * neither set — falls back to an on-disk SQLite file under ``data/``.
 
 Repositories never import a driver; they receive a :class:`~sqlalchemy.orm.Session`
-from :func:`get_db` — one per request, inside a transaction. Repositories on the ORM use
-the session directly; those still on raw SQL go through :func:`execute_sql`, which keeps
-the ordinary ``"… WHERE id = ?"`` + parameter-tuple convention and handles the dialect
-(placeholder style, row mapping).
+from :func:`get_db` — one per request, inside a transaction — and use the ORM directly.
+:func:`execute_sql` remains for the occasional ad-hoc raw statement (CLI maintenance,
+tests), translating the ordinary ``"… WHERE id = ?"`` qmark convention to named
+parameters.
 """
 import os
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from sqlalchemy import CursorResult, RowMapping, create_engine, event, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import URL, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -34,7 +34,6 @@ from sqlalchemy.pool import NullPool
 # to which backend is in use.
 __all__ = [
     "IntegrityError",
-    "Result",
     "database_url",
     "db_switcher_enabled",
     "execute_sql",
@@ -157,36 +156,14 @@ def _to_named(sql: str, params: Sequence[Any]) -> tuple[str, dict[str, Any]]:
     return "".join(out), bound
 
 
-class Result:
-    """The rows of one executed statement, exposed as plain dict-like mappings."""
+def execute_sql(session: Session, sql: str, params: Sequence[Any] = ()) -> Any:
+    """Run an ad-hoc ``?``-placeholder statement on *session*.
 
-    def __init__(self, cursor: CursorResult[Any]) -> None:
-        self._rowcount = cursor.rowcount
-        self._rows: list[RowMapping] = list(cursor.mappings()) if cursor.returns_rows else []
-
-    def fetchone(self) -> RowMapping | None:
-        return self._rows[0] if self._rows else None
-
-    def fetchall(self) -> list[RowMapping]:
-        return self._rows
-
-    @property
-    def rowcount(self) -> int:
-        return self._rowcount
-
-
-def execute_sql(session: Session, sql: str, params: Sequence[Any] = ()) -> Result:
-    """Run a ``?``-placeholder statement on *session*, returning dict-like rows.
-
-    The raw-SQL bridge for repositories not yet migrated to the ORM (and the few CLI/test
-    helpers that run ad-hoc SQL): it translates the qmark convention to named parameters
-    and wraps the cursor so rows behave like dictionaries.
+    Repositories use the ORM directly; this remains for the occasional raw statement in
+    CLI maintenance and tests, translating the qmark convention to named parameters.
     """
     statement, bound = _to_named(sql, params)
-    # A text() statement always yields a CursorResult at runtime, but Session.execute is
-    # typed to return the base Result; narrow it so Result can read .rowcount.
-    cursor = cast(CursorResult[Any], session.execute(text(statement), bound))
-    return Result(cursor)
+    return session.execute(text(statement), bound)
 
 
 @contextmanager
