@@ -28,6 +28,10 @@ export default function VehicleForm({ mode }) {
   const isEdit = mode === FormMode.EDIT;
   const [form, setForm] = useState(EMPTY);
   const [baseline, setBaseline] = useState(null);
+  // Registration the stored DVSA record is for (edit mode). Unlike `baseline`, which a preview
+  // overwrites, this stays fixed to what's persisted so Save can tell a preview from the
+  // attached record and decide whether the record still applies to the plate being saved.
+  const [attachedMotReg, setAttachedMotReg] = useState(null);
   const [pressureUnit, setPressureUnit] = useState('psi');
   const [archived, setArchived] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -43,6 +47,7 @@ export default function VehicleForm({ mode }) {
     api.getVehicle(id).then(v => {
       setArchived(!!v.archived);
       setBaseline(v.mot_baseline);
+      setAttachedMotReg(v.mot_baseline?.registration ?? null);
       setForm({
         name: v.name, kind: v.kind, make: v.make ?? '', model: v.model ?? '',
         year: v.year ?? '', registration: v.registration ?? '', vin: v.vin ?? '',
@@ -95,21 +100,16 @@ export default function VehicleForm({ mode }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Pull DVSA data for the entered plate. In edit mode this persists (refresh);
-  // in create mode it previews the baseline (stored on save) to drive placeholders.
+  // Preview the DVSA record for the entered plate without persisting anything. In both modes the
+  // baseline is committed on Save (create stores it; edit re-fetches against the saved plate), so
+  // the preview reflects the plate currently typed — not whatever is still stored on the vehicle.
   async function handleFetch() {
     const reg = form.registration.trim();
     if (!reg) { toast('Enter a registration plate first', 'error'); return; }
     setFetching(true);
     try {
-      if (isEdit) {
-        await api.refreshMot(id);
-        setBaseline((await api.getVehicle(id)).mot_baseline);
-        toast('MOT data refreshed');
-      } else {
-        setBaseline((await api.lookupMot(reg)).mot_baseline);
-        toast('Found a DVSA record');
-      }
+      setBaseline((await api.lookupMot(reg)).mot_baseline);
+      toast(isEdit ? 'Found a DVSA record — save to apply' : 'Found a DVSA record');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -147,8 +147,27 @@ export default function VehicleForm({ mode }) {
     return pressureUnit === 'bar' ? +barToPsi(n).toFixed(1) : n;
   };
 
+  // Normalise plates the way the backend does before a DVSA lookup (strip spaces, uppercase).
+  const normReg = r => (r ?? '').replace(/\s+/g, '').toUpperCase();
+
   async function handleSubmit(e) {
     e.preventDefault();
+
+    // Reconcile the attached DVSA record against the plate being saved (edit mode only).
+    const formReg = normReg(form.registration);
+    const attached = attachedMotReg ? normReg(attachedMotReg) : null;
+    const aligned = !!baseline && normReg(baseline.registration) === formReg;
+    const shouldClear = isEdit && !!attached && attached !== formReg; // plate moved off the record
+    const needRefresh = isEdit && aligned && attached !== formReg; // aligned data not yet stored
+    if (isEdit && shouldClear && !aligned) {
+      // Stale record with no aligned replacement — warn that it will be disconnected.
+      const to = form.registration.trim() || '(blank)';
+      if (!confirm(
+        `The MOT history attached to this vehicle is for ${attachedMotReg}. Because the ` +
+        `registration is now ${to}, that DVSA data will be disconnected. Continue?`
+      )) return;
+    }
+
     setSaving(true);
     try {
       const body = {
@@ -161,7 +180,11 @@ export default function VehicleForm({ mode }) {
       delete body.tyre_pressure_front;
       delete body.tyre_pressure_rear;
       if (isEdit) {
+        // Drop the stale record in the same PUT; if aligned data was previewed, re-fetch it
+        // against the now-saved plate so the detail page shows the new MOT data.
+        if (shouldClear) body.disconnect_mot = true;
         await api.updateVehicle(id, body);
+        if (needRefresh) await api.refreshMot(id).catch(() => {});
         toast('Vehicle updated');
         navigate(`/vehicles/${id}`);
       } else {

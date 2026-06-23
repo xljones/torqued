@@ -329,6 +329,35 @@ def test_refresh_stores_and_syncs(
     assert g.json["mot"]["registration"] == "A1XYZ"
 
 
+def test_update_disconnect_mot_clears_stored_data(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    assert auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"] is not None
+
+    # Changing the plate and asking to disconnect drops the snapshot, its tests and the baseline.
+    body = {"name": v["name"], "kind": v["kind"], "registration": "B2 YYY", "disconnect_mot": True}
+    assert auth_client.put(f"/api/vehicles/{v['id']}", json=body).status_code == 200
+    assert auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"] is None
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["mot_baseline"] is None
+    # MOT-sourced mileage points are gone with the tests; the timeline is now empty.
+    assert auth_client.get(f"/api/vehicles/{v['id']}/mileage").json == []
+
+
+def test_update_without_disconnect_keeps_stored_data(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+
+    body = {"name": "Renamed", "kind": v["kind"], "registration": "A1 XYZ"}
+    assert auth_client.put(f"/api/vehicles/{v['id']}", json=body).status_code == 200
+    assert auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"] is not None
+
+
 def test_vehicle_detail_exposes_mot_baseline(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:

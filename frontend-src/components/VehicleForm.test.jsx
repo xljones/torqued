@@ -129,3 +129,92 @@ describe('VehicleForm DVSA lookup', () => {
     expect(container.querySelector('.dvsa-split')).toHaveClass('is-override');
   });
 });
+
+describe('VehicleForm save reconciliation', () => {
+  // A vehicle whose attached DVSA record is for plate AB12CDE.
+  const editVehicle = (overrides = {}) => ({
+    name: 'Daily', kind: 'car', odometer_unit: 'mi', registration: 'AB12 CDE',
+    mot_baseline: { registration: 'AB12CDE', make: 'VOLKSWAGEN', model: 'PASSAT' },
+    ...overrides,
+  });
+
+  it('edit-mode fetch previews via lookupMot without persisting', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue(editVehicle());
+    api.lookupMot.mockResolvedValue({ mot_baseline: { registration: 'XY34ZZZ', make: 'FORD', model: 'FOCUS' } });
+    renderEdit();
+    const plate = await screen.findByDisplayValue('AB12 CDE');
+    await userEvent.clear(plate);
+    await userEvent.type(plate, 'XY34 ZZZ');
+    await userEvent.click(screen.getByText('Fetch from DVSA'));
+    await waitFor(() => expect(screen.getByText('FORD FOCUS')).toBeInTheDocument());
+    expect(api.lookupMot).toHaveBeenCalledWith('XY34 ZZZ');
+    expect(api.refreshMot).not.toHaveBeenCalled();
+  });
+
+  it('prompts and disconnects when the plate changes with no aligned DVSA data', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue(editVehicle());
+    api.updateVehicle.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderEdit();
+    const plate = await screen.findByDisplayValue('AB12 CDE');
+    await userEvent.clear(plate);
+    await userEvent.type(plate, 'XY34 ZZZ');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.updateVehicle).toHaveBeenCalled());
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(api.updateVehicle.mock.calls[0][1]).toMatchObject({ disconnect_mot: true });
+    expect(api.refreshMot).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('aborts the save when the disconnect prompt is cancelled', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue(editVehicle());
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderEdit();
+    const plate = await screen.findByDisplayValue('AB12 CDE');
+    await userEvent.clear(plate);
+    await userEvent.type(plate, 'XY34 ZZZ');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(api.updateVehicle).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('re-fetches without prompting when an aligned record was previewed for the new plate', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue(editVehicle());
+    api.lookupMot.mockResolvedValue({ mot_baseline: { registration: 'XY34ZZZ', make: 'FORD', model: 'FOCUS' } });
+    api.updateVehicle.mockResolvedValue({});
+    api.refreshMot.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderEdit();
+    const plate = await screen.findByDisplayValue('AB12 CDE');
+    await userEvent.clear(plate);
+    await userEvent.type(plate, 'XY34 ZZZ');
+    await userEvent.click(screen.getByText('Fetch from DVSA'));
+    await waitFor(() => expect(screen.getByText('FORD FOCUS')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.refreshMot).toHaveBeenCalledWith('7'));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(api.updateVehicle.mock.calls[0][1]).toMatchObject({ disconnect_mot: true });
+    confirmSpy.mockRestore();
+  });
+
+  it('keeps MOT data and does not prompt when the plate is unchanged', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getVehicle.mockResolvedValue(editVehicle());
+    api.updateVehicle.mockResolvedValue({});
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderEdit();
+    await screen.findByDisplayValue('AB12 CDE');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.updateVehicle).toHaveBeenCalled());
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(api.updateVehicle.mock.calls[0][1]).not.toHaveProperty('disconnect_mot');
+    expect(api.refreshMot).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
