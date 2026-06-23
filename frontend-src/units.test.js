@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   toKm, fromKm, psiToBar, barToPsi,
-  fmtDistance, fmtDistanceBoth, fmtPressure, fmtCost, titleCase,
+  fmtDistance, fmtDistanceBoth, fmtPressure, fmtPressurePsiBar, fmtCost, titleCase,
 } from './units.js';
 
 describe('units', () => {
@@ -27,6 +27,12 @@ describe('units', () => {
   it('formats pressures in both units', () => {
     expect(fmtPressure(36)).toBe('36 psi / 2.48 bar');
     expect(fmtPressure(null)).toBeNull();
+  });
+
+  it('formats compact psi (bar) pressures', () => {
+    expect(fmtPressurePsiBar(36)).toBe('36psi (2.5 bar)');
+    expect(fmtPressurePsiBar(42)).toBe('42psi (2.9 bar)');
+    expect(fmtPressurePsiBar(null)).toBeNull();
   });
 
   it('formats costs', () => {

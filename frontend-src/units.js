@@ -29,6 +29,13 @@ export function fmtPressure(psi) {
   return `${+p.toFixed(1)} psi / ${psiToBar(p).toFixed(2)} bar`;
 }
 
+/** "36psi (2.5 bar)" — compact, psi rounded to a whole number, bar to 1 dp. */
+export function fmtPressurePsiBar(psi) {
+  if (psi == null) return null;
+  const p = Number(psi);
+  return `${Math.round(p)}psi (${psiToBar(p).toFixed(1)} bar)`;
+}
+
 export function fmtCost(cost) {
   if (cost == null) return null;
   return Number(cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
