@@ -114,6 +114,20 @@ This switches to the `deploy` branch, pulls the latest changes (including the fr
 
 > If a migration fails, the `MAINTENANCE` flag is left in place so the site keeps showing the maintenance page rather than serving against a half-migrated schema. Fix the issue and re-run `make deploy-pa`, or remove the flag with `rm MAINTENANCE` once resolved.
 
+### Automatic redeploy on merge to `main` (optional)
+
+CI can call a webhook on the site to run the deploy for you, so a merge to `main` redeploys without a console visit. The webhook (`POST /api/deploy/webhook`) verifies an HMAC-SHA256 signature, then runs the **same** `scripts/deploy_pa.sh` that `make deploy-pa` runs — in a detached process, so the WSGI reload at the end of the deploy doesn't kill the request. It is inert (returns 404) unless explicitly enabled.
+
+To turn it on:
+
+1. **Generate a dedicated secret** (not `SECRET_KEY`): `openssl rand -hex 32`.
+2. **PythonAnywhere `~/torqued/.env`:** add `ENABLE_DEPLOY_WEBHOOK=1` and `DEPLOY_WEBHOOK_SECRET=<that secret>`, then reload the web app once so it picks them up.
+3. **GitHub → repo Settings → Secrets and variables → Actions:** add `DEPLOY_WEBHOOK_SECRET` (the same value) and `DEPLOY_WEBHOOK_URL` (`https://<you>.pythonanywhere.com/api/deploy/webhook`).
+
+The CI `deploy` job builds and pushes the `deploy` branch as before, then signs and POSTs to the webhook. If either GitHub secret is unset the step no-ops, so this stays optional. Progress and any errors are appended to `~/torqued/deploy-webhook.log` (override with `DEPLOY_LOG_FILE`). The migration-failure behaviour above still applies — a failed migration leaves the `MAINTENANCE` page up.
+
+> **Reliability note:** the detached deploy process is killed when the WSGI worker reloads (PythonAnywhere recycles a worker's children on reload), but the reload is the deploy's *last* step, so git/pip/migrate have already finished — only the cosmetic summary tail may be truncated. After enabling, confirm one real merge fully redeploys (site comes back on the new SHA, `deploy-webhook.log` shows the migration finishing).
+
 ---
 
 ## Database management
