@@ -164,7 +164,11 @@ def create_app() -> Flask:
 
     @app.get("/", defaults={"path": ""})
     @app.get("/<path:path>")
-    def serve_frontend(path: str) -> Response:
+    def serve_frontend(path: str) -> ResponseReturnValue:
+        # Never fall through to the SPA for an unmatched API route: that would return
+        # index.html with a 200, which clients can't parse as JSON. Return a real 404.
+        if path.startswith("api/"):
+            return jsonify(error="Not found"), 404
         full = os.path.join(_DIST_DIR, path)
         if path and os.path.exists(full):
             return send_from_directory(_DIST_DIR, path)
