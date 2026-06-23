@@ -30,11 +30,11 @@ export default function DvsaVehiclesPage() {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Make / Model</th><th>Registration</th><th>Last updated</th></tr>
+              <tr><th>Make / Model</th><th>Registration</th><th>Pulled from DVSA</th></tr>
             </thead>
             <tbody>
               {data === null
-                ? <SkeletonRows cols={['40%', '110px', '90px']} />
+                ? <SkeletonRows cols={['40%', '110px', '110px']} />
                 : items.map(v => {
                   const makeModel = [v.make, v.model].filter(Boolean).join(' ') || '—';
                   return (
