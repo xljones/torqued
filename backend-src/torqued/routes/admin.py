@@ -6,7 +6,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify
 from flask.typing import ResponseReturnValue
-from flask_login import current_user, login_required
+
+from torqued.access import admin_required
 
 bp = Blueprint("admin", __name__)
 
@@ -25,11 +26,8 @@ def _build_info_path() -> str:
 
 
 @bp.get("/api/admin/deployment")
-@login_required
+@admin_required
 def deployment_info() -> ResponseReturnValue:
-    if not current_user.is_admin:
-        return jsonify(error="Admin access required"), 403
-
     try:
         with open(_build_info_path(), encoding="utf-8") as fh:
             info = json.load(fh)
@@ -54,11 +52,8 @@ def _pa_get(username: str, token: str, path: str) -> dict | list:
 
 
 @bp.get("/api/admin/pythonanywhere")
-@login_required
+@admin_required
 def pythonanywhere_stats() -> ResponseReturnValue:
-    if not current_user.is_admin:
-        return jsonify(error="Admin access required"), 403
-
     token = os.environ.get("PA_API_TOKEN", "").strip()
     username = os.environ.get("PA_USERNAME", "").strip()
     if not token or not username:
@@ -106,11 +101,8 @@ def _compute_limit_seconds(project: dict) -> int | None:
 
 
 @bp.get("/api/admin/neon")
-@login_required
+@admin_required
 def neon_stats() -> ResponseReturnValue:
-    if not current_user.is_admin:
-        return jsonify(error="Admin access required"), 403
-
     api_key = os.environ.get("NEON_API_KEY", "").strip()
     if not api_key:
         return jsonify(configured=False), 200
