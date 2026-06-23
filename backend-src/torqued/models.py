@@ -41,3 +41,16 @@ class OdometerLog(Base):
     source: Mapped[str] = mapped_column(Text, server_default=FetchedValue())
     mot_test_number: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
+
+
+class Photo(Base):
+    __tablename__ = "photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vehicle_id: Mapped[int] = mapped_column(Integer)
+    service_log_id: Mapped[int | None] = mapped_column(Integer)
+    filename: Mapped[str] = mapped_column(Text)
+    original_name: Mapped[str | None] = mapped_column(Text)
+    caption: Mapped[str | None] = mapped_column(Text)
+    uploaded_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())

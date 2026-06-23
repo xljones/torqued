@@ -2,6 +2,7 @@
 import io
 import os
 
+from flask import Flask
 from flask.testing import FlaskClient
 
 from tests.test_services import mk_service
@@ -114,6 +115,18 @@ def test_delete_tolerates_missing_file(auth_client: FlaskClient) -> None:
 
 def test_delete_404(auth_client: FlaskClient) -> None:
     assert auth_client.delete("/api/photos/999").status_code == 404
+
+
+def test_repo_no_op_paths_on_missing_photo(app: Flask) -> None:
+    # The HTTP routes 404 before reaching these repository methods, so cover their
+    # "row not found" paths directly.
+    from torqued.db import get_db
+    from torqued.repositories.photo_repository import PhotoRepository
+
+    with get_db() as db:
+        repo = PhotoRepository(db)
+        assert repo.update_caption(999, "x") is None
+        assert repo.delete(999) is False
 
 
 def test_photos_deleted_with_vehicle_cascade(auth_client: FlaskClient) -> None:
