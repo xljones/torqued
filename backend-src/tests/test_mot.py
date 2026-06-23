@@ -506,6 +506,122 @@ def test_dvsa_record_retained_after_vehicle_delete(
     assert detached[0]["vehicle_id"] is None
 
 
+# ── DVSA relink on create / edit ────────────────────────────────────────────────
+
+def test_create_relinks_detached_dvsa_record(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    from sqlalchemy import select
+
+    from torqued.db import get_db
+    from torqued.models import DvsaVehicle
+
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    old = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{old['id']}/mot/refresh")
+    assert auth_client.delete(f"/api/vehicles/{old['id']}").status_code == 204
+
+    # A new vehicle on the same plate adopts the detached snapshot.
+    new = mk_vehicle(auth_client, registration="A1 XYZ")
+    mot_data = auth_client.get(f"/api/vehicles/{new['id']}/mot").json["mot"]
+    assert mot_data is not None
+    assert mot_data["registration"] == "A1XYZ"
+    # The cascade-deleted tests were rebuilt from raw_json, newest first.
+    assert [t["mot_test_number"] for t in mot_data["tests"]] == ["1234", "1233", "1232"]
+
+    # The detached row was reused (not duplicated) and now points at the new vehicle.
+    with get_db() as db:
+        linked = db.scalars(
+            select(DvsaVehicle.vehicle_id).where(DvsaVehicle.registration == "A1XYZ")
+        ).all()
+    assert linked == [new["id"]]
+
+
+def test_relink_normalises_registration(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    old = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{old['id']}/mot/refresh")
+    auth_client.delete(f"/api/vehicles/{old['id']}")
+
+    # A differently cased/spaced plate still matches the stored canonical "A1XYZ".
+    new = mk_vehicle(auth_client, registration="a1 xyz")
+    mot_data = auth_client.get(f"/api/vehicles/{new['id']}/mot").json["mot"]
+    assert mot_data is not None
+    assert [t["mot_test_number"] for t in mot_data["tests"]] == ["1234", "1233", "1232"]
+
+
+def test_create_no_detached_record_is_noop(auth_client: FlaskClient) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+
+    # A never-seen plate has nothing to relink.
+    v = mk_vehicle(auth_client, registration="ZZ99 ZZZ")
+    assert auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"] is None
+
+    # A blank registration short-circuits before the lookup.
+    with get_db() as db:
+        assert MotRepository(db).relink_detached(v["id"], "   ") is False
+
+
+def test_relink_skips_live_record_of_another_vehicle(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    a = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{a['id']}/mot/refresh")
+
+    # B takes the same plate while A is still live — A's record must not move to B.
+    b = mk_vehicle(auth_client, registration="A1 XYZ")
+    assert auth_client.get(f"/api/vehicles/{b['id']}/mot").json["mot"] is None
+    assert auth_client.get(f"/api/vehicles/{a['id']}/mot").json["mot"] is not None
+
+
+def test_edit_registration_relinks_detached(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    old = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{old['id']}/mot/refresh")
+    auth_client.delete(f"/api/vehicles/{old['id']}")  # detaches the A1XYZ snapshot
+
+    v = mk_vehicle(auth_client, registration="A2 XYZ")  # no DVSA data for A2XYZ
+    assert auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"] is None
+
+    # Changing the plate to the detached one re-attaches its snapshot.
+    r = auth_client.put(
+        f"/api/vehicles/{v['id']}",
+        json={"name": v["name"], "kind": v["kind"], "registration": "A1 XYZ"},
+    )
+    assert r.status_code == 200
+    mot_data = auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"]
+    assert mot_data is not None
+    assert [t["mot_test_number"] for t in mot_data["tests"]] == ["1234", "1233", "1232"]
+
+
+def test_edit_skips_relink_when_live_record_exists(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    old = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{old['id']}/mot/refresh")
+    auth_client.delete(f"/api/vehicles/{old['id']}")  # leaves a detached A1XYZ record
+
+    # A vehicle that already has its own live DVSA record (A2XYZ)...
+    v = mk_vehicle(auth_client, registration="A2 XYZ")
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: NEW_REG)
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    # ...keeps it when its plate changes — the detached A1XYZ record is not adopted.
+    auth_client.put(
+        f"/api/vehicles/{v['id']}",
+        json={"name": v["name"], "kind": v["kind"], "registration": "A1 XYZ"},
+    )
+    mot_data = auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"]
+    assert mot_data is not None
+    assert mot_data["registration"] == "A2XYZ"
+
+
 def test_refresh_new_reg_vehicle(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:

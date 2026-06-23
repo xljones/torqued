@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 
+from torqued import mot
 from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
@@ -179,6 +180,10 @@ class MotRepository(BaseRepository):
                 raw_json=json.dumps(payload),
             )
         )
+        self._add_tests(vehicle_id, payload)
+
+    def _add_tests(self, vehicle_id: int, payload: dict[str, Any]) -> None:
+        """Insert MotTest rows for a vehicle from a DVSA payload's motTests array."""
         for test in payload.get("motTests") or []:
             self.session.add(
                 MotTest(
@@ -196,3 +201,30 @@ class MotRepository(BaseRepository):
                     raw_json=json.dumps(test),
                 )
             )
+
+    def relink_detached(self, vehicle_id: int, registration: str) -> bool:
+        """Re-attach the newest detached DVSA record matching a plate to a vehicle.
+
+        A deleted vehicle's DVSA snapshot survives with ``vehicle_id`` NULL
+        (migration 0002). When a vehicle later takes that plate, relink the record
+        and rebuild its cascade-deleted ``mot_tests`` from ``raw_json``. Only
+        detached rows are considered, so a live record on another vehicle that
+        shares the plate is never touched. Returns True if a record was relinked.
+        """
+        norm = mot.normalise_registration(registration)
+        if not norm:
+            return False
+        detached = self.session.scalars(
+            select(DvsaVehicle)
+            .where(
+                DvsaVehicle.vehicle_id.is_(None),
+                DvsaVehicle.registration.is_not(None),
+                func.upper(func.replace(DvsaVehicle.registration, " ", "")) == norm,
+            )
+            .order_by(DvsaVehicle.fetched_at.desc(), DvsaVehicle.id.desc())
+        ).first()
+        if detached is None:
+            return False
+        detached.vehicle_id = vehicle_id
+        self._add_tests(vehicle_id, json.loads(detached.raw_json))
+        return True
