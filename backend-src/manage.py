@@ -450,7 +450,7 @@ def cmd_migrate(_: list[str]) -> None:
 
 
 def cmd_reset_db(args: list[str]) -> None:
-    from torqued.db import get_db, run_migrations
+    from torqued.db import execute_sql, get_db, run_migrations
 
     url = _active_url()
     _confirm_destructive(url, "Reset drops ALL tables, including users")
@@ -462,8 +462,8 @@ def cmd_reset_db(args: list[str]) -> None:
             Path(url.database + suffix).unlink(missing_ok=True)
     else:
         with get_db() as db:
-            db.execute("DROP SCHEMA public CASCADE")
-            db.execute("CREATE SCHEMA public")
+            execute_sql(db, "DROP SCHEMA public CASCADE")
+            execute_sql(db, "CREATE SCHEMA public")
 
     run_migrations()
     print("Database reset. Run seed to repopulate.")

@@ -9,7 +9,7 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from torqued.db import get_db
+from torqued.db import execute_sql, get_db
 from torqued.repositories.user_repository import UserRepository
 
 
@@ -94,7 +94,8 @@ def test_enforce_auth_expired_session(client: FlaskClient) -> None:
         user = UserRepository(db).create("expireme", "pass")
     client.post("/api/auth/login", json={"username": "expireme", "password": "pass"})
     with get_db() as db:
-        db.execute(
+        execute_sql(
+            db,
             "UPDATE users SET expires_at=? WHERE id=?",
             ("2000-01-01T00:00:00+00:00", user["id"]),
         )
@@ -108,7 +109,8 @@ def test_enforce_auth_invalid_expires_at_ignored(client: FlaskClient) -> None:
         user = UserRepository(db).create("badexpiry", "pass")
     client.post("/api/auth/login", json={"username": "badexpiry", "password": "pass"})
     with get_db() as db:
-        db.execute(
+        execute_sql(
+            db,
             "UPDATE users SET expires_at=? WHERE id=?",
             ("not-a-valid-date", user["id"]),
         )
@@ -169,7 +171,7 @@ def test_load_user_returns_none_for_deleted_user(client: FlaskClient) -> None:
         UserRepository(db).create("todelete", "pass")
     client.post("/api/auth/login", json={"username": "todelete", "password": "pass"})
     with get_db() as db:
-        db.execute("DELETE FROM users WHERE username='todelete'")
+        execute_sql(db, "DELETE FROM users WHERE username='todelete'")
     assert client.get("/api/vehicles").status_code == 401
 
 

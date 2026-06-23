@@ -2,6 +2,9 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
+from sqlalchemy import delete, select
+
+from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
@@ -15,25 +18,23 @@ MOT_DUE_SOON_DAYS = 60
 class MotRepository(BaseRepository):
     def get_for_vehicle(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return the stored DVSA snapshot for a vehicle (parsed defects), or None."""
-        snapshot = self._row(
-            self.db.execute(
-                "SELECT * FROM dvsa_vehicles WHERE vehicle_id=?", (vehicle_id,)
-            ).fetchone()
-        )
-        if snapshot is None:
+        dvsa = self.session.get(DvsaVehicle, vehicle_id)
+        if dvsa is None:
             return None
+        snapshot = to_dict(dvsa)
         snapshot["raw"] = json.loads(snapshot.pop("raw_json"))
-        tests = self._rows(
-            self.db.execute(
-                "SELECT * FROM mot_tests WHERE vehicle_id=?"
-                " ORDER BY completed_date DESC, id DESC",
-                (vehicle_id,),
-            ).fetchall()
-        )
-        for t in tests:
+        tests = self.session.scalars(
+            select(MotTest)
+            .where(MotTest.vehicle_id == vehicle_id)
+            .order_by(MotTest.completed_date.desc(), MotTest.id.desc())
+        ).all()
+        parsed = []
+        for test in tests:
+            t = to_dict(test)
             t["defects"] = json.loads(t.pop("defects_json"))
             del t["raw_json"]
-        snapshot["tests"] = tests
+            parsed.append(t)
+        snapshot["tests"] = parsed
         return snapshot
 
     def reminders(
@@ -54,30 +55,30 @@ class MotRepository(BaseRepository):
         today = today or date.today()
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        where = ""
-        params: tuple[Any, ...] = tuple(garage_ids)
-        if vehicle_id is not None:
-            where, params = "AND v.id = ?", (*garage_ids, vehicle_id)
-        rows = self._rows(
-            self.db.execute(
-                f"""
-                SELECT v.id AS vehicle_id, v.name AS vehicle_name, v.kind AS vehicle_kind,
-                       v.garage_id, v.odometer_unit AS vehicle_odometer_unit,
-                       d.mot_test_due_date,
-                       (SELECT t.expiry_date FROM mot_tests t
-                         WHERE t.vehicle_id = v.id
-                         ORDER BY t.completed_date DESC, t.id DESC
-                         LIMIT 1) AS latest_expiry
-                FROM vehicles v
-                JOIN dvsa_vehicles d ON d.vehicle_id = v.id
-                WHERE v.archived = 0
-                  AND v.garage_id IN ({placeholders})
-                  {where}
-                """,
-                params,
-            ).fetchall()
+        latest_expiry = (
+            select(MotTest.expiry_date)
+            .where(MotTest.vehicle_id == Vehicle.id)
+            .order_by(MotTest.completed_date.desc(), MotTest.id.desc())
+            .limit(1)
+            .correlate(Vehicle)
+            .scalar_subquery()
         )
+        stmt = (
+            select(
+                Vehicle.id.label("vehicle_id"),
+                Vehicle.name.label("vehicle_name"),
+                Vehicle.kind.label("vehicle_kind"),
+                Vehicle.garage_id,
+                Vehicle.odometer_unit.label("vehicle_odometer_unit"),
+                DvsaVehicle.mot_test_due_date,
+                latest_expiry.label("latest_expiry"),
+            )
+            .join(DvsaVehicle, DvsaVehicle.vehicle_id == Vehicle.id)
+            .where(Vehicle.archived == 0, Vehicle.garage_id.in_(garage_ids))
+        )
+        if vehicle_id is not None:
+            stmt = stmt.where(Vehicle.id == vehicle_id)
+        rows = self.session.execute(stmt).mappings().all()
         cutoff = (today + timedelta(days=MOT_DUE_SOON_DAYS)).isoformat()
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
@@ -113,55 +114,40 @@ class MotRepository(BaseRepository):
 
     def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
         """Store a fresh DVSA response, replacing any previous snapshot and tests."""
-        self.db.execute("DELETE FROM dvsa_vehicles WHERE vehicle_id=?", (vehicle_id,))
-        self.db.execute("DELETE FROM mot_tests WHERE vehicle_id=?", (vehicle_id,))
-        self.db.execute(
-            """
-            INSERT INTO dvsa_vehicles (
-                vehicle_id, registration, make, model, first_used_date, fuel_type,
-                primary_colour, registration_date, manufacture_date, manufacture_year,
-                engine_size, has_outstanding_recall, mot_test_due_date, raw_json
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                vehicle_id,
-                payload.get("registration"),
-                payload.get("make"),
-                payload.get("model"),
-                payload.get("firstUsedDate"),
-                payload.get("fuelType"),
-                payload.get("primaryColour"),
-                payload.get("registrationDate"),
-                payload.get("manufactureDate"),
-                payload.get("manufactureYear"),
-                payload.get("engineSize"),
-                payload.get("hasOutstandingRecall"),
-                payload.get("motTestDueDate"),
-                json.dumps(payload),
-            ),
+        self.session.execute(delete(DvsaVehicle).where(DvsaVehicle.vehicle_id == vehicle_id))
+        self.session.execute(delete(MotTest).where(MotTest.vehicle_id == vehicle_id))
+        self.session.add(
+            DvsaVehicle(
+                vehicle_id=vehicle_id,
+                registration=payload.get("registration"),
+                make=payload.get("make"),
+                model=payload.get("model"),
+                first_used_date=payload.get("firstUsedDate"),
+                fuel_type=payload.get("fuelType"),
+                primary_colour=payload.get("primaryColour"),
+                registration_date=payload.get("registrationDate"),
+                manufacture_date=payload.get("manufactureDate"),
+                manufacture_year=payload.get("manufactureYear"),
+                engine_size=payload.get("engineSize"),
+                has_outstanding_recall=payload.get("hasOutstandingRecall"),
+                mot_test_due_date=payload.get("motTestDueDate"),
+                raw_json=json.dumps(payload),
+            )
         )
         for test in payload.get("motTests") or []:
-            self.db.execute(
-                """
-                INSERT INTO mot_tests (
-                    vehicle_id, completed_date, test_result, expiry_date, odometer_value,
-                    odometer_unit, odometer_result_type, mot_test_number, data_source,
-                    location, defects_json, raw_json
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    vehicle_id,
-                    test.get("completedDate"),
-                    test.get("testResult"),
-                    test.get("expiryDate"),
-                    test.get("odometerValue"),
-                    _UNIT_MAP.get((test.get("odometerUnit") or "").upper()),
-                    test.get("odometerResultType"),
-                    test.get("motTestNumber"),
-                    test.get("dataSource"),
-                    test.get("location"),
-                    json.dumps(test.get("defects") or []),
-                    json.dumps(test),
-                ),
+            self.session.add(
+                MotTest(
+                    vehicle_id=vehicle_id,
+                    completed_date=test.get("completedDate"),
+                    test_result=test.get("testResult"),
+                    expiry_date=test.get("expiryDate"),
+                    odometer_value=test.get("odometerValue"),
+                    odometer_unit=_UNIT_MAP.get((test.get("odometerUnit") or "").upper()),
+                    odometer_result_type=test.get("odometerResultType"),
+                    mot_test_number=test.get("motTestNumber"),
+                    data_source=test.get("dataSource"),
+                    location=test.get("location"),
+                    defects_json=json.dumps(test.get("defects") or []),
+                    raw_json=json.dumps(test),
+                )
             )
-

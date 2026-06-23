@@ -1,24 +1,29 @@
 from typing import Any
 
+from sqlalchemy import select
+
+from torqued.models import OdometerLog, to_dict
 from torqued.repositories.base import BaseRepository
 
 
 class OdometerLogRepository(BaseRepository):
     def list_for_vehicle(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's manual odometer logs, newest first."""
-        return self._rows(
-            self.db.execute(
-                "SELECT * FROM odometer_logs WHERE vehicle_id=? AND source='manual'"
-                " ORDER BY date DESC, odometer_km DESC, id DESC",
-                (vehicle_id,),
-            ).fetchall()
-        )
+        rows = self.session.scalars(
+            select(OdometerLog)
+            .where(OdometerLog.vehicle_id == vehicle_id, OdometerLog.source == "manual")
+            .order_by(
+                OdometerLog.date.desc(),
+                OdometerLog.odometer_km.desc(),
+                OdometerLog.id.desc(),
+            )
+        ).all()
+        return [to_dict(r) for r in rows]
 
     def get_by_id(self, log_id: int) -> dict[str, Any] | None:
         """Return a single odometer log by primary key, or None if not found."""
-        return self._row(
-            self.db.execute("SELECT * FROM odometer_logs WHERE id=?", (log_id,)).fetchone()
-        )
+        log = self.session.get(OdometerLog, log_id)
+        return to_dict(log) if log else None
 
     def create(
         self,
@@ -29,18 +34,18 @@ class OdometerLogRepository(BaseRepository):
         note: str | None = None,
     ) -> dict[str, Any]:
         """Insert a manual odometer reading (stored canonically in km)."""
-        inserted = self.db.execute(
-            "INSERT INTO odometer_logs (vehicle_id, date, odometer_km, unit, note)"
-            " VALUES (?,?,?,?,?) RETURNING id",
-            (vehicle_id, date, odometer_km, unit, note),
-        ).fetchone()
-        if inserted is None:  # pragma: no cover
-            raise RuntimeError("INSERT returned no row ID")
-        log = self.get_by_id(inserted["id"])
-        if log is None:  # pragma: no cover
-            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
-        return log
+        log = OdometerLog(
+            vehicle_id=vehicle_id, date=date, odometer_km=odometer_km, unit=unit, note=note
+        )
+        self.session.add(log)
+        self.session.flush()  # assigns the primary key and emits the INSERT
+        self.session.refresh(log)  # pull DB-side defaults (source, created_at)
+        return to_dict(log)
 
     def delete(self, log_id: int) -> bool:
         """Delete an odometer log by primary key; return True if a row was removed."""
-        return self.db.execute("DELETE FROM odometer_logs WHERE id=?", (log_id,)).rowcount > 0
+        log = self.session.get(OdometerLog, log_id)
+        if log is None:
+            return False
+        self.session.delete(log)
+        return True

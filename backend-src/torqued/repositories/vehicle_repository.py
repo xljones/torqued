@@ -1,8 +1,23 @@
 import json
 from typing import Any
 
+from sqlalchemy import Float, case, cast, delete, func, literal, or_, select, union_all, update
+
 from torqued import mot
 from torqued.db import utcnow_text
+from torqued.models import (
+    DvsaVehicle,
+    Garage,
+    MotTest,
+    OdometerLog,
+    Photo,
+    ServiceLog,
+    User,
+    Vehicle,
+    VehicleHistory,
+    VehicleSpec,
+    to_dict,
+)
 from torqued.repositories.base import BaseRepository
 
 # Editable vehicle fields, in schema order. History snapshots mirror this list.
@@ -30,6 +45,14 @@ VEHICLE_FIELDS: list[str] = [
 ]
 
 
+def _mot_km(value: Any, unit: Any) -> Any:
+    """SQL expression converting an MOT odometer reading to km (mi readings * 1.609344)."""
+    return case(
+        (unit == "mi", cast(value, Float) * 1.609344),
+        else_=cast(value, Float),
+    )
+
+
 class VehicleRepository(BaseRepository):
     def list_for_garages(
         self, garage_ids: list[int], include_archived: bool = False
@@ -37,25 +60,51 @@ class VehicleRepository(BaseRepository):
         """Return the garages' vehicles with counts and a cover photo, newest first."""
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        archived = "" if include_archived else "AND v.archived = 0"
-        vehicles = self._rows(
-            self.db.execute(
-                f"""
-            SELECT v.*, g.name AS garage_name,
-                   (SELECT COUNT(*) FROM service_logs s WHERE s.vehicle_id = v.id) AS service_count,
-                   (SELECT COUNT(*) FROM photos p WHERE p.vehicle_id = v.id) AS photo_count,
-                   (SELECT p.id FROM photos p WHERE p.vehicle_id = v.id
-                    ORDER BY p.service_log_id IS NOT NULL, p.created_at ASC
-                    LIMIT 1) AS cover_photo_id
-            FROM vehicles v
-            JOIN garages g ON g.id = v.garage_id
-            WHERE v.garage_id IN ({placeholders}) {archived}
-            ORDER BY v.archived ASC, v.created_at DESC
-        """,
-                tuple(garage_ids),
-            ).fetchall()
+        service_count = (
+            select(func.count())
+            .select_from(ServiceLog)
+            .where(ServiceLog.vehicle_id == Vehicle.id)
+            .correlate(Vehicle)
+        ).scalar_subquery()
+        photo_count = (
+            select(func.count())
+            .select_from(Photo)
+            .where(Photo.vehicle_id == Vehicle.id)
+            .correlate(Vehicle)
+        ).scalar_subquery()
+        cover_photo_id = (
+            select(Photo.id)
+            .where(Photo.vehicle_id == Vehicle.id)
+            .order_by(Photo.service_log_id.is_not(None), Photo.created_at.asc())
+            .limit(1)
+            .correlate(Vehicle)
+        ).scalar_subquery()
+        stmt = (
+            select(
+                Vehicle,
+                Garage.name.label("garage_name"),
+                service_count.label("service_count"),
+                photo_count.label("photo_count"),
+                cover_photo_id.label("cover_photo_id"),
+            )
+            .join(Garage, Garage.id == Vehicle.garage_id)
+            .where(Vehicle.garage_id.in_(garage_ids))
         )
+        if not include_archived:
+            stmt = stmt.where(Vehicle.archived == 0)
+        stmt = stmt.order_by(Vehicle.archived.asc(), Vehicle.created_at.desc())
+        vehicles = [
+            {
+                **to_dict(vehicle),
+                "garage_name": garage_name,
+                "service_count": service_count_,
+                "photo_count": photo_count_,
+                "cover_photo_id": cover_photo_id_,
+            }
+            for vehicle, garage_name, service_count_, photo_count_, cover_photo_id_ in (
+                self.session.execute(stmt).all()
+            )
+        ]
         latest = self.latest_odometers()
         baselines = self.mot_baselines([v["id"] for v in vehicles])
         for v in vehicles:
@@ -65,41 +114,55 @@ class VehicleRepository(BaseRepository):
 
     def get_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return a single vehicle row by primary key, or None if not found."""
-        return self._row(
-            self.db.execute("SELECT * FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
-        )
+        vehicle = self.session.get(Vehicle, vehicle_id)
+        return to_dict(vehicle) if vehicle else None
+
+    def garage_id_for(self, vehicle_id: int) -> int | None:
+        """Return the id of the garage owning a vehicle, or None if it doesn't exist."""
+        return self.session.scalars(
+            select(Vehicle.garage_id).where(Vehicle.id == vehicle_id)
+        ).first()
 
     def get_detail(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return a vehicle with its specs, photos, and latest odometer reading."""
         vehicle = self.get_by_id(vehicle_id)
         if not vehicle:
             return None
-        garage = self.db.execute(
-            "SELECT name FROM garages WHERE id=?", (vehicle["garage_id"],)
-        ).fetchone()
-        vehicle["garage_name"] = garage["name"] if garage else None
-        vehicle["specs"] = self._rows(
-            self.db.execute(
-                "SELECT id, name, value, position FROM vehicle_specs"
-                " WHERE vehicle_id=? ORDER BY position ASC, id ASC",
-                (vehicle_id,),
-            ).fetchall()
-        )
-        vehicle["photos"] = self._rows(
-            self.db.execute(
-                """
-                SELECT p.*, u.username AS uploaded_by_username, s.title AS service_title
-                FROM photos p
-                LEFT JOIN users u ON u.id = p.uploaded_by
-                LEFT JOIN service_logs s ON s.id = p.service_log_id
-                WHERE p.vehicle_id=? ORDER BY p.created_at DESC, p.id DESC
-                """,
-                (vehicle_id,),
-            ).fetchall()
-        )
+        vehicle["garage_name"] = self.session.scalars(
+            select(Garage.name).where(Garage.id == vehicle["garage_id"])
+        ).first()
+        vehicle["specs"] = self._specs(vehicle_id)
+        photo_rows = self.session.execute(
+            select(
+                Photo,
+                User.username.label("uploaded_by_username"),
+                ServiceLog.title.label("service_title"),
+            )
+            .outerjoin(User, User.id == Photo.uploaded_by)
+            .outerjoin(ServiceLog, ServiceLog.id == Photo.service_log_id)
+            .where(Photo.vehicle_id == vehicle_id)
+            .order_by(Photo.created_at.desc(), Photo.id.desc())
+        ).all()
+        vehicle["photos"] = [
+            {**to_dict(photo), "uploaded_by_username": username, "service_title": service_title}
+            for photo, username, service_title in photo_rows
+        ]
         vehicle["latest_odometer"] = self.latest_odometers().get(vehicle_id)
         vehicle["mot_baseline"] = self.mot_baseline(vehicle_id)
         return vehicle
+
+    def _specs(self, vehicle_id: int) -> list[dict[str, Any]]:
+        """Return a vehicle's spec rows ordered by position."""
+        rows = (
+            self.session.execute(
+                select(VehicleSpec.id, VehicleSpec.name, VehicleSpec.value, VehicleSpec.position)
+                .where(VehicleSpec.vehicle_id == vehicle_id)
+                .order_by(VehicleSpec.position.asc(), VehicleSpec.id.asc())
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(r) for r in rows]
 
     def mot_baseline(self, vehicle_id: int) -> dict[str, Any] | None:
         """Map the stored DVSA snapshot onto vehicle detail fields, or None if not fetched.
@@ -113,12 +176,12 @@ class VehicleRepository(BaseRepository):
         """Batch the MOT baseline lookup for several vehicles in one query."""
         if not vehicle_ids:
             return {}
-        placeholders = ",".join("?" * len(vehicle_ids))
-        rows = self.db.execute(
-            f"SELECT vehicle_id, raw_json FROM dvsa_vehicles WHERE vehicle_id IN ({placeholders})",
-            tuple(vehicle_ids),
-        ).fetchall()
-        return {r["vehicle_id"]: mot.to_baseline(json.loads(r["raw_json"])) for r in rows}
+        rows = self.session.execute(
+            select(DvsaVehicle.vehicle_id, DvsaVehicle.raw_json).where(
+                DvsaVehicle.vehicle_id.in_(vehicle_ids)
+            )
+        ).all()
+        return {vid: mot.to_baseline(json.loads(raw)) for vid, raw in rows}
 
     def create(
         self, garage_id: int, data: dict[str, Any], changed_by: int | None = None
@@ -127,17 +190,12 @@ class VehicleRepository(BaseRepository):
         data = {"kind": "car", "odometer_unit": "mi", "archived": 0, **{
             k: v for k, v in data.items() if v is not None
         }}
-        cols = ",".join(VEHICLE_FIELDS)
-        marks = ",".join("?" * len(VEHICLE_FIELDS))
-        inserted = self.db.execute(
-            f"INSERT INTO vehicles (garage_id, {cols}) VALUES (?,{marks}) RETURNING id",
-            (garage_id, *(data.get(f) for f in VEHICLE_FIELDS)),
-        ).fetchone()
-        if inserted is None:  # pragma: no cover
-            raise RuntimeError("INSERT returned no row ID")
-        vehicle = self.get_by_id(inserted["id"])
+        vehicle_row = Vehicle(garage_id=garage_id, **{f: data.get(f) for f in VEHICLE_FIELDS})
+        self.session.add(vehicle_row)
+        self.session.flush()
+        vehicle = self.get_by_id(vehicle_row.id)
         if vehicle is None:  # pragma: no cover
-            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
+            raise RuntimeError(f"Row {vehicle_row.id} not found after INSERT")
         self._record_history(vehicle, changed_by)
         return vehicle
 
@@ -145,11 +203,9 @@ class VehicleRepository(BaseRepository):
         self, vehicle_id: int, data: dict[str, Any], changed_by: int | None = None
     ) -> dict[str, Any] | None:
         """Update vehicle fields, record a history snapshot, and return the updated row."""
-        sets = ",".join(f"{f}=?" for f in VEHICLE_FIELDS)
-        self.db.execute(
-            f"UPDATE vehicles SET {sets}, updated_at=? WHERE id=?",
-            (*(data.get(f) for f in VEHICLE_FIELDS), utcnow_text(), vehicle_id),
-        )
+        values = {f: data.get(f) for f in VEHICLE_FIELDS}
+        values["updated_at"] = utcnow_text()
+        self.session.execute(update(Vehicle).where(Vehicle.id == vehicle_id).values(values))
         vehicle = self.get_by_id(vehicle_id)
         if vehicle is not None:
             self._record_history(vehicle, changed_by)
@@ -157,37 +213,42 @@ class VehicleRepository(BaseRepository):
 
     def delete(self, vehicle_id: int) -> bool:
         """Delete a vehicle (cascades to specs, logs, photos); return True if a row was removed."""
-        return self.db.execute("DELETE FROM vehicles WHERE id=?", (vehicle_id,)).rowcount > 0
+        return self.affected(delete(Vehicle).where(Vehicle.id == vehicle_id)) > 0
 
     def replace_specs(self, vehicle_id: int, specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Replace the vehicle's free-form spec list; return the new specs in order."""
-        self.db.execute("DELETE FROM vehicle_specs WHERE vehicle_id=?", (vehicle_id,))
+        self.session.execute(delete(VehicleSpec).where(VehicleSpec.vehicle_id == vehicle_id))
         for i, spec in enumerate(specs):
-            self.db.execute(
-                "INSERT INTO vehicle_specs (vehicle_id, name, value, position) VALUES (?,?,?,?)",
-                (vehicle_id, spec["name"], spec["value"], i),
+            self.session.add(
+                VehicleSpec(
+                    vehicle_id=vehicle_id, name=spec["name"], value=spec["value"], position=i
+                )
             )
-        return self._rows(
-            self.db.execute(
-                "SELECT id, name, value, position FROM vehicle_specs"
-                " WHERE vehicle_id=? ORDER BY position ASC, id ASC",
-                (vehicle_id,),
-            ).fetchall()
-        )
+        return self._specs(vehicle_id)
 
     def latest_odometers(self) -> dict[int, dict[str, Any]]:
         """Return the most recent odometer reading per vehicle across all three sources."""
-        rows = self.db.execute("""
-            SELECT vehicle_id, date, odometer_km FROM odometer_logs WHERE source='manual'
-            UNION ALL
-            SELECT vehicle_id, SUBSTR(completed_date, 1, 10) AS date,
-                   CASE odometer_unit WHEN 'mi' THEN CAST(odometer_value AS REAL) * 1.609344
-                                      ELSE CAST(odometer_value AS REAL) END AS odometer_km
-            FROM mot_tests WHERE odometer_value IS NOT NULL AND odometer_unit IS NOT NULL
-            UNION ALL
-            SELECT vehicle_id, date, odometer_km FROM service_logs WHERE odometer_km IS NOT NULL
-            ORDER BY date ASC, odometer_km ASC
-        """).fetchall()
+        manual = select(
+            OdometerLog.vehicle_id, OdometerLog.date, OdometerLog.odometer_km
+        ).where(OdometerLog.source == "manual")
+        mot_q = select(
+            MotTest.vehicle_id,
+            func.substr(MotTest.completed_date, 1, 10).label("date"),
+            _mot_km(MotTest.odometer_value, MotTest.odometer_unit).label("odometer_km"),
+        ).where(MotTest.odometer_value.is_not(None), MotTest.odometer_unit.is_not(None))
+        service = select(
+            ServiceLog.vehicle_id, ServiceLog.date, ServiceLog.odometer_km
+        ).where(ServiceLog.odometer_km.is_not(None))
+        combined = union_all(manual, mot_q, service).subquery()
+        rows = (
+            self.session.execute(
+                select(combined.c.vehicle_id, combined.c.date, combined.c.odometer_km).order_by(
+                    combined.c.date.asc(), combined.c.odometer_km.asc()
+                )
+            )
+            .mappings()
+            .all()
+        )
         latest: dict[int, dict[str, Any]] = {}
         for r in rows:
             latest[r["vehicle_id"]] = {"date": r["date"], "odometer_km": r["odometer_km"]}
@@ -195,82 +256,93 @@ class VehicleRepository(BaseRepository):
 
     def mileage_series(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return the merged odometer timeline (manual, MOT, service), oldest first."""
-        return self._rows(
-            self.db.execute(
-                """
-                SELECT 'manual' AS source, id, date, odometer_km, unit, note
-                FROM odometer_logs WHERE vehicle_id=? AND source='manual'
-                UNION ALL
-                SELECT 'mot' AS source, id, SUBSTR(completed_date, 1, 10) AS date,
-                       CASE odometer_unit WHEN 'mi' THEN CAST(odometer_value AS REAL) * 1.609344
-                                          ELSE CAST(odometer_value AS REAL) END AS odometer_km,
-                       odometer_unit AS unit,
-                       'MOT test (' || test_result || ')' AS note
-                FROM mot_tests
-                WHERE vehicle_id=? AND odometer_value IS NOT NULL AND odometer_unit IS NOT NULL
-                UNION ALL
-                SELECT 'service' AS source, id, date, odometer_km, odometer_unit AS unit,
-                       title AS note
-                FROM service_logs WHERE vehicle_id=? AND odometer_km IS NOT NULL
-                ORDER BY date ASC, odometer_km ASC
-                """,
-                (vehicle_id, vehicle_id, vehicle_id),
-            ).fetchall()
+        manual = select(
+            literal("manual").label("source"),
+            OdometerLog.id,
+            OdometerLog.date,
+            OdometerLog.odometer_km,
+            OdometerLog.unit,
+            OdometerLog.note,
+        ).where(OdometerLog.vehicle_id == vehicle_id, OdometerLog.source == "manual")
+        mot_q = select(
+            literal("mot").label("source"),
+            MotTest.id,
+            func.substr(MotTest.completed_date, 1, 10).label("date"),
+            _mot_km(MotTest.odometer_value, MotTest.odometer_unit).label("odometer_km"),
+            MotTest.odometer_unit.label("unit"),
+            (literal("MOT test (") + MotTest.test_result + literal(")")).label("note"),
+        ).where(
+            MotTest.vehicle_id == vehicle_id,
+            MotTest.odometer_value.is_not(None),
+            MotTest.odometer_unit.is_not(None),
         )
+        service = select(
+            literal("service").label("source"),
+            ServiceLog.id,
+            ServiceLog.date,
+            ServiceLog.odometer_km,
+            ServiceLog.odometer_unit.label("unit"),
+            ServiceLog.title.label("note"),
+        ).where(ServiceLog.vehicle_id == vehicle_id, ServiceLog.odometer_km.is_not(None))
+        combined = union_all(manual, mot_q, service).subquery()
+        rows = (
+            self.session.execute(
+                select(combined).order_by(combined.c.date.asc(), combined.c.odometer_km.asc())
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(r) for r in rows]
 
     def get_history(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return full audit history for a vehicle, newest first, with username."""
-        return self._rows(
-            self.db.execute(
-                """
-                SELECT vh.*, u.username AS changed_by_username
-                FROM vehicle_history vh
-                LEFT JOIN users u ON u.id = vh.changed_by
-                WHERE vh.vehicle_id = ?
-                ORDER BY vh.changed_at DESC, vh.id DESC
-                """,
-                (vehicle_id,),
-            ).fetchall()
-        )
+        rows = self.session.execute(
+            select(VehicleHistory, User.username.label("changed_by_username"))
+            .outerjoin(User, User.id == VehicleHistory.changed_by)
+            .where(VehicleHistory.vehicle_id == vehicle_id)
+            .order_by(VehicleHistory.changed_at.desc(), VehicleHistory.id.desc())
+        ).all()
+        return [{**to_dict(h), "changed_by_username": username} for h, username in rows]
 
     def revert(
         self, vehicle_id: int, version_id: int, changed_by: int | None = None
     ) -> dict[str, Any] | None:
         """Restore a vehicle from a history record; return None if the record doesn't exist."""
-        h = self._row(
-            self.db.execute(
-                "SELECT * FROM vehicle_history WHERE id=? AND vehicle_id=?",
-                (version_id, vehicle_id),
-            ).fetchone()
-        )
-        if not h:
+        h = self.session.execute(
+            select(VehicleHistory).where(
+                VehicleHistory.id == version_id, VehicleHistory.vehicle_id == vehicle_id
+            )
+        ).scalar_one_or_none()
+        if h is None:
             return None
-        return self.update(vehicle_id, h, changed_by=changed_by)
+        return self.update(vehicle_id, to_dict(h), changed_by=changed_by)
 
     def _record_history(self, vehicle: dict[str, Any], changed_by: int | None) -> None:
         """Write a snapshot of the vehicle's current field values to vehicle_history."""
-        cols = ",".join(VEHICLE_FIELDS)
-        marks = ",".join("?" * len(VEHICLE_FIELDS))
-        self.db.execute(
-            f"INSERT INTO vehicle_history (vehicle_id, changed_by, {cols}) VALUES (?,?,{marks})",
-            (vehicle["id"], changed_by, *(vehicle.get(f) for f in VEHICLE_FIELDS)),
+        self.session.add(
+            VehicleHistory(
+                vehicle_id=vehicle["id"],
+                changed_by=changed_by,
+                **{f: vehicle.get(f) for f in VEHICLE_FIELDS},
+            )
         )
 
     def search(self, query: str, garage_ids: list[int]) -> list[dict[str, Any]]:
         """Return up to 10 in-scope vehicles matching name, make, model, or plate."""
         if not garage_ids:
             return []
-        placeholders = ",".join("?" * len(garage_ids))
-        q = f"%{query}%"
-        return self._rows(
-            self.db.execute(
-                f"""
-                SELECT v.*, 'vehicle' AS type FROM vehicles v
-                WHERE v.garage_id IN ({placeholders})
-                  AND (LOWER(v.name) LIKE LOWER(?) OR LOWER(v.make) LIKE LOWER(?)
-                       OR LOWER(v.model) LIKE LOWER(?) OR LOWER(v.registration) LIKE LOWER(?))
-                LIMIT 10
-                """,
-                (*garage_ids, q, q, q, q),
-            ).fetchall()
-        )
+        like = f"%{query}%"
+        rows = self.session.execute(
+            select(Vehicle, literal("vehicle").label("type"))
+            .where(
+                Vehicle.garage_id.in_(garage_ids),
+                or_(
+                    func.lower(Vehicle.name).like(func.lower(like)),
+                    func.lower(Vehicle.make).like(func.lower(like)),
+                    func.lower(Vehicle.model).like(func.lower(like)),
+                    func.lower(Vehicle.registration).like(func.lower(like)),
+                ),
+            )
+            .limit(10)
+        ).all()
+        return [{**to_dict(vehicle), "type": type_} for vehicle, type_ in rows]
