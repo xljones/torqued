@@ -149,10 +149,18 @@ class MotRepository(BaseRepository):
             )
         return reminders
 
-    def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
-        """Store a fresh DVSA response, replacing any previous snapshot and tests."""
+    def clear_for_vehicle(self, vehicle_id: int) -> None:
+        """Remove the stored DVSA snapshot and tests for a vehicle.
+
+        Used when the registration changes so the data no longer applies, and as the
+        first step of a replace.
+        """
         self.session.execute(delete(DvsaVehicle).where(DvsaVehicle.vehicle_id == vehicle_id))
         self.session.execute(delete(MotTest).where(MotTest.vehicle_id == vehicle_id))
+
+    def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
+        """Store a fresh DVSA response, replacing any previous snapshot and tests."""
+        self.clear_for_vehicle(vehicle_id)
         self.session.add(
             DvsaVehicle(
                 vehicle_id=vehicle_id,

@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 
 from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
+from torqued.repositories.mot_repository import MotRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
 
@@ -141,7 +142,12 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         err = _check_vehicle(db, vehicle_id, write=True)
         if err:
             return err
-        return jsonify(VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id))
+        result = VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id)
+        # Drop any attached DVSA/MOT data when the registration change means it no longer
+        # applies (the form prompts the user before sending this flag).
+        if (request.json or {}).get("disconnect_mot"):
+            MotRepository(db).clear_for_vehicle(vehicle_id)
+        return jsonify(result)
 
 
 @bp.delete("/api/vehicles/<int:vehicle_id>")
