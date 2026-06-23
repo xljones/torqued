@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
+import DeploymentInfo from './DeploymentInfo.jsx';
 import PythonAnywhereStats from './PythonAnywhereStats.jsx';
 import NeonStats from './NeonStats.jsx';
 import { ROLE_LABELS } from '../constants.js';
@@ -374,6 +375,7 @@ export default function AdminPage() {
       <div className="page-header">
         <h1 className="page-title">Deployment</h1>
       </div>
+      <DeploymentInfo />
       <PythonAnywhereStats />
       <NeonStats />
     </div>

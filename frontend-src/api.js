@@ -106,6 +106,7 @@ export const api = {
   // Admin
   getPythonAnywhereStats: () => req('GET', '/admin/pythonanywhere'),
   getNeonStats:           () => req('GET', '/admin/neon'),
+  getDeploymentInfo:      () => req('GET', '/admin/deployment'),
   getDvsaVehicles:        (page = 1) => req('GET', `/dvsa-vehicles?page=${page}`),
 
   // Users

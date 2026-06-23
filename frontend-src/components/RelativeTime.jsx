@@ -29,13 +29,16 @@ function absoluteTime(date) {
   return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '') + ' UTC';
 }
 
-export default function RelativeTime({ value }) {
+export default function RelativeTime({ value, live = true }) {
   const [, tick] = useState(0);
 
   useEffect(() => {
+    // When live is false the label is computed once and only refreshes on the next
+    // render (e.g. a page reload) — used where a quietly ticking time would be noise.
+    if (!live) return undefined;
     const id = setInterval(() => tick(n => n + 1), 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, [live]);
 
   if (!value) return '—';
 

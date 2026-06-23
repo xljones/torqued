@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import RelativeTime from './RelativeTime';
 
@@ -39,6 +39,21 @@ describe('RelativeTime', () => {
   it('renders a several-days-past date as "N days ago"', () => {
     const { container } = render(<RelativeTime value="2026-06-08T12:00:00Z" />);
     expect(container.textContent).toMatch(/\d+ days ago/);
+  });
+
+  it('auto-refreshes by default but stays put when live is false', () => {
+    const past = '2026-06-12T11:59:00Z'; // 1 minute before NOW
+
+    const live = render(<RelativeTime value={past} />);
+    const stale = render(<RelativeTime value={past} live={false} />);
+    expect(live.container.textContent).toMatch(/1 minute ago/);
+    expect(stale.container.textContent).toMatch(/1 minute ago/);
+
+    act(() => vi.advanceTimersByTime(5 * 60_000)); // 5 minutes pass
+
+    // The live one ticks to ~6 minutes; the static one is frozen until the next render.
+    expect(live.container.textContent).toMatch(/6 minutes ago/);
+    expect(stale.container.textContent).toMatch(/1 minute ago/);
   });
 
   it('exposes the absolute UTC time as a tooltip', () => {

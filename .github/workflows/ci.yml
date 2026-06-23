@@ -96,3 +96,27 @@ jobs:
           git add -f dist/
           git commit -m "chore: build frontend dist"
           git push origin deploy --force
+
+      # Trigger the PythonAnywhere redeploy. No-ops unless both repo secrets are set, so a
+      # fork or an unconfigured repo still builds the deploy branch without failing.
+      # The signature must cover the exact bytes the server verifies — f"{ts}.".encode() +
+      # body — so BODY is a fixed string with no trailing newline, sent with --data.
+      - name: Trigger PythonAnywhere redeploy
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$DEPLOY_WEBHOOK_URL" ] || [ -z "$DEPLOY_WEBHOOK_SECRET" ]; then
+            echo "Deploy webhook secrets not set — skipping redeploy trigger."
+            exit 0
+          fi
+          TS=$(date +%s)
+          BODY='{"ref":"deploy"}'
+          SIG=$(printf '%s.%s' "$TS" "$BODY" \
+            | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" -hex \
+            | sed 's/^.*= //')
+          curl -fsS -X POST "$DEPLOY_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Deploy-Timestamp: $TS" \
+            -H "X-Deploy-Signature: $SIG" \
+            --data "$BODY"

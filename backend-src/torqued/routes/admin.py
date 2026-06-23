@@ -2,15 +2,46 @@ import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from flask import Blueprint, jsonify
 from flask.typing import ResponseReturnValue
-from flask_login import current_user, login_required
+
+from torqued.access import admin_required
 
 bp = Blueprint("admin", __name__)
 
 _PA_BASE = "https://www.pythonanywhere.com"
 _NEON_BASE = "https://console.neon.tech/api/v2"
+
+
+def _build_info_path() -> str:
+    # Written into dist/ by CI on each deploy (see .github/workflows/ci.yml). The default
+    # resolves to <repo root>/dist/build-info.json on PythonAnywhere; BUILD_INFO_FILE
+    # overrides it (used by tests).
+    return os.environ.get(
+        "BUILD_INFO_FILE",
+        str(Path(__file__).parent.parent.parent.parent / "dist" / "build-info.json"),
+    )
+
+
+@bp.get("/api/admin/deployment")
+@admin_required
+def deployment_info() -> ResponseReturnValue:
+    try:
+        with open(_build_info_path(), encoding="utf-8") as fh:
+            info = json.load(fh)
+    except (OSError, ValueError):
+        # No dist/build-info.json yet (e.g. dev, or before the first deploy).
+        return jsonify(configured=False), 200
+
+    return jsonify(
+        configured=True,
+        version=info.get("version"),
+        sha=info.get("sha"),
+        msg=info.get("msg"),
+        built_at=info.get("built_at"),
+    ), 200
 
 
 def _pa_get(username: str, token: str, path: str) -> dict | list:
@@ -21,11 +52,8 @@ def _pa_get(username: str, token: str, path: str) -> dict | list:
 
 
 @bp.get("/api/admin/pythonanywhere")
-@login_required
+@admin_required
 def pythonanywhere_stats() -> ResponseReturnValue:
-    if not current_user.is_admin:
-        return jsonify(error="Admin access required"), 403
-
     token = os.environ.get("PA_API_TOKEN", "").strip()
     username = os.environ.get("PA_USERNAME", "").strip()
     if not token or not username:
@@ -73,11 +101,8 @@ def _compute_limit_seconds(project: dict) -> int | None:
 
 
 @bp.get("/api/admin/neon")
-@login_required
+@admin_required
 def neon_stats() -> ResponseReturnValue:
-    if not current_user.is_admin:
-        return jsonify(error="Admin access required"), 403
-
     api_key = os.environ.get("NEON_API_KEY", "").strip()
     if not api_key:
         return jsonify(configured=False), 200

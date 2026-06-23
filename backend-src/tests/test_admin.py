@@ -236,3 +236,40 @@ def test_neon_stats_connection_error(admin_client: FlaskClient, monkeypatch) -> 
     assert r.status_code == 502
     assert r.json["configured"] is True
     assert "timeout" in r.json["error"]
+
+
+def test_deployment_info_requires_auth(client: FlaskClient) -> None:
+    assert client.get("/api/admin/deployment").status_code == 401
+
+
+def test_deployment_info_requires_admin(auth_client: FlaskClient) -> None:
+    assert auth_client.get("/api/admin/deployment").status_code == 403
+
+
+def test_deployment_info_not_configured(admin_client: FlaskClient, monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("BUILD_INFO_FILE", str(tmp_path / "missing.json"))
+    r = admin_client.get("/api/admin/deployment")
+    assert r.status_code == 200
+    assert r.json["configured"] is False
+
+
+def test_deployment_info_success(admin_client: FlaskClient, monkeypatch, tmp_path) -> None:
+    build_info = tmp_path / "build-info.json"
+    build_info.write_text(
+        json.dumps(
+            {
+                "version": "0.0.1",
+                "sha": "abc1234",
+                "msg": "fix(admin): add deployment card",
+                "built_at": "2026-06-23T20:00:00Z",
+            }
+        )
+    )
+    monkeypatch.setenv("BUILD_INFO_FILE", str(build_info))
+    r = admin_client.get("/api/admin/deployment")
+    assert r.status_code == 200
+    assert r.json["configured"] is True
+    assert r.json["version"] == "0.0.1"
+    assert r.json["sha"] == "abc1234"
+    assert r.json["msg"] == "fix(admin): add deployment card"
+    assert r.json["built_at"] == "2026-06-23T20:00:00Z"
