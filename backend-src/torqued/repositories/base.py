@@ -1,7 +1,7 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import RowMapping
+from sqlalchemy import CursorResult, Executable, RowMapping
 from sqlalchemy.orm import Session
 
 from torqued.db import Result, execute_sql
@@ -14,6 +14,10 @@ class BaseRepository:
     def execute(self, sql: str, params: Sequence[Any] = ()) -> Result:
         """Run a raw ``?``-placeholder statement (repositories not yet on the ORM)."""
         return execute_sql(self.session, sql, params)
+
+    def affected(self, statement: Executable) -> int:
+        """Run a Core INSERT/UPDATE/DELETE construct and return the affected row count."""
+        return cast(CursorResult[Any], self.session.execute(statement)).rowcount
 
     @staticmethod
     def _row(r: RowMapping | None) -> dict[str, Any] | None:
