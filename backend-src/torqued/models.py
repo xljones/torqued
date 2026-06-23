@@ -203,7 +203,11 @@ class Photo(Base):
 class DvsaVehicle(Base):
     __tablename__ = "dvsa_vehicles"
 
-    vehicle_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    # Migration 0002 made `id` the surrogate primary key and `vehicle_id` a nullable
+    # FK (ON DELETE SET NULL), so a DVSA record survives its vehicle's deletion as a
+    # detached row (vehicle_id IS NULL).
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vehicle_id: Mapped[int | None] = mapped_column(Integer)
     registration: Mapped[str | None] = mapped_column(Text)
     make: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(Text)

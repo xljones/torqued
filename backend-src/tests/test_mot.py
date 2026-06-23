@@ -388,6 +388,95 @@ def test_vehicle_list_includes_mot_baseline(
     assert row["mot_baseline"]["make"] == "VOLKSWAGEN"
 
 
+# ── admin DVSA vehicles list ────────────────────────────────────────────────────
+
+def _seed_dvsa(garage_id: int, count: int) -> list[int]:
+    """Create `count` vehicles each with a stored DVSA snapshot; return vehicle ids."""
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    ids: list[int] = []
+    with get_db() as db:
+        vehicles = VehicleRepository(db)
+        snapshots = MotRepository(db)
+        for i in range(count):
+            v = vehicles.create(garage_id, {"name": f"Car {i}"})
+            snapshots.replace_for_vehicle(v["id"], {**SAMPLE, "registration": f"REG{i:03d}"})
+            ids.append(v["id"])
+    return ids
+
+
+def test_dvsa_vehicles_requires_auth(client: FlaskClient) -> None:
+    assert client.get("/api/admin/dvsa-vehicles").status_code == 401
+
+
+def test_dvsa_vehicles_requires_admin(auth_client: FlaskClient) -> None:
+    assert auth_client.get("/api/admin/dvsa-vehicles").status_code == 403
+
+
+def test_dvsa_vehicles_ordered_by_fetched_at(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import execute_sql, get_db
+
+    ids = _seed_dvsa(garage["id"], 3)
+    with get_db() as db:
+        for vid, ts in zip(
+            ids, ["2024-01-01 00:00:00", "2024-03-01 00:00:00", "2024-02-01 00:00:00"]
+        ):
+            execute_sql(db, "UPDATE dvsa_vehicles SET fetched_at=? WHERE vehicle_id=?", (ts, vid))
+
+    body = admin_client.get("/api/admin/dvsa-vehicles").json
+    assert body["total"] == 3
+    assert body["pages"] == 1
+    assert [i["fetched_at"] for i in body["items"]] == [
+        "2024-03-01 00:00:00",
+        "2024-02-01 00:00:00",
+        "2024-01-01 00:00:00",
+    ]
+    assert body["items"][0]["make"] == "VOLKSWAGEN"
+    assert body["items"][0]["vehicle_id"] is not None
+
+
+def test_dvsa_vehicles_pagination(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    _seed_dvsa(garage["id"], 26)
+
+    page1 = admin_client.get("/api/admin/dvsa-vehicles").json
+    assert page1["total"] == 26
+    assert page1["page"] == 1
+    assert page1["per_page"] == 25
+    assert page1["pages"] == 2
+    assert len(page1["items"]) == 25
+
+    page2 = admin_client.get("/api/admin/dvsa-vehicles?page=2").json
+    assert page2["page"] == 2
+    assert len(page2["items"]) == 1
+
+
+def test_dvsa_record_retained_after_vehicle_delete(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        v = VehicleRepository(db).create(garage["id"], {"name": "Doomed"})
+        MotRepository(db).replace_for_vehicle(v["id"], {**SAMPLE, "registration": "OLD123"})
+
+    # Deleting the vehicle detaches (does not delete) its DVSA record.
+    with get_db() as db:
+        assert VehicleRepository(db).delete(v["id"]) is True
+
+    items = admin_client.get("/api/admin/dvsa-vehicles").json["items"]
+    detached = [i for i in items if i["registration"] == "OLD123"]
+    assert len(detached) == 1
+    assert detached[0]["vehicle_id"] is None
+
+
 def test_refresh_new_reg_vehicle(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
