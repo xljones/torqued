@@ -40,7 +40,7 @@ class VehicleRepository(BaseRepository):
         placeholders = ",".join("?" * len(garage_ids))
         archived = "" if include_archived else "AND v.archived = 0"
         vehicles = self._rows(
-            self.db.execute(
+            self.execute(
                 f"""
             SELECT v.*, g.name AS garage_name,
                    (SELECT COUNT(*) FROM service_logs s WHERE s.vehicle_id = v.id) AS service_count,
@@ -66,27 +66,32 @@ class VehicleRepository(BaseRepository):
     def get_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return a single vehicle row by primary key, or None if not found."""
         return self._row(
-            self.db.execute("SELECT * FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
+            self.execute("SELECT * FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
         )
+
+    def garage_id_for(self, vehicle_id: int) -> int | None:
+        """Return the id of the garage owning a vehicle, or None if it doesn't exist."""
+        row = self.execute("SELECT garage_id FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
+        return row["garage_id"] if row else None
 
     def get_detail(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return a vehicle with its specs, photos, and latest odometer reading."""
         vehicle = self.get_by_id(vehicle_id)
         if not vehicle:
             return None
-        garage = self.db.execute(
+        garage = self.execute(
             "SELECT name FROM garages WHERE id=?", (vehicle["garage_id"],)
         ).fetchone()
         vehicle["garage_name"] = garage["name"] if garage else None
         vehicle["specs"] = self._rows(
-            self.db.execute(
+            self.execute(
                 "SELECT id, name, value, position FROM vehicle_specs"
                 " WHERE vehicle_id=? ORDER BY position ASC, id ASC",
                 (vehicle_id,),
             ).fetchall()
         )
         vehicle["photos"] = self._rows(
-            self.db.execute(
+            self.execute(
                 """
                 SELECT p.*, u.username AS uploaded_by_username, s.title AS service_title
                 FROM photos p
@@ -114,7 +119,7 @@ class VehicleRepository(BaseRepository):
         if not vehicle_ids:
             return {}
         placeholders = ",".join("?" * len(vehicle_ids))
-        rows = self.db.execute(
+        rows = self.execute(
             f"SELECT vehicle_id, raw_json FROM dvsa_vehicles WHERE vehicle_id IN ({placeholders})",
             tuple(vehicle_ids),
         ).fetchall()
@@ -129,7 +134,7 @@ class VehicleRepository(BaseRepository):
         }}
         cols = ",".join(VEHICLE_FIELDS)
         marks = ",".join("?" * len(VEHICLE_FIELDS))
-        inserted = self.db.execute(
+        inserted = self.execute(
             f"INSERT INTO vehicles (garage_id, {cols}) VALUES (?,{marks}) RETURNING id",
             (garage_id, *(data.get(f) for f in VEHICLE_FIELDS)),
         ).fetchone()
@@ -146,7 +151,7 @@ class VehicleRepository(BaseRepository):
     ) -> dict[str, Any] | None:
         """Update vehicle fields, record a history snapshot, and return the updated row."""
         sets = ",".join(f"{f}=?" for f in VEHICLE_FIELDS)
-        self.db.execute(
+        self.execute(
             f"UPDATE vehicles SET {sets}, updated_at=? WHERE id=?",
             (*(data.get(f) for f in VEHICLE_FIELDS), utcnow_text(), vehicle_id),
         )
@@ -157,18 +162,18 @@ class VehicleRepository(BaseRepository):
 
     def delete(self, vehicle_id: int) -> bool:
         """Delete a vehicle (cascades to specs, logs, photos); return True if a row was removed."""
-        return self.db.execute("DELETE FROM vehicles WHERE id=?", (vehicle_id,)).rowcount > 0
+        return self.execute("DELETE FROM vehicles WHERE id=?", (vehicle_id,)).rowcount > 0
 
     def replace_specs(self, vehicle_id: int, specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Replace the vehicle's free-form spec list; return the new specs in order."""
-        self.db.execute("DELETE FROM vehicle_specs WHERE vehicle_id=?", (vehicle_id,))
+        self.execute("DELETE FROM vehicle_specs WHERE vehicle_id=?", (vehicle_id,))
         for i, spec in enumerate(specs):
-            self.db.execute(
+            self.execute(
                 "INSERT INTO vehicle_specs (vehicle_id, name, value, position) VALUES (?,?,?,?)",
                 (vehicle_id, spec["name"], spec["value"], i),
             )
         return self._rows(
-            self.db.execute(
+            self.execute(
                 "SELECT id, name, value, position FROM vehicle_specs"
                 " WHERE vehicle_id=? ORDER BY position ASC, id ASC",
                 (vehicle_id,),
@@ -177,7 +182,7 @@ class VehicleRepository(BaseRepository):
 
     def latest_odometers(self) -> dict[int, dict[str, Any]]:
         """Return the most recent odometer reading per vehicle across all three sources."""
-        rows = self.db.execute("""
+        rows = self.execute("""
             SELECT vehicle_id, date, odometer_km FROM odometer_logs WHERE source='manual'
             UNION ALL
             SELECT vehicle_id, SUBSTR(completed_date, 1, 10) AS date,
@@ -196,7 +201,7 @@ class VehicleRepository(BaseRepository):
     def mileage_series(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return the merged odometer timeline (manual, MOT, service), oldest first."""
         return self._rows(
-            self.db.execute(
+            self.execute(
                 """
                 SELECT 'manual' AS source, id, date, odometer_km, unit, note
                 FROM odometer_logs WHERE vehicle_id=? AND source='manual'
@@ -221,7 +226,7 @@ class VehicleRepository(BaseRepository):
     def get_history(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return full audit history for a vehicle, newest first, with username."""
         return self._rows(
-            self.db.execute(
+            self.execute(
                 """
                 SELECT vh.*, u.username AS changed_by_username
                 FROM vehicle_history vh
@@ -238,7 +243,7 @@ class VehicleRepository(BaseRepository):
     ) -> dict[str, Any] | None:
         """Restore a vehicle from a history record; return None if the record doesn't exist."""
         h = self._row(
-            self.db.execute(
+            self.execute(
                 "SELECT * FROM vehicle_history WHERE id=? AND vehicle_id=?",
                 (version_id, vehicle_id),
             ).fetchone()
@@ -251,7 +256,7 @@ class VehicleRepository(BaseRepository):
         """Write a snapshot of the vehicle's current field values to vehicle_history."""
         cols = ",".join(VEHICLE_FIELDS)
         marks = ",".join("?" * len(VEHICLE_FIELDS))
-        self.db.execute(
+        self.execute(
             f"INSERT INTO vehicle_history (vehicle_id, changed_by, {cols}) VALUES (?,?,{marks})",
             (vehicle["id"], changed_by, *(vehicle.get(f) for f in VEHICLE_FIELDS)),
         )
@@ -263,7 +268,7 @@ class VehicleRepository(BaseRepository):
         placeholders = ",".join("?" * len(garage_ids))
         q = f"%{query}%"
         return self._rows(
-            self.db.execute(
+            self.execute(
                 f"""
                 SELECT v.*, 'vehicle' AS type FROM vehicles v
                 WHERE v.garage_id IN ({placeholders})

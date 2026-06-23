@@ -1,13 +1,19 @@
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import RowMapping
+from sqlalchemy.orm import Session
 
-from torqued.db import Connection
+from torqued.db import Result, execute_sql
 
 
 class BaseRepository:
-    def __init__(self, db: Connection) -> None:
-        self.db = db
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def execute(self, sql: str, params: Sequence[Any] = ()) -> Result:
+        """Run a raw ``?``-placeholder statement (repositories not yet on the ORM)."""
+        return execute_sql(self.session, sql, params)
 
     @staticmethod
     def _row(r: RowMapping | None) -> dict[str, Any] | None:

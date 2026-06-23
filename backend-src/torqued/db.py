@@ -10,32 +10,34 @@ backing store is chosen entirely by configuration:
   runs; resolved to a ``sqlite:///`` URL.
 * neither set — falls back to an on-disk SQLite file under ``data/``.
 
-Repositories never import a driver or this module's internals; they receive a
-:class:`Connection` from :func:`get_db` and execute SQL through it using the
-ordinary ``"… WHERE id = ?"`` + parameter-tuple convention. The wrapper takes
-care of the dialect (placeholder style, row mapping, transactions).
+Repositories never import a driver; they receive a :class:`~sqlalchemy.orm.Session`
+from :func:`get_db` — one per request, inside a transaction. Repositories on the ORM use
+the session directly; those still on raw SQL go through :func:`execute_sql`, which keeps
+the ordinary ``"… WHERE id = ?"`` + parameter-tuple convention and handles the dialect
+(placeholder style, row mapping).
 """
 import os
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import CursorResult, RowMapping, create_engine, event, text
 from sqlalchemy.engine import URL, Engine
-from sqlalchemy.engine import Connection as SAConnection
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 # IntegrityError is re-exported so routes can catch a duplicate-key violation
 # without importing a driver (or SQLAlchemy) directly — keeping them oblivious
 # to which backend is in use.
 __all__ = [
-    "Connection",
     "IntegrityError",
+    "Result",
     "database_url",
     "db_switcher_enabled",
+    "execute_sql",
     "get_db",
     "run_migrations",
     "set_target_resolver",
@@ -173,26 +175,25 @@ class Result:
         return self._rowcount
 
 
-class Connection:
-    """Dialect-agnostic wrapper over a SQLAlchemy connection.
+def execute_sql(session: Session, sql: str, params: Sequence[Any] = ()) -> Result:
+    """Run a ``?``-placeholder statement on *session*, returning dict-like rows.
 
-    Accepts the repositories' ``execute("… ? …", (args,))`` convention and returns
-    :class:`Result` objects whose rows behave like dictionaries.
+    The raw-SQL bridge for repositories not yet migrated to the ORM (and the few CLI/test
+    helpers that run ad-hoc SQL): it translates the qmark convention to named parameters
+    and wraps the cursor so rows behave like dictionaries.
     """
-
-    def __init__(self, connection: SAConnection) -> None:
-        self._connection = connection
-
-    def execute(self, sql: str, params: Sequence[Any] = ()) -> Result:
-        statement, bound = _to_named(sql, params)
-        return Result(self._connection.execute(text(statement), bound))
+    statement, bound = _to_named(sql, params)
+    # A text() statement always yields a CursorResult at runtime, but Session.execute is
+    # typed to return the base Result; narrow it so Result can read .rowcount.
+    cursor = cast(CursorResult[Any], session.execute(text(statement), bound))
+    return Result(cursor)
 
 
 @contextmanager
-def get_db() -> Generator[Connection, None, None]:
-    """Yield a connection inside a transaction (committed on success, else rolled back)."""
-    with get_engine().begin() as connection:
-        yield Connection(connection)
+def get_db() -> Generator[Session, None, None]:
+    """Yield a session inside a transaction (committed on success, else rolled back)."""
+    with Session(get_engine()) as session, session.begin():
+        yield session
 
 
 def utcnow_text() -> str:

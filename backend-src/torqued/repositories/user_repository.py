@@ -2,16 +2,13 @@ from typing import Any
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from torqued.db import Connection
+from torqued.repositories.base import BaseRepository
 
 
-class UserRepository:
-    def __init__(self, db: Connection) -> None:
-        self.db = db
-
+class UserRepository(BaseRepository):
     def get_by_id(self, user_id: int) -> dict[str, Any] | None:
         """Return a user by their primary key (excluding password_hash), or None if not found."""
-        r = self.db.execute(
+        r = self.execute(
             "SELECT id, username, is_admin, expires_at, created_at FROM users WHERE id=?",
             (user_id,),
         ).fetchone()
@@ -23,18 +20,18 @@ class UserRepository:
 
     def get_by_username(self, username: str) -> dict[str, Any] | None:
         """Return a user by username (case-insensitive) including password_hash, or None."""
-        r = self.db.execute(
+        r = self.execute(
             "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (username,)
         ).fetchone()
         return dict(r) if r else None
 
     def list_all(self) -> list[dict[str, Any]]:
         """Return all users (excluding password_hash) with their garage memberships."""
-        rows = self.db.execute(
+        rows = self.execute(
             "SELECT id, username, is_admin, expires_at, created_at FROM users ORDER BY created_at"
         ).fetchall()
         users = [{**dict(r), "is_admin": bool(r["is_admin"])} for r in rows]
-        memberships = self.db.execute("""
+        memberships = self.execute("""
             SELECT gm.user_id, gm.garage_id, gm.role, g.name AS garage_name
             FROM garage_members gm JOIN garages g ON g.id = gm.garage_id
             ORDER BY g.name
@@ -50,7 +47,7 @@ class UserRepository:
 
     def memberships(self, user_id: int) -> list[dict[str, Any]]:
         """Return the user's garage memberships with garage names."""
-        rows = self.db.execute(
+        rows = self.execute(
             """
             SELECT gm.garage_id, gm.role, g.name AS garage_name
             FROM garage_members gm JOIN garages g ON g.id = gm.garage_id
@@ -68,7 +65,7 @@ class UserRepository:
         expires_at: str | None = None,
     ) -> dict[str, Any]:
         """Insert a new user with a hashed password and return the created user (no hash)."""
-        inserted = self.db.execute(
+        inserted = self.execute(
             "INSERT INTO users (username, password_hash, is_admin, expires_at)"
             " VALUES (?,?,?,?) RETURNING id",
             (username, generate_password_hash(password), int(is_admin), expires_at),
@@ -82,11 +79,11 @@ class UserRepository:
 
     def rename(self, user_id: int, new_username: str) -> None:
         """Update a user's username."""
-        self.db.execute("UPDATE users SET username=? WHERE id=?", (new_username, user_id))
+        self.execute("UPDATE users SET username=? WHERE id=?", (new_username, user_id))
 
     def delete(self, user_id: int) -> bool:
         """Delete a user by their primary key; return True if a row was removed."""
-        return self.db.execute("DELETE FROM users WHERE id=?", (user_id,)).rowcount > 0
+        return self.execute("DELETE FROM users WHERE id=?", (user_id,)).rowcount > 0
 
     def verify_password(self, username: str, password: str) -> dict[str, Any] | None:
         """Return the user if username and password match, or None if authentication fails."""
@@ -97,7 +94,7 @@ class UserRepository:
 
     def set_password(self, user_id: int, new_password: str) -> None:
         """Overwrite a user's password without verifying the current one (admin reset)."""
-        self.db.execute(
+        self.execute(
             "UPDATE users SET password_hash=? WHERE id=?",
             (generate_password_hash(new_password), user_id),
         )
@@ -109,10 +106,10 @@ class UserRepository:
         new_password: str,
     ) -> bool:
         """Verify current_password, update to new_password; return False if wrong."""
-        row = self.db.execute("SELECT password_hash FROM users WHERE id=?", (user_id,)).fetchone()
+        row = self.execute("SELECT password_hash FROM users WHERE id=?", (user_id,)).fetchone()
         if not row or not check_password_hash(row["password_hash"], current_password):
             return False
-        self.db.execute(
+        self.execute(
             "UPDATE users SET password_hash=? WHERE id=?",
             (generate_password_hash(new_password), user_id),
         )

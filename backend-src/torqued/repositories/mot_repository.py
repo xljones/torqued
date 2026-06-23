@@ -16,7 +16,7 @@ class MotRepository(BaseRepository):
     def get_for_vehicle(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return the stored DVSA snapshot for a vehicle (parsed defects), or None."""
         snapshot = self._row(
-            self.db.execute(
+            self.execute(
                 "SELECT * FROM dvsa_vehicles WHERE vehicle_id=?", (vehicle_id,)
             ).fetchone()
         )
@@ -24,7 +24,7 @@ class MotRepository(BaseRepository):
             return None
         snapshot["raw"] = json.loads(snapshot.pop("raw_json"))
         tests = self._rows(
-            self.db.execute(
+            self.execute(
                 "SELECT * FROM mot_tests WHERE vehicle_id=?"
                 " ORDER BY completed_date DESC, id DESC",
                 (vehicle_id,),
@@ -60,7 +60,7 @@ class MotRepository(BaseRepository):
         if vehicle_id is not None:
             where, params = "AND v.id = ?", (*garage_ids, vehicle_id)
         rows = self._rows(
-            self.db.execute(
+            self.execute(
                 f"""
                 SELECT v.id AS vehicle_id, v.name AS vehicle_name, v.kind AS vehicle_kind,
                        v.garage_id, v.odometer_unit AS vehicle_odometer_unit,
@@ -113,9 +113,9 @@ class MotRepository(BaseRepository):
 
     def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
         """Store a fresh DVSA response, replacing any previous snapshot and tests."""
-        self.db.execute("DELETE FROM dvsa_vehicles WHERE vehicle_id=?", (vehicle_id,))
-        self.db.execute("DELETE FROM mot_tests WHERE vehicle_id=?", (vehicle_id,))
-        self.db.execute(
+        self.execute("DELETE FROM dvsa_vehicles WHERE vehicle_id=?", (vehicle_id,))
+        self.execute("DELETE FROM mot_tests WHERE vehicle_id=?", (vehicle_id,))
+        self.execute(
             """
             INSERT INTO dvsa_vehicles (
                 vehicle_id, registration, make, model, first_used_date, fuel_type,
@@ -141,7 +141,7 @@ class MotRepository(BaseRepository):
             ),
         )
         for test in payload.get("motTests") or []:
-            self.db.execute(
+            self.execute(
                 """
                 INSERT INTO mot_tests (
                     vehicle_id, completed_date, test_result, expiry_date, odometer_value,

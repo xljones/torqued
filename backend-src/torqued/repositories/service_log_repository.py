@@ -38,7 +38,7 @@ class ServiceLogRepository(BaseRepository):
         if not log_ids:
             return {}
         placeholders = ",".join("?" * len(log_ids))
-        rows = self.db.execute(
+        rows = self.execute(
             f"SELECT service_log_id, code FROM service_log_fault_codes"
             f" WHERE service_log_id IN ({placeholders}) ORDER BY id",
             tuple(log_ids),
@@ -63,13 +63,13 @@ class ServiceLogRepository(BaseRepository):
 
     def _replace_fault_codes(self, log_id: int, codes: list[str]) -> None:
         """Delete and re-insert fault codes for a service log."""
-        self.db.execute(
+        self.execute(
             "DELETE FROM service_log_fault_codes WHERE service_log_id=?", (log_id,)
         )
         for code in codes:
             stripped = code.strip().upper()
             if stripped:
-                self.db.execute(
+                self.execute(
                     "INSERT INTO service_log_fault_codes (service_log_id, code) VALUES (?,?)",
                     (log_id, stripped),
                 )
@@ -80,7 +80,7 @@ class ServiceLogRepository(BaseRepository):
             return []
         placeholders = ",".join("?" * len(garage_ids))
         logs = self._rows(
-            self.db.execute(
+            self.execute(
                 f"{_VEHICLE_JOIN} WHERE v.garage_id IN ({placeholders})"
                 " ORDER BY s.date DESC, s.id DESC",
                 tuple(garage_ids),
@@ -91,7 +91,7 @@ class ServiceLogRepository(BaseRepository):
     def list_for_vehicle(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's service logs, newest first."""
         logs = self._rows(
-            self.db.execute(
+            self.execute(
                 f"{_VEHICLE_JOIN} WHERE s.vehicle_id=? ORDER BY s.date DESC, s.id DESC",
                 (vehicle_id,),
             ).fetchall()
@@ -100,11 +100,11 @@ class ServiceLogRepository(BaseRepository):
 
     def get_by_id(self, log_id: int) -> dict[str, Any] | None:
         """Return a single service log with vehicle info, photos, and fault codes."""
-        log = self._row(self.db.execute(f"{_VEHICLE_JOIN} WHERE s.id=?", (log_id,)).fetchone())
+        log = self._row(self.execute(f"{_VEHICLE_JOIN} WHERE s.id=?", (log_id,)).fetchone())
         if not log:
             return None
         log["photos"] = self._rows(
-            self.db.execute(
+            self.execute(
                 """
                 SELECT p.*, u.username AS uploaded_by_username
                 FROM photos p LEFT JOIN users u ON u.id = p.uploaded_by
@@ -120,7 +120,7 @@ class ServiceLogRepository(BaseRepository):
         """Insert a new service log and record its initial history snapshot."""
         cols = ",".join(SERVICE_FIELDS)
         marks = ",".join("?" * len(SERVICE_FIELDS))
-        inserted = self.db.execute(
+        inserted = self.execute(
             f"INSERT INTO service_logs ({cols}) VALUES ({marks}) RETURNING id",
             tuple(data.get(f) for f in SERVICE_FIELDS),
         ).fetchone()
@@ -142,7 +142,7 @@ class ServiceLogRepository(BaseRepository):
         """Update service log fields, record a history snapshot, and return the updated log."""
         fields = [f for f in SERVICE_FIELDS if f != "vehicle_id"]
         sets = ",".join(f"{f}=?" for f in fields)
-        self.db.execute(
+        self.execute(
             f"UPDATE service_logs SET {sets}, updated_at=? WHERE id=?",
             (*(data.get(f) for f in fields), utcnow_text(), log_id),
         )
@@ -155,12 +155,12 @@ class ServiceLogRepository(BaseRepository):
 
     def delete(self, log_id: int) -> bool:
         """Delete a service log by primary key; return True if a row was removed."""
-        return self.db.execute("DELETE FROM service_logs WHERE id=?", (log_id,)).rowcount > 0
+        return self.execute("DELETE FROM service_logs WHERE id=?", (log_id,)).rowcount > 0
 
     def get_history(self, log_id: int) -> list[dict[str, Any]]:
         """Return full audit history for a service log, newest first, with username."""
         return self._rows(
-            self.db.execute(
+            self.execute(
                 """
                 SELECT sh.*, u.username AS changed_by_username
                 FROM service_log_history sh
@@ -177,7 +177,7 @@ class ServiceLogRepository(BaseRepository):
     ) -> dict[str, Any] | None:
         """Restore a service log from a history record; return None if it doesn't exist."""
         h = self._row(
-            self.db.execute(
+            self.execute(
                 "SELECT * FROM service_log_history WHERE id=? AND service_log_id=?",
                 (version_id, log_id),
             ).fetchone()
@@ -190,7 +190,7 @@ class ServiceLogRepository(BaseRepository):
         """Write a snapshot of the service log's current field values to history."""
         cols = ",".join(SERVICE_FIELDS)
         marks = ",".join("?" * len(SERVICE_FIELDS))
-        self.db.execute(
+        self.execute(
             f"INSERT INTO service_log_history (service_log_id, changed_by, {cols})"
             f" VALUES (?,?,{marks})",
             (log["id"], changed_by, *(log.get(f) for f in SERVICE_FIELDS)),
@@ -221,7 +221,7 @@ class ServiceLogRepository(BaseRepository):
         if vehicle_id is not None:
             where, params = "AND s.vehicle_id = ?", (*garage_ids, vehicle_id)
         candidates = self._rows(
-            self.db.execute(
+            self.execute(
                 f"""
                 SELECT s.*, v.name AS vehicle_name, v.kind AS vehicle_kind, v.garage_id,
                        v.odometer_unit AS vehicle_odometer_unit
@@ -245,7 +245,7 @@ class ServiceLogRepository(BaseRepository):
         )
         from torqued.repositories.vehicle_repository import VehicleRepository
 
-        latest = VehicleRepository(self.db).latest_odometers()
+        latest = VehicleRepository(self.session).latest_odometers()
         soon_cutoff = (today + timedelta(days=DUE_SOON_DAYS)).isoformat()
         reminders = []
         for s in candidates:
@@ -270,7 +270,7 @@ class ServiceLogRepository(BaseRepository):
         from torqued.repositories.mot_repository import MotRepository
 
         reminders.extend(
-            MotRepository(self.db).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
+            MotRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
         )
         order = {"overdue": 0, "due_soon": 1, "upcoming": 2}
         reminders.sort(key=lambda r: (order[r["status"]], r["next_due_date"] or "9999-12-31"))
@@ -283,7 +283,7 @@ class ServiceLogRepository(BaseRepository):
         placeholders = ",".join("?" * len(garage_ids))
         q = f"%{query}%"
         return self._rows(
-            self.db.execute(
+            self.execute(
                 f"""
                 {_VEHICLE_JOIN}
                 WHERE v.garage_id IN ({placeholders})
@@ -302,7 +302,7 @@ class ServiceLogRepository(BaseRepository):
         placeholders = ",".join("?" * len(garage_ids))
         return [
             r["performed_by"]
-            for r in self.db.execute(
+            for r in self.execute(
                 f"""
                 SELECT DISTINCT s.performed_by FROM service_logs s
                 JOIN vehicles v ON v.id = s.vehicle_id
@@ -326,7 +326,7 @@ class ServiceLogRepository(BaseRepository):
         if vehicle_id is not None:
             where, params = "AND s.vehicle_id = ?", (*garage_ids, vehicle_id)
         return self._rows(
-            self.db.execute(
+            self.execute(
                 f"""
                 SELECT g.name AS garage, v.name AS vehicle, v.make, v.model, v.registration,
                        s.date, s.title, s.category, s.description, s.performed_by,

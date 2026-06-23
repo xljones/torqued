@@ -6,26 +6,28 @@ read-write on its vehicles; 'readonly' can only view. Site admins
 """
 from typing import Any
 
-from torqued.db import Connection
+from sqlalchemy.orm import Session
 
 WRITE_ROLES = ("owner", "member")
 
 
-def garage_role(db: Connection, user: Any, garage_id: int) -> str | None:
+def garage_role(session: Session, user: Any, garage_id: int) -> str | None:
     """Return the user's effective role in a garage, or None if no access."""
     if user.is_admin:
         return "owner"
     from torqued.repositories.garage_repository import GarageRepository
 
-    return GarageRepository(db).member_role(garage_id, user.id)
+    return GarageRepository(session).member_role(garage_id, user.id)
 
 
-def vehicle_role(db: Connection, user: Any, vehicle_id: int) -> str | None:
+def vehicle_role(session: Session, user: Any, vehicle_id: int) -> str | None:
     """Return the user's effective role for the garage owning a vehicle, or None."""
-    row = db.execute("SELECT garage_id FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
-    if not row:
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    garage_id = VehicleRepository(session).garage_id_for(vehicle_id)
+    if garage_id is None:
         return None
-    return garage_role(db, user, row["garage_id"])
+    return garage_role(session, user, garage_id)
 
 
 def can_write(role: str | None) -> bool:
@@ -33,8 +35,8 @@ def can_write(role: str | None) -> bool:
     return role in WRITE_ROLES
 
 
-def accessible_garage_ids(db: Connection, user: Any) -> list[int]:
+def accessible_garage_ids(session: Session, user: Any) -> list[int]:
     """Garage IDs visible to the user (all garages for site admins)."""
     from torqued.repositories.garage_repository import GarageRepository
 
-    return GarageRepository(db).accessible_garage_ids(user.id, user.is_admin)
+    return GarageRepository(session).accessible_garage_ids(user.id, user.is_admin)

@@ -1,7 +1,7 @@
 from flask import Flask
 from flask.testing import FlaskClient
 
-from torqued.db import get_db
+from torqued.db import execute_sql, get_db
 from torqued.repositories.user_repository import UserRepository
 
 
@@ -31,7 +31,8 @@ def test_login_expired_account(client: FlaskClient, app: Flask) -> None:
     with app.app_context():
         with get_db() as db:
             user = UserRepository(db).create("expired", "pass")
-            db.execute(
+            execute_sql(
+                db,
                 "UPDATE users SET expires_at=? WHERE id=?",
                 ("2000-01-01T00:00:00+00:00", user["id"]),
             )

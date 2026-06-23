@@ -7,7 +7,7 @@ class OdometerLogRepository(BaseRepository):
     def list_for_vehicle(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's manual odometer logs, newest first."""
         return self._rows(
-            self.db.execute(
+            self.execute(
                 "SELECT * FROM odometer_logs WHERE vehicle_id=? AND source='manual'"
                 " ORDER BY date DESC, odometer_km DESC, id DESC",
                 (vehicle_id,),
@@ -17,7 +17,7 @@ class OdometerLogRepository(BaseRepository):
     def get_by_id(self, log_id: int) -> dict[str, Any] | None:
         """Return a single odometer log by primary key, or None if not found."""
         return self._row(
-            self.db.execute("SELECT * FROM odometer_logs WHERE id=?", (log_id,)).fetchone()
+            self.execute("SELECT * FROM odometer_logs WHERE id=?", (log_id,)).fetchone()
         )
 
     def create(
@@ -29,7 +29,7 @@ class OdometerLogRepository(BaseRepository):
         note: str | None = None,
     ) -> dict[str, Any]:
         """Insert a manual odometer reading (stored canonically in km)."""
-        inserted = self.db.execute(
+        inserted = self.execute(
             "INSERT INTO odometer_logs (vehicle_id, date, odometer_km, unit, note)"
             " VALUES (?,?,?,?,?) RETURNING id",
             (vehicle_id, date, odometer_km, unit, note),
@@ -43,4 +43,4 @@ class OdometerLogRepository(BaseRepository):
 
     def delete(self, log_id: int) -> bool:
         """Delete an odometer log by primary key; return True if a row was removed."""
-        return self.db.execute("DELETE FROM odometer_logs WHERE id=?", (log_id,)).rowcount > 0
+        return self.execute("DELETE FROM odometer_logs WHERE id=?", (log_id,)).rowcount > 0
