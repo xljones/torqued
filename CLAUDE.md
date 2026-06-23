@@ -177,14 +177,17 @@ Locally the database is PostgreSQL in the `db` container (data in the `pgdata` v
 ## PythonAnywhere deployment
 
 ```bash
-make deploy-pa    # reset to origin/deploy, install deps, migrate the DB (behind a maintenance page), then reload
+make deploy-pa    # reset to origin/deploy, install deps, back up + migrate the DB (behind a maintenance page), then reload
 ```
 
-`deploy-pa` runs `manage.py migrate` (on PA `DATABASE_URL` *is* production) wrapped in
-`touch MAINTENANCE` / `rm MAINTENANCE`. While that flag file exists, every request gets a
-503 maintenance page (a `before_request` hook in `__init__.py` checks `MAINTENANCE_FILE`,
-defaulting to a `MAINTENANCE` file at the project root) — covering the brief migration
-window. A failed migration leaves the flag in place on purpose. `manage.py` now loads the
+`deploy-pa` runs `manage.py db-backup --keep 3` then `manage.py migrate` (on PA
+`DATABASE_URL` *is* production) wrapped in `touch MAINTENANCE` / `rm MAINTENANCE`. The
+backup is a pre-migration rollback point taken with the site quiesced; `--keep 3` prunes
+all but the 3 newest `data/db-backup-*.sql` files so each deploy leaves a short rolling
+window. While that flag file exists, every request gets a 503 maintenance page (a
+`before_request` hook in `__init__.py` checks `MAINTENANCE_FILE`, defaulting to a
+`MAINTENANCE` file at the project root) — covering the brief backup + migration window. A
+failed backup or migration leaves the flag in place on purpose. `manage.py` now loads the
 project `.env` (via `python-dotenv`) so CLI commands target the same database as the web app.
 
 All `make` commands listed under **Database & users** above auto-detect the environment: on PythonAnywhere they run via `venv/bin/python backend-src/manage.py` directly; locally they go through Docker. Detection uses `PYTHONANYWHERE_SITE`, an env var PythonAnywhere injects automatically into every console and web process (set to the site's domain, e.g. `username.pythonanywhere.com`).

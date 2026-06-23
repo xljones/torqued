@@ -330,6 +330,20 @@ def _backup_dir(url: Any) -> Path:
     return Path("data")
 
 
+def _prune_backups(backup_dir: Path, keep: int) -> None:
+    """Keep only the ``keep`` newest db-backup-*.sql files, deleting the rest.
+
+    Filenames embed a %Y%m%d_%H%M%S timestamp, so a plain name sort is chronological —
+    the newest land last. Used by the deploy script (``db-backup --keep 3``) so each
+    deploy leaves a short rolling window of pre-migration snapshots rather than an
+    ever-growing pile.
+    """
+    backups = sorted(backup_dir.glob("db-backup-*.sql"))
+    for path in backups[:-keep] if keep > 0 else backups:
+        path.unlink()
+        print(f"Pruned old backup {path}")
+
+
 def _confirm_destructive(url: Any, action: str) -> None:
     """Abort unless the operator retypes the exact target the action will hit.
 
@@ -417,9 +431,15 @@ def cmd_db_restore(args: list[str]) -> None:
     print(f"Database restored from {backup_path}")
 
 
-def cmd_db_backup(_: list[str]) -> None:
+def cmd_db_backup(args: list[str]) -> None:
     import datetime
     import subprocess
+
+    # Optional `--keep N`: after writing, prune to the N newest backups. Omitted from a
+    # plain `make db-backup` (retain everything); the deploy script passes `--keep 3`.
+    keep: int | None = None
+    if "--keep" in args:
+        keep = int(args[args.index("--keep") + 1])
 
     url = _active_url()
     backup_dir = _backup_dir(url)
@@ -440,6 +460,9 @@ def cmd_db_backup(_: list[str]) -> None:
         with open(backup_path, "w") as f:
             subprocess.run(["pg_dump", dsn], check=True, stdout=f, env=env)
     print(f"Backup written to {backup_path}")
+
+    if keep is not None:
+        _prune_backups(backup_dir, keep)
 
 
 def cmd_migrate(_: list[str]) -> None:
