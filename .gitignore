@@ -17,3 +17,5 @@ backend-src/.coverage
 backend-src/data
 .coverage
 MAINTENANCE
+DEPLOY_LOCK
+deploy-webhook.log
