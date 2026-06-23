@@ -91,6 +91,7 @@ def _get_token() -> str:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
+        e.close()
         raise MotError(f"DVSA authentication failed: {e.code} {e.reason}") from e
     except Exception as e:
         raise MotError(f"Could not reach DVSA token endpoint: {e}") from e
@@ -114,6 +115,7 @@ def fetch_vehicle(registration: str) -> dict[str, Any]:
             result: dict[str, Any] = json.loads(resp.read().decode())
             return result
     except urllib.error.HTTPError as e:
+        e.close()
         if e.code == 404:
             raise MotError(f"No MOT record found for registration {reg}", 404) from e
         raise MotError(f"DVSA API error: {e.code} {e.reason}") from e

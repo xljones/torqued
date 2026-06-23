@@ -64,7 +64,9 @@ def pythonanywhere_stats() -> ResponseReturnValue:
         webapps = _pa_get(username, token, "/webapps/")
         schedule = _pa_get(username, token, "/schedule/")
     except urllib.error.HTTPError as e:
-        return jsonify(configured=True, error=f"PythonAnywhere API error: {e.code} {e.reason}"), 502
+        error = f"PythonAnywhere API error: {e.code} {e.reason}"
+        e.close()
+        return jsonify(configured=True, error=error), 502
     except Exception as e:
         return jsonify(configured=True, error=f"Could not reach PythonAnywhere API: {e}"), 502
 
@@ -119,7 +121,9 @@ def neon_stats() -> ResponseReturnValue:
             project_id = projects[0]["id"]
         project = _neon_get(api_key, f"/projects/{project_id}").get("project", {})
     except urllib.error.HTTPError as e:
-        return jsonify(configured=True, error=f"Neon API error: {e.code} {e.reason}"), 502
+        error = f"Neon API error: {e.code} {e.reason}"
+        e.close()
+        return jsonify(configured=True, error=error), 502
     except Exception as e:
         return jsonify(configured=True, error=f"Could not reach Neon API: {e}"), 502
 

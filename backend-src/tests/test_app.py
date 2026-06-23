@@ -141,6 +141,7 @@ def test_serve_frontend_root(client: FlaskClient, tmp_path: Path, monkeypatch) -
     r = client.get("/")
     assert r.status_code == 200
     assert b"App" in r.data
+    r.close()
 
 
 def test_serve_frontend_existing_file(client: FlaskClient, tmp_path: Path, monkeypatch) -> None:
@@ -151,6 +152,7 @@ def test_serve_frontend_existing_file(client: FlaskClient, tmp_path: Path, monke
     r = client.get("/app.js")
     assert r.status_code == 200
     assert b"var x" in r.data
+    r.close()
 
 
 def test_serve_frontend_missing_path_returns_index(
@@ -162,6 +164,7 @@ def test_serve_frontend_missing_path_returns_index(
     r = client.get("/some/deep/path")
     assert r.status_code == 200
     assert b"Fallback" in r.data
+    r.close()
 
 
 def test_unknown_api_route_returns_404_json(client: FlaskClient) -> None:
