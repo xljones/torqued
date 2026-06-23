@@ -4,6 +4,7 @@ from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
+from torqued import mot
 from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
@@ -114,6 +115,9 @@ def create_vehicle() -> ResponseReturnValue:
         if not can_write(role):
             return jsonify(error="Read-only access to this garage"), 403
         vehicle = VehicleRepository(db).create(garage_id, data, changed_by=current_user.id)
+        # Re-attach a DVSA snapshot left behind by a deleted vehicle on the same plate.
+        if (vehicle.get("registration") or "").strip():
+            MotRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
     return jsonify(vehicle), 201
 
 
@@ -142,11 +146,23 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         err = _check_vehicle(db, vehicle_id, write=True)
         if err:
             return err
+        old = VehicleRepository(db).get_by_id(vehicle_id)
         result = VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id)
+        mot_repo = MotRepository(db)
         # Drop any attached DVSA/MOT data when the registration change means it no longer
         # applies (the form prompts the user before sending this flag).
         if (request.json or {}).get("disconnect_mot"):
-            MotRepository(db).clear_for_vehicle(vehicle_id)
+            mot_repo.clear_for_vehicle(vehicle_id)
+        # If the plate changed and nothing is attached, re-link a detached DVSA snapshot
+        # left behind by a deleted vehicle on the new plate.
+        new_reg = (result.get("registration") or "") if result else ""
+        old_reg = (old or {}).get("registration") or ""
+        if (
+            new_reg.strip()
+            and mot.normalise_registration(new_reg) != mot.normalise_registration(old_reg)
+            and mot_repo.get_for_vehicle(vehicle_id) is None
+        ):
+            mot_repo.relink_detached(vehicle_id, new_reg)
         return jsonify(result)
 
 
