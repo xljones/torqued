@@ -110,9 +110,9 @@ From a **PythonAnywhere Bash console** inside `~/torqued`:
 make deploy-pa
 ```
 
-This switches to the `deploy` branch, pulls the latest changes (including the freshly built `dist/`), installs any new Python dependencies, and **runs database migrations** (showing a brief maintenance page while they apply — see below). Then reload the web app from the PythonAnywhere Web tab to apply the new code.
+This switches to the `deploy` branch, pulls the latest changes (including the freshly built `dist/`), installs any new Python dependencies, **backs up the database** and then **runs database migrations** (both behind a brief maintenance page — see below). The backup (`manage.py db-backup --keep 3`) is a pre-migration rollback point written to `data/db-backup-<timestamp>.sql`; `--keep 3` prunes all but the 3 newest so you always have the last few deploys' snapshots without the directory growing unbounded. Restore one with `make db-restore file=db-backup-<timestamp>.sql` if a migration goes wrong. Then reload the web app from the PythonAnywhere Web tab to apply the new code.
 
-> If a migration fails, the `MAINTENANCE` flag is left in place so the site keeps showing the maintenance page rather than serving against a half-migrated schema. Fix the issue and re-run `make deploy-pa`, or remove the flag with `rm MAINTENANCE` once resolved.
+> If the backup or a migration fails, the `MAINTENANCE` flag is left in place so the site keeps showing the maintenance page rather than serving against a half-migrated schema. Fix the issue and re-run `make deploy-pa`, or remove the flag with `rm MAINTENANCE` once resolved.
 
 ### Automatic redeploy on merge to `main` (optional)
 

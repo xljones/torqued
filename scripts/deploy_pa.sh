@@ -27,10 +27,13 @@ git fetch origin && git checkout deploy && git reset --hard origin/deploy
 [ -d venv ] || python3 -m venv venv
 venv/bin/pip install -r requirements.txt
 
-# Show a maintenance page while the schema is migrated (DATABASE_URL is the production DB
-# on PythonAnywhere). If migration fails the flag stays, keeping the site in maintenance
-# until you fix it and re-run (or `rm MAINTENANCE`).
+# Show a maintenance page while we back up the database and migrate the schema
+# (DATABASE_URL is the production DB on PythonAnywhere). The backup is a pre-migration
+# rollback point taken with the site quiesced; only the 3 newest are kept. If the backup
+# or the migration fails the flag stays, keeping the site in maintenance until you fix it
+# and re-run (or `rm MAINTENANCE`).
 touch MAINTENANCE
+venv/bin/python backend-src/manage.py db-backup --keep 3
 venv/bin/python backend-src/manage.py migrate
 rm -f MAINTENANCE
 
