@@ -3,9 +3,12 @@ import os
 import urllib.error
 import urllib.request
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
+
+from torqued.db import get_db
+from torqued.repositories.mot_repository import MotRepository
 
 bp = Blueprint("admin", __name__)
 
@@ -117,3 +120,14 @@ def neon_stats() -> ResponseReturnValue:
         quota_reset_at=project.get("quota_reset_at"),
         last_active_at=project.get("compute_last_active_at"),
     ), 200
+
+
+@bp.get("/api/admin/dvsa-vehicles")
+@login_required
+def dvsa_vehicles() -> ResponseReturnValue:
+    if not current_user.is_admin:
+        return jsonify(error="Admin access required"), 403
+
+    page = max(1, request.args.get("page", 1, type=int))
+    with get_db() as db:
+        return jsonify(MotRepository(db).list_all(page)), 200

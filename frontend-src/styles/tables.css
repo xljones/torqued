@@ -10,6 +10,7 @@ tr.row-selected td { background: var(--surface2); }
 .col-checkbox { width: 32px; padding: 0 8px; }
 .empty { text-align: center; color: var(--text2); padding: 40px 16px; }
 .row-actions { display: flex; gap: 6px; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 12px; border-top: 1px solid var(--border); }
 
 @media (max-width: 768px) {
   .col-mobile-hide { display: none; }

@@ -2,7 +2,7 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
@@ -18,7 +18,11 @@ MOT_DUE_SOON_DAYS = 60
 class MotRepository(BaseRepository):
     def get_for_vehicle(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return the stored DVSA snapshot for a vehicle (parsed defects), or None."""
-        dvsa = self.session.get(DvsaVehicle, vehicle_id)
+        # vehicle_id is no longer the primary key (migration 0002), so look it up by
+        # column rather than session.get().
+        dvsa = self.session.scalars(
+            select(DvsaVehicle).where(DvsaVehicle.vehicle_id == vehicle_id)
+        ).first()
         if dvsa is None:
             return None
         snapshot = to_dict(dvsa)
@@ -36,6 +40,39 @@ class MotRepository(BaseRepository):
             parsed.append(t)
         snapshot["tests"] = parsed
         return snapshot
+
+    def list_all(self, page: int = 1, per_page: int = 25) -> dict[str, Any]:
+        """Return a page of every stored DVSA snapshot, newest refresh first.
+
+        ``vehicle_id`` is included verbatim: NULL marks a record whose vehicle has
+        since been deleted (see migration 0002), which the admin view shows as a
+        detached record rather than a link.
+        """
+        total = self.session.scalar(select(func.count()).select_from(DvsaVehicle)) or 0
+        rows = (
+            self.session.execute(
+                select(
+                    DvsaVehicle.id,
+                    DvsaVehicle.vehicle_id,
+                    DvsaVehicle.registration,
+                    DvsaVehicle.make,
+                    DvsaVehicle.model,
+                    DvsaVehicle.fetched_at,
+                )
+                .order_by(DvsaVehicle.fetched_at.desc(), DvsaVehicle.id.desc())
+                .limit(per_page)
+                .offset((page - 1) * per_page)
+            )
+            .mappings()
+            .all()
+        )
+        return {
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": (total + per_page - 1) // per_page,
+        }
 
     def reminders(
         self,
