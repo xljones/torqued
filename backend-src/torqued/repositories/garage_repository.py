@@ -1,145 +1,180 @@
 from typing import Any
 
+from sqlalchemy import case, delete, func, select, update
+from sqlalchemy.orm import aliased
+
+from torqued.models import Garage, GarageMember, User, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
 ROLES = ("owner", "member", "readonly")
 
 
+def _count_subqueries() -> tuple[Any, Any]:
+    """Correlated per-garage vehicle and member counts (aliased so they never collide
+    with a garage_members table joined in the outer query)."""
+    v = aliased(Vehicle)
+    m = aliased(GarageMember)
+    vehicle_count = (
+        select(func.count()).select_from(v).where(v.garage_id == Garage.id).correlate(Garage)
+    ).scalar_subquery()
+    member_count = (
+        select(func.count()).select_from(m).where(m.garage_id == Garage.id).correlate(Garage)
+    ).scalar_subquery()
+    return vehicle_count, member_count
+
+
 class GarageRepository(BaseRepository):
     def list_all(self) -> list[dict[str, Any]]:
         """Return every garage with vehicle and member counts (site-admin view)."""
-        return self._rows(
-            self.execute("""
-            SELECT g.*,
-                   (SELECT COUNT(*) FROM vehicles v WHERE v.garage_id = g.id) AS vehicle_count,
-                   (SELECT COUNT(*) FROM garage_members m WHERE m.garage_id = g.id) AS member_count
-            FROM garages g ORDER BY g.name
-        """).fetchall()
-        )
+        vehicle_count, member_count = _count_subqueries()
+        rows = self.session.execute(
+            select(
+                Garage,
+                vehicle_count.label("vehicle_count"),
+                member_count.label("member_count"),
+            ).order_by(Garage.name)
+        ).all()
+        return [
+            {**to_dict(garage), "vehicle_count": vc, "member_count": mc}
+            for garage, vc, mc in rows
+        ]
 
     def list_for_user(self, user_id: int) -> list[dict[str, Any]]:
         """Return the garages a user belongs to, with their role and counts."""
-        return self._rows(
-            self.execute(
-                """
-                SELECT g.*, gm.role,
-                       (SELECT COUNT(*) FROM vehicles v WHERE v.garage_id = g.id) AS vehicle_count,
-                       (SELECT COUNT(*) FROM garage_members m
-                        WHERE m.garage_id = g.id) AS member_count
-                FROM garages g JOIN garage_members gm ON gm.garage_id = g.id
-                WHERE gm.user_id = ? ORDER BY g.name
-                """,
-                (user_id,),
-            ).fetchall()
-        )
+        vehicle_count, member_count = _count_subqueries()
+        rows = self.session.execute(
+            select(
+                Garage,
+                GarageMember.role,
+                vehicle_count.label("vehicle_count"),
+                member_count.label("member_count"),
+            )
+            .join(GarageMember, GarageMember.garage_id == Garage.id)
+            .where(GarageMember.user_id == user_id)
+            .order_by(Garage.name)
+        ).all()
+        return [
+            {**to_dict(garage), "role": role, "vehicle_count": vc, "member_count": mc}
+            for garage, role, vc, mc in rows
+        ]
 
     def get_by_id(self, garage_id: int) -> dict[str, Any] | None:
         """Return a single garage by primary key, or None if not found."""
-        return self._row(
-            self.execute("SELECT * FROM garages WHERE id=?", (garage_id,)).fetchone()
-        )
+        garage = self.session.get(Garage, garage_id)
+        return to_dict(garage) if garage else None
 
     def get_by_name(self, name: str) -> dict[str, Any] | None:
         """Return a garage by name (case-insensitive), or None if not found."""
-        return self._row(
-            self.execute(
-                "SELECT * FROM garages WHERE LOWER(name) = LOWER(?)", (name,)
-            ).fetchone()
-        )
+        garage = self.session.scalars(
+            select(Garage).where(func.lower(Garage.name) == func.lower(name))
+        ).first()
+        return to_dict(garage) if garage else None
 
     def create(self, name: str) -> dict[str, Any]:
         """Insert a new garage and return it."""
-        inserted = self.execute(
-            "INSERT INTO garages (name) VALUES (?) RETURNING id", (name,)
-        ).fetchone()
-        if inserted is None:  # pragma: no cover
-            raise RuntimeError("INSERT returned no row ID")
-        garage = self.get_by_id(inserted["id"])
-        if garage is None:  # pragma: no cover
-            raise RuntimeError(f"Row {inserted['id']} not found after INSERT")
-        return garage
+        garage = Garage(name=name)
+        self.session.add(garage)
+        self.session.flush()  # assigns the PK and surfaces a duplicate-name IntegrityError
+        created = self.get_by_id(garage.id)
+        if created is None:  # pragma: no cover
+            raise RuntimeError(f"Row {garage.id} not found after INSERT")
+        return created
 
     def rename(self, garage_id: int, name: str) -> dict[str, Any] | None:
         """Rename a garage and return the updated row."""
-        self.execute("UPDATE garages SET name=? WHERE id=?", (name, garage_id))
+        self.session.execute(update(Garage).where(Garage.id == garage_id).values(name=name))
         return self.get_by_id(garage_id)
 
     def delete(self, garage_id: int) -> bool:
         """Delete a garage (cascades to members and vehicles); True if a row was removed."""
-        return self.execute("DELETE FROM garages WHERE id=?", (garage_id,)).rowcount > 0
+        return self.affected(delete(Garage).where(Garage.id == garage_id)) > 0
 
     # ── membership ───────────────────────────────────────────────────────────
 
     def member_role(self, garage_id: int, user_id: int) -> str | None:
         """Return the user's role in a garage, or None if they aren't a member."""
-        r = self.execute(
-            "SELECT role FROM garage_members WHERE garage_id=? AND user_id=?",
-            (garage_id, user_id),
-        ).fetchone()
-        return r["role"] if r else None
+        return self.session.scalars(
+            select(GarageMember.role).where(
+                GarageMember.garage_id == garage_id, GarageMember.user_id == user_id
+            )
+        ).first()
 
     def list_members(self, garage_id: int) -> list[dict[str, Any]]:
         """Return a garage's members with usernames, owners first."""
-        return self._rows(
-            self.execute(
-                """
-                SELECT gm.user_id, gm.role, gm.created_at, u.username
-                FROM garage_members gm JOIN users u ON u.id = gm.user_id
-                WHERE gm.garage_id = ?
-                ORDER BY CASE gm.role WHEN 'owner' THEN 0 WHEN 'member' THEN 1 ELSE 2 END,
-                         u.username
-                """,
-                (garage_id,),
-            ).fetchall()
+        rows = (
+            self.session.execute(
+                select(
+                    GarageMember.user_id,
+                    GarageMember.role,
+                    GarageMember.created_at,
+                    User.username,
+                )
+                .join(User, User.id == GarageMember.user_id)
+                .where(GarageMember.garage_id == garage_id)
+                .order_by(
+                    case(
+                        (GarageMember.role == "owner", 0),
+                        (GarageMember.role == "member", 1),
+                        else_=2,
+                    ),
+                    User.username,
+                )
+            )
+            .mappings()
+            .all()
         )
+        return [dict(r) for r in rows]
 
     def add_member(self, garage_id: int, user_id: int, role: str) -> dict[str, Any]:
         """Add a user to a garage with the given role; returns the membership row."""
-        self.execute(
-            "INSERT INTO garage_members (garage_id, user_id, role) VALUES (?,?,?)",
-            (garage_id, user_id, role),
-        )
-        member = self._row(
-            self.execute(
-                """
-                SELECT gm.user_id, gm.role, gm.created_at, u.username
-                FROM garage_members gm JOIN users u ON u.id = gm.user_id
-                WHERE gm.garage_id=? AND gm.user_id=?
-                """,
-                (garage_id, user_id),
-            ).fetchone()
+        self.session.add(GarageMember(garage_id=garage_id, user_id=user_id, role=role))
+        self.session.flush()  # surfaces the unique (garage_id, user_id) IntegrityError
+        member = (
+            self.session.execute(
+                select(
+                    GarageMember.user_id,
+                    GarageMember.role,
+                    GarageMember.created_at,
+                    User.username,
+                )
+                .join(User, User.id == GarageMember.user_id)
+                .where(GarageMember.garage_id == garage_id, GarageMember.user_id == user_id)
+            )
+            .mappings()
+            .first()
         )
         if member is None:  # pragma: no cover
             raise RuntimeError("Membership not found after INSERT")
-        return member
+        return dict(member)
 
     def set_member_role(self, garage_id: int, user_id: int, role: str) -> bool:
         """Change a member's role; return True if a membership row was updated."""
         return (
-            self.execute(
-                "UPDATE garage_members SET role=? WHERE garage_id=? AND user_id=?",
-                (role, garage_id, user_id),
-            ).rowcount
+            self.affected(
+                update(GarageMember)
+                .where(GarageMember.garage_id == garage_id, GarageMember.user_id == user_id)
+                .values(role=role)
+            )
             > 0
         )
 
     def remove_member(self, garage_id: int, user_id: int) -> bool:
         """Remove a user from a garage; return True if a membership row was removed."""
         return (
-            self.execute(
-                "DELETE FROM garage_members WHERE garage_id=? AND user_id=?",
-                (garage_id, user_id),
-            ).rowcount
+            self.affected(
+                delete(GarageMember).where(
+                    GarageMember.garage_id == garage_id, GarageMember.user_id == user_id
+                )
+            )
             > 0
         )
 
     def accessible_garage_ids(self, user_id: int, is_admin: bool) -> list[int]:
         """Return garage IDs the user can see — all of them for site admins."""
         if is_admin:
-            return [r["id"] for r in self.execute("SELECT id FROM garages").fetchall()]
-        return [
-            r["garage_id"]
-            for r in self.execute(
-                "SELECT garage_id FROM garage_members WHERE user_id=?", (user_id,)
-            ).fetchall()
-        ]
+            return list(self.session.scalars(select(Garage.id)).all())
+        return list(
+            self.session.scalars(
+                select(GarageMember.garage_id).where(GarageMember.user_id == user_id)
+            ).all()
+        )
