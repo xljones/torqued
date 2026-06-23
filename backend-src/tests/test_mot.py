@@ -408,11 +408,11 @@ def _seed_dvsa(garage_id: int, count: int) -> list[int]:
 
 
 def test_dvsa_vehicles_requires_auth(client: FlaskClient) -> None:
-    assert client.get("/api/admin/dvsa-vehicles").status_code == 401
+    assert client.get("/api/dvsa-vehicles").status_code == 401
 
 
 def test_dvsa_vehicles_requires_admin(auth_client: FlaskClient) -> None:
-    assert auth_client.get("/api/admin/dvsa-vehicles").status_code == 403
+    assert auth_client.get("/api/dvsa-vehicles").status_code == 403
 
 
 def test_dvsa_vehicles_ordered_by_fetched_at(
@@ -427,7 +427,7 @@ def test_dvsa_vehicles_ordered_by_fetched_at(
         ):
             execute_sql(db, "UPDATE dvsa_vehicles SET fetched_at=? WHERE vehicle_id=?", (ts, vid))
 
-    body = admin_client.get("/api/admin/dvsa-vehicles").json
+    body = admin_client.get("/api/dvsa-vehicles").json
     assert body["total"] == 3
     assert body["pages"] == 1
     assert [i["fetched_at"] for i in body["items"]] == [
@@ -444,14 +444,14 @@ def test_dvsa_vehicles_pagination(
 ) -> None:
     _seed_dvsa(garage["id"], 26)
 
-    page1 = admin_client.get("/api/admin/dvsa-vehicles").json
+    page1 = admin_client.get("/api/dvsa-vehicles").json
     assert page1["total"] == 26
     assert page1["page"] == 1
     assert page1["per_page"] == 25
     assert page1["pages"] == 2
     assert len(page1["items"]) == 25
 
-    page2 = admin_client.get("/api/admin/dvsa-vehicles?page=2").json
+    page2 = admin_client.get("/api/dvsa-vehicles?page=2").json
     assert page2["page"] == 2
     assert len(page2["items"]) == 1
 
@@ -471,7 +471,7 @@ def test_dvsa_record_retained_after_vehicle_delete(
     with get_db() as db:
         assert VehicleRepository(db).delete(v["id"]) is True
 
-    items = admin_client.get("/api/admin/dvsa-vehicles").json["items"]
+    items = admin_client.get("/api/dvsa-vehicles").json["items"]
     detached = [i for i in items if i["registration"] == "OLD123"]
     assert len(detached) == 1
     assert detached[0]["vehicle_id"] is None

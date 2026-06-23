@@ -164,6 +164,14 @@ def test_serve_frontend_missing_path_returns_index(
     assert b"Fallback" in r.data
 
 
+def test_unknown_api_route_returns_404_json(client: FlaskClient) -> None:
+    # An unmatched /api/* path must not fall through to the SPA (which would be a
+    # 200 of index.html that clients can't parse as JSON) — it returns a real 404.
+    r = client.get("/api/does-not-exist")
+    assert r.status_code == 404
+    assert r.json == {"error": "Not found"}
+
+
 # ── db migrations ─────────────────────────────────────────────────────────────
 
 def test_load_user_returns_none_for_deleted_user(client: FlaskClient) -> None:

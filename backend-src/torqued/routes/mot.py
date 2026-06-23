@@ -1,14 +1,23 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
 from torqued import mot
-from torqued.access import can_write, vehicle_role
+from torqued.access import admin_required, can_write, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
 
 bp = Blueprint("mot", __name__)
+
+
+@bp.get("/api/dvsa-vehicles")
+@admin_required
+def dvsa_vehicles() -> ResponseReturnValue:
+    """List every stored DVSA snapshot (site-admin only), newest refresh first, paginated."""
+    page = max(1, request.args.get("page", 1, type=int))
+    with get_db() as db:
+        return jsonify(MotRepository(db).list_all(page)), 200
 
 
 @bp.get("/api/mot/status")
