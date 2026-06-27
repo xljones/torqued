@@ -32,6 +32,7 @@ def test_upload_and_serve(auth_client: FlaskClient) -> None:
     served = auth_client.get(f"/api/photos/{photo['id']}/file")
     assert served.status_code == 200
     assert served.data == PNG_BYTES
+    served.close()
 
 
 def test_upload_appears_on_vehicle_detail(auth_client: FlaskClient) -> None:

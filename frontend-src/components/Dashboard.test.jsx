@@ -40,7 +40,11 @@ vi.mock('../api.js', () => ({
 }));
 
 function renderDashboard() {
-  return render(<MemoryRouter><Dashboard /></MemoryRouter>);
+  return render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Dashboard />
+    </MemoryRouter>,
+  );
 }
 
 describe('Dashboard', () => {

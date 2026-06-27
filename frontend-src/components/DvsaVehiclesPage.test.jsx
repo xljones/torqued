@@ -11,7 +11,11 @@ vi.mock('../api.js', () => ({
 import { api } from '../api.js';
 
 function renderPage() {
-  return render(<MemoryRouter><DvsaVehiclesPage /></MemoryRouter>);
+  return render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <DvsaVehiclesPage />
+    </MemoryRouter>,
+  );
 }
 
 describe('DvsaVehiclesPage', () => {
