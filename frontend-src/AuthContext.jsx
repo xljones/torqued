@@ -1,10 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { usePostHog } from 'posthog-js/react';
 import { api } from './api.js';
 
 const AuthCtx = createContext(null);
 const GARAGE_KEY = 'torqued.garage';
 
 export function AuthProvider({ children }) {
+  const posthog = usePostHog();
   const [user, setUser] = useState(undefined); // undefined = loading
   const [garages, setGarages] = useState(null); // null = loading
   const [dbSwitcher, setDbSwitcher] = useState(false); // dev-only DB picker available?
@@ -22,6 +24,15 @@ export function AuthProvider({ children }) {
     if (user) refreshGarages();
     else if (user === null) setGarages(null);
   }, [user, refreshGarages]);
+
+  // Tie the PostHog person to our user across login, logout, and session restore.
+  useEffect(() => {
+    if (user === undefined) return; // still loading — do nothing yet
+    if (user) posthog?.identify(String(user.id), {
+      username: user.username, is_admin: !!user.is_admin,
+    });
+    else posthog?.reset(); // logged out
+  }, [user, posthog]);
 
   const [currentGarageId, setCurrentGarageId] = useState(() => {
     const saved = localStorage.getItem(GARAGE_KEY);
