@@ -4,6 +4,7 @@ from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
+from torqued import analytics
 from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.service_log_repository import ServiceLogRepository
@@ -117,6 +118,11 @@ def create_service(vehicle_id: int) -> ResponseReturnValue:
         log = ServiceLogRepository(db).create(
             {**data, "vehicle_id": vehicle_id}, changed_by=current_user.id
         )
+    analytics.capture(
+        current_user.id,
+        "service_log.created",
+        {"service_log_id": log["id"], "vehicle_id": vehicle_id},
+    )
     return jsonify(log), 201
 
 

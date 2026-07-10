@@ -4,7 +4,7 @@ from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required
 
-from torqued import mot
+from torqued import analytics, mot
 from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
@@ -118,6 +118,11 @@ def create_vehicle() -> ResponseReturnValue:
         # Re-attach a DVSA snapshot left behind by a deleted vehicle on the same plate.
         if (vehicle.get("registration") or "").strip():
             MotRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
+    analytics.capture(
+        current_user.id,
+        "vehicle.created",
+        {"vehicle_id": vehicle["id"], "garage_id": garage_id, "kind": vehicle.get("kind")},
+    )
     return jsonify(vehicle), 201
 
 

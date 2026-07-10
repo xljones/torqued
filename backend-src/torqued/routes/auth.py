@@ -4,6 +4,7 @@ from flask import Blueprint, Response, jsonify, request, session
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required, login_user, logout_user
 
+from torqued import analytics
 from torqued.db import db_switcher_enabled, get_db
 from torqued.domain.user import User
 from torqued.repositories.user_repository import UserRepository
@@ -58,6 +59,11 @@ def login() -> ResponseReturnValue:
     if not user.is_active:
         return jsonify(error="Account expired"), 401
     login_user(user)
+    analytics.capture(
+        user.id,
+        "user.logged_in",
+        {"is_admin": user.is_admin, "database": _current_db_target()},
+    )
     return jsonify({**_user_dict(row, memberships), "database": _current_db_target()})
 
 
