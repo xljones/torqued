@@ -14,6 +14,12 @@ from flask.testing import FlaskClient
 os.environ.pop("DATABASE_URL", None)
 os.environ.pop("PROD_DATABASE_URL", None)
 
+# Keep analytics inert during tests regardless of a POSTHOG_API_KEY in .env, so
+# route tests never build a real client or make network calls (test_analytics.py
+# drives the configured paths explicitly via monkeypatch).
+os.environ.pop("POSTHOG_API_KEY", None)
+os.environ.pop("POSTHOG_HOST", None)
+
 
 @pytest.fixture
 def app() -> Generator[Flask, None, None]:
