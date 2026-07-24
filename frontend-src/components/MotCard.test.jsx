@@ -101,12 +101,15 @@ describe('MotCard', () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
-      expect(screen.getByText('MOT expires')).toBeInTheDocument();
-      expect(screen.getByText('2025-11-04')).toBeInTheDocument();
+      expect(screen.getByText('MOT status')).toBeInTheDocument();
       expect(screen.getByText('Pass')).toBeInTheDocument();
       expect(screen.getByText('Fail')).toBeInTheDocument();
       expect(screen.getByText(/VOLKSWAGEN PASSAT/)).toBeInTheDocument();
     });
+    // The MOT tile summarises the latest test (passed) and its (past) expiry.
+    const motTile = screen.getByText('MOT status').closest('.pressure-tile');
+    expect(motTile).toHaveTextContent('Passed');
+    expect(motTile).toHaveTextContent(/Expired 2025-11-04/);
     await userEvent.click(screen.getByText('1 defect'));
     expect(screen.getByText('Tyre worn close to limit')).toBeInTheDocument();
   });
@@ -128,13 +131,13 @@ describe('MotCard', () => {
     localStorage.removeItem('torqued.titleCaseNames');
   });
 
-  it('colours the summary tiles by MOT expiry and recall status', async () => {
+  it('colours the MOT tile by expiry and hides recall when unknown', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('MOT expires')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('MOT status')).toBeInTheDocument());
 
-    // Fixture expiry (2025-11-04) is in the past → danger (red)
-    expect(screen.getByText('MOT expires').closest('.pressure-tile'))
+    // Fixture latest expiry (2025-11-04) is in the past → danger (red)
+    expect(screen.getByText('MOT status').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--danger');
     // has_outstanding_recall: 'Unknown' → tile hidden entirely
     expect(screen.queryByText('Outstanding recall')).not.toBeInTheDocument();
@@ -158,9 +161,9 @@ describe('MotCard', () => {
     };
     api.getMot.mockResolvedValue({ configured: true, mot: expiring });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('MOT expires')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('MOT status')).toBeInTheDocument());
 
-    expect(screen.getByText('MOT expires').closest('.pressure-tile'))
+    expect(screen.getByText('MOT status').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--warn');
     expect(screen.getByText('Outstanding recall').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--danger');
@@ -213,16 +216,15 @@ describe('MotCard', () => {
 
   // ── tax ────────────────────────────────────────────────────────────────────
 
-  it('shows tax status and due date, green when taxed', async () => {
+  it('shows tax status and due date in one tile, green when taxed', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot: null });
     api.getTax.mockResolvedValue({ configured: true, tax });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
-    expect(screen.getByText('Taxed')).toBeInTheDocument();
-    expect(screen.getByText('Tax due')).toBeInTheDocument();
-    expect(screen.getByText('2026-12-01')).toBeInTheDocument();
-    expect(screen.getByText('Tax status').closest('.pressure-tile'))
-      .toHaveClass('pressure-tile--ok');
+    const taxTile = screen.getByText('Tax status').closest('.pressure-tile');
+    expect(taxTile).toHaveTextContent('Taxed');
+    expect(taxTile).toHaveTextContent(/Due 2026-12-01/);
+    expect(taxTile).toHaveClass('pressure-tile--ok');
   });
 
   it('colours a SORN vehicle amber with no due date', async () => {
@@ -232,9 +234,10 @@ describe('MotCard', () => {
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('SORN')).toBeInTheDocument());
-    expect(screen.getByText('Tax status').closest('.pressure-tile'))
-      .toHaveClass('pressure-tile--warn');
-    expect(screen.getByText('Tax due').closest('.pressure-tile')).toHaveTextContent('—');
+    const taxTile = screen.getByText('Tax status').closest('.pressure-tile');
+    expect(taxTile).toHaveClass('pressure-tile--warn');
+    // No due date → the third line falls back to an em dash.
+    expect(taxTile).toHaveTextContent('—');
   });
 
   it('colours an untaxed vehicle red', async () => {

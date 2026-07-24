@@ -230,6 +230,9 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .mot-header-left { display: flex; align-items: baseline; gap: 8px; }
 .mot-reauth-dot { color: var(--text2); }
 .mot-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+/* The two core tiles (tax | MOT) sit side by side on one row; the DVSA record sits
+   full-width underneath (rendered outside this grid). */
+.motax-primary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .mot-test { border-bottom: 1px solid var(--border); padding: 8px 0; }
 .mot-test:last-child { border-bottom: none; }
 .mot-test-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

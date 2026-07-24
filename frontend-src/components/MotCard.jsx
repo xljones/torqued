@@ -36,6 +36,11 @@ function recallTileClass(value) {
     : 'pressure-tile--ok'; // No / Unknown / Unavailable → green
 }
 
+function isPast(dateStr) {
+  const d = new Date(dateStr);
+  return !Number.isNaN(d.getTime()) && d < new Date();
+}
+
 function taxStatusTileClass(status) {
   const s = (status || '').toLowerCase();
   if (s === 'taxed') return 'pressure-tile--ok';       // green
@@ -192,6 +197,8 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const tests = mot?.tests ?? [];
   const latest = tests[0];
   const expiry = latest?.expiry_date ?? mot?.mot_test_due_date;
+  const motResult = latest ? ((latest.test_result || '').toUpperCase() === 'PASSED' ? 'Passed' : 'Failed') : '—';
+  const expiryVerb = !latest ? 'Due' : (isPast(expiry) ? 'Expired' : 'Expires');
   const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 5);
 
@@ -214,22 +221,31 @@ export default function MotCard({ vehicle, ro, onSynced }) {
         )}
       </div>
 
-      {taxInfo && (
-        <div className="mot-summary">
-          <div className={`pressure-tile ${taxStatusTileClass(taxInfo.tax_status)}`}>
-            <div className="pressure-label">Tax status</div>
-            <div className="pressure-value">{taxInfo.tax_status || '—'}</div>
-            {taxInfo.fetched_at && (
-              <div className="pressure-alt">checked <RelativeTime value={taxInfo.fetched_at} /></div>
-            )}
-          </div>
-          <div className={`pressure-tile ${taxInfo.tax_due_date ? expiryTileClass(taxInfo.tax_due_date) : ''}`}>
-            <div className="pressure-label">Tax due</div>
-            <div className="pressure-value">{taxInfo.tax_due_date || '—'}</div>
-            {taxInfo.tax_due_date && (
-              <div className="pressure-alt"><RelativeTime value={taxInfo.tax_due_date} /></div>
-            )}
-          </div>
+      {/* Core info: tax | MOT side by side */}
+      {(taxInfo || mot) && (
+        <div className="motax-primary">
+          {taxInfo && (
+            <div className={`pressure-tile ${taxStatusTileClass(taxInfo.tax_status)}`}>
+              <div className="pressure-label">Tax status</div>
+              <div className="pressure-value">{taxInfo.tax_status || '—'}</div>
+              <div className="pressure-alt">
+                {taxInfo.tax_due_date
+                  ? <>Due {taxInfo.tax_due_date} (<RelativeTime value={taxInfo.tax_due_date} />)</>
+                  : '—'}
+              </div>
+            </div>
+          )}
+          {mot && (
+            <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
+              <div className="pressure-label">MOT status</div>
+              <div className="pressure-value">{motResult}</div>
+              <div className="pressure-alt">
+                {expiry
+                  ? <>{expiryVerb} {expiry} (<RelativeTime value={expiry} />)</>
+                  : '—'}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -248,46 +264,33 @@ export default function MotCard({ vehicle, ro, onSynced }) {
 
       {mot && (
         <>
-          {/* MOT (middle): expiry + any outstanding recall */}
-          {(expiry || showRecall) && (
-            <div className="mot-summary">
-              {expiry && (
-                <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
-                  <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
-                  <div className="pressure-value">{expiry}</div>
-                  <div className="pressure-alt"><RelativeTime value={expiry} /></div>
-                </div>
-              )}
-              {showRecall && (
-                <div className={`pressure-tile ${recallTileClass(mot.has_outstanding_recall)}`}>
-                  <div className="pressure-label">Outstanding recall</div>
-                  <div className="pressure-value">{mot.has_outstanding_recall}</div>
-                </div>
-              )}
+          {/* Outstanding recall (when present) sits under the core tiles */}
+          {showRecall && (
+            <div className={`pressure-tile mt-3 ${recallTileClass(mot.has_outstanding_recall)}`}>
+              <div className="pressure-label">Outstanding recall</div>
+              <div className="pressure-value">{mot.has_outstanding_recall}</div>
             </div>
           )}
 
-          {/* DVSA record (last): the full official record, expandable */}
-          <div className="mot-summary">
-            <div
-              className={`pressure-tile dvsa-record-tile${showJson ? ' dvsa-record-tile--open' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => setShowJson(v => !v)}
-              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
-            >
-              <div className="pressure-label">
-                DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
-              </div>
-              {/* The DVSA record shows the official data verbatim (all-caps as DVSA
-                  returns it) — never tidied — so it matches the raw JSON panel below. */}
-              <div className="pressure-size">
-                {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
-                {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
-                {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
-                {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
-                {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
-              </div>
+          {/* DVSA record: the full official record, full row width, expandable */}
+          <div
+            className={`pressure-tile dvsa-record-tile mt-3${showJson ? ' dvsa-record-tile--open' : ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowJson(v => !v)}
+            onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
+          >
+            <div className="pressure-label">
+              DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
+            </div>
+            {/* The DVSA record shows the official data verbatim (all-caps as DVSA
+                returns it) — never tidied — so it matches the raw JSON panel below. */}
+            <div className="pressure-size">
+              {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
+              {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
+              {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
+              {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
+              {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
             </div>
           </div>
 
