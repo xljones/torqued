@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
-import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import { fmtDistanceBoth, toKm } from '../units.js';
 
@@ -142,7 +141,6 @@ function JsonTree({ data }) {
 
 export default function MotCard({ vehicle, ro, onSynced }) {
   const toast = useToast();
-  const { formatName } = useDisplayPrefs();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -232,11 +230,13 @@ export default function MotCard({ vehicle, ro, onSynced }) {
               <div className="pressure-label">
                 DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
               </div>
+              {/* The DVSA record shows the official data verbatim (all-caps as DVSA
+                  returns it) — never tidied — so it matches the raw JSON panel below. */}
               <div className="pressure-size">
-                {[formatName(mot.make), formatName(mot.model)].filter(Boolean).join(' ') || '—'}
-                {mot.primary_colour ? ` · ${formatName(mot.primary_colour)}` : ''}
+                {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
+                {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
                 {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
-                {mot.fuel_type ? ` · ${formatName(mot.fuel_type)}` : ''}
+                {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
                 {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
               </div>
             </div>
