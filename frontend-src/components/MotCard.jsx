@@ -3,6 +3,10 @@ import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import { fmtDistanceBoth, toKm } from '../units.js';
+import { isPast, taxTone, motTone } from '../status.js';
+
+// A summary tile takes its colour from the shared status tone (see status.js).
+const tileClass = tone => (tone ? `pressure-tile--${tone}` : '');
 
 const DEFECT_ORDER = ['DANGEROUS', 'MAJOR', 'FAIL', 'MINOR', 'ADVISORY'];
 
@@ -18,27 +22,10 @@ function defectClass(type) {
   return 'mot-defect-minor';
 }
 
-function expiryTileClass(expiry) {
-  if (!expiry) return '';
-  const date = new Date(expiry);
-  if (Number.isNaN(date.getTime())) return '';
-  const now = new Date();
-  const inAMonth = new Date(now);
-  inAMonth.setMonth(inAMonth.getMonth() + 1);
-  if (date < now) return 'pressure-tile--danger';     // out of date
-  if (date <= inAMonth) return 'pressure-tile--warn'; // ≤ 1 month to go
-  return 'pressure-tile--ok';                          // all good
-}
-
 function recallTileClass(value) {
   return String(value).toLowerCase() === 'yes'
     ? 'pressure-tile--danger'
     : 'pressure-tile--ok'; // No / Unknown / Unavailable → green
-}
-
-function isPast(dateStr) {
-  const d = new Date(dateStr);
-  return !Number.isNaN(d.getTime()) && d < new Date();
 }
 
 // Parse a stored timestamp — an ISO date or a "YYYY-MM-DD HH:MM:SS" UTC datetime — to a
@@ -50,14 +37,6 @@ function parseTs(value) {
     : (value.endsWith('Z') ? value : value.replace(' ', 'T') + 'Z');
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function taxStatusTileClass(status) {
-  const s = (status || '').toLowerCase();
-  if (s === 'taxed') return 'pressure-tile--ok';       // green
-  if (s === 'sorn') return 'pressure-tile--warn';      // amber — off the road on purpose
-  if (!s) return '';
-  return 'pressure-tile--danger';                       // Untaxed / not taxed for on-road use
 }
 
 function TestRow({ test, unit }) {
@@ -217,7 +196,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const failed = !!latest && (latest.test_result || '').toUpperCase() !== 'PASSED';
   const expired = !!expiry && isPast(expiry);
   const motValid = !!expiry && !expired && !failed;  // a current, passed MOT
-  const motTileClass = failed ? 'pressure-tile--danger' : expiryTileClass(expiry);
+  const motTileClass = tileClass(motTone(expiry, failed));
   const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 5);
 
@@ -272,7 +251,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
             </div>
           )}
           {taxInfo && (
-            <div className={`pressure-tile ${taxStatusTileClass(taxInfo.tax_status)}`}>
+            <div className={`pressure-tile ${tileClass(taxTone(taxInfo.tax_status))}`}>
               {/* When taxed, the label carries the status and the value shows how long is
                   left; otherwise the label is generic and the value is the status word. */}
               <div className="pressure-label">{taxed ? 'Taxed' : 'Tax status'}</div>

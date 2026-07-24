@@ -69,6 +69,21 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .vehicle-card-sub { font-size: 13px; color: var(--text2); }
 .vehicle-card-meta { font-size: 12px; color: var(--text2); display: flex; gap: 12px; margin-top: 4px; }
 .vehicle-card.archived { opacity: 0.55; }
+/* Full-width MOT | Tax status band dividing the photo from the info below. Two equal
+   cells with a flat divider between them; same tint tokens as the detail card tiles. */
+.vehicle-card-status {
+  display: flex; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.status-cell {
+  flex: 1; min-width: 0; text-align: center;
+  padding: 5px 8px; font-size: 12px; color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.status-cell + .status-cell { border-left: 1px solid var(--border); }
+.status-cell-key { font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.status-cell--ok     { background: var(--tint-ok-bg);   color: var(--tint-ok-fg); }
+.status-cell--warn   { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
+.status-cell--danger { background: var(--tint-bad-bg);  color: var(--tint-bad-fg); }
 
 /* ── Vehicle list sections (label + full-width rule) ───────────────────────── */
 .vehicle-section + .vehicle-section { margin-top: 28px; }
