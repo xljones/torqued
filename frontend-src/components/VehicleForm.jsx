@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { useToast } from './Toast.jsx';
+import { SkeletonPage } from './Skeleton.jsx';
 import { FormMode, KIND_LABELS } from '../constants.js';
 import { barToPsi, psiToBar } from '../units.js';
 
@@ -37,6 +38,10 @@ export default function VehicleForm({ mode }) {
   const [saving, setSaving] = useState(false);
   const [motConfigured, setMotConfigured] = useState(false);
   const [fetching, setFetching] = useState(false);
+  // Edit mode blocks on the vehicle load so the populated form (incl. the DVSA baseline)
+  // renders all at once instead of fields popping in after first paint. Create has nothing
+  // to load, so it renders immediately.
+  const [loading, setLoading] = useState(isEdit);
 
   useEffect(() => {
     api.getMotStatus().then(s => setMotConfigured(s.configured)).catch(() => {});
@@ -60,7 +65,7 @@ export default function VehicleForm({ mode }) {
         tyre_pressure_rear: v.tyre_pressure_rear_psi ?? '',
         notes: v.notes ?? '',
       });
-    });
+    }).finally(() => setLoading(false));
   }, [isEdit, id]);
 
   const KIND_HINTS = {
@@ -200,6 +205,8 @@ export default function VehicleForm({ mode }) {
       setSaving(false);
     }
   }
+
+  if (isEdit && loading) return <SkeletonPage />;
 
   return (
     <div>

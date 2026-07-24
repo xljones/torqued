@@ -131,6 +131,23 @@ describe('VehicleForm DVSA lookup', () => {
     await userEvent.type(screen.getByPlaceholderText('e.g. Honda'), 'Lotus');
     expect(container.querySelector('.dvsa-split')).toHaveClass('is-override');
   });
+
+  it('shows a loading skeleton in edit mode until the vehicle has loaded', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    let resolveVehicle;
+    api.getVehicle.mockReturnValue(new Promise(r => { resolveVehicle = r; }));
+    const { container } = renderEdit();
+    // Until the vehicle resolves the form is replaced by the skeleton shimmer, so the
+    // identity fields (incl. the DVSA baseline) can't pop in after first paint.
+    expect(container.querySelector('.skeleton-line')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('AB12 CDE')).not.toBeInTheDocument();
+    resolveVehicle({
+      name: 'Daily', kind: 'car', odometer_unit: 'mi', registration: 'AB12 CDE', mot_baseline: null,
+    });
+    // Once loaded, the populated form replaces the skeleton in one step.
+    await screen.findByDisplayValue('AB12 CDE');
+    expect(container.querySelector('.skeleton-line')).not.toBeInTheDocument();
+  });
 });
 
 describe('VehicleForm save reconciliation', () => {
