@@ -90,6 +90,22 @@ describe('Dashboard', () => {
     });
   });
 
+  it('shows a road-tax reminder with a due sub-line', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([{
+      type: 'tax', id: null, vehicle_id: 1, vehicle_name: 'Street Triple',
+      title: 'Road tax', category: 'Tax', date: null, status: 'due_soon',
+      next_due_date: '2026-08-01', next_due_km: null, km_remaining: null,
+      vehicle_odometer_unit: 'mi',
+    }]);
+    renderDashboard();
+    await waitFor(() => {
+      expect(screen.getByText('Street Triple — Tax')).toBeInTheDocument();
+      expect(screen.getByText('Due 2026-08-01')).toBeInTheDocument();
+      expect(screen.getByText('Due soon')).toBeInTheDocument();
+    });
+  });
+
   it('converts odometer to the vehicle display unit', async () => {
     renderDashboard();
     // 160.9344 km == 100 mi

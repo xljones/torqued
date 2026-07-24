@@ -300,12 +300,14 @@ export default function VehicleDetail() {
       {dueReminders.length > 0 && (
         <div className="card mb-6">
           {dueReminders.map(r => (
-            <div key={r.type === 'mot' ? 'mot' : r.id} className="reminder-row">
+            <div key={r.type === 'service' ? r.id : r.type} className="reminder-row">
               <div className="reminder-main">
                 <span className="reminder-title">{r.category || r.title}</span>
                 <span className="reminder-sub">
                   {r.type === 'mot'
                     ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
+                    : r.type === 'tax'
+                    ? `${r.status === 'overdue' ? 'Expired' : 'Due'} ${r.next_due_date}`
                     : <>
                         After “{r.title}” ({r.date})
                         {r.next_due_date && ` — due ${r.next_due_date}`}

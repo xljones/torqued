@@ -9,6 +9,7 @@ from torqued.access import accessible_garage_ids, can_write, garage_role, vehicl
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
+from torqued.repositories.tax_repository import TaxRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
 
 bp = Blueprint("vehicles", __name__)
@@ -154,10 +155,11 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         old = VehicleRepository(db).get_by_id(vehicle_id)
         result = VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id)
         mot_repo = MotRepository(db)
-        # Drop any attached DVSA/MOT data when the registration change means it no longer
-        # applies (the form prompts the user before sending this flag).
+        # Drop any attached DVSA/MOT and tax data when the registration change means it no
+        # longer applies (the form prompts the user before sending this flag).
         if (request.json or {}).get("disconnect_mot"):
             mot_repo.clear_for_vehicle(vehicle_id)
+            TaxRepository(db).clear_for_vehicle(vehicle_id)
         # If the plate changed and nothing is attached, re-link a detached DVSA snapshot
         # left behind by a deleted vehicle on the new plate.
         new_reg = (result.get("registration") or "") if result else ""

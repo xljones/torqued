@@ -68,17 +68,21 @@ export default function Dashboard() {
         {reminders?.length === 0 && <p className="card-message">Nothing on the horizon — ride on 🏁</p>}
         {reminders?.map(r => {
           const isMot = r.type === 'mot';
+          const isTax = r.type === 'tax';
+          const isExternal = isMot || isTax; // MOT/tax reminders link to the vehicle, not a service
           return (
             <div
-              key={isMot ? `mot-${r.vehicle_id}` : r.id}
+              key={isExternal ? `${r.type}-${r.vehicle_id}` : r.id}
               className="reminder-row row-clickable"
-              onClick={() => navigate(isMot ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}
+              onClick={() => navigate(isExternal ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}
             >
               <div className="reminder-main">
                 <span className="reminder-title">{r.vehicle_name} — {r.category || r.title}</span>
                 <span className="reminder-sub">
                   {isMot
                     ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
+                    : isTax
+                    ? `${r.status === 'overdue' ? 'Expired' : 'Due'} ${r.next_due_date}`
                     : <>
                         After “{r.title}” ({r.date})
                         {r.next_due_date && ` — due ${r.next_due_date}`}

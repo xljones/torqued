@@ -186,16 +186,18 @@ export default function VehicleForm({ mode }) {
       delete body.tyre_pressure_rear;
       if (isEdit) {
         // Drop the stale record in the same PUT; if aligned data was previewed, re-fetch it
-        // against the now-saved plate so the detail page shows the new MOT data.
+        // against the now-saved plate so the detail page shows the new MOT and tax data.
         if (shouldClear) body.disconnect_mot = true;
         await api.updateVehicle(id, body);
-        if (needRefresh) await api.refreshMot(id).catch(() => {});
+        if (needRefresh) await Promise.allSettled([api.refreshMot(id), api.refreshTax(id)]);
         toast('Vehicle updated');
         navigate(`/vehicles/${id}`);
       } else {
         const v = await api.createVehicle({ ...body, garage_id: currentGarage.id });
-        // Persist the MOT data the user previewed so the baseline is ready on the detail page.
-        if (baseline) await api.refreshMot(v.id).catch(() => {});
+        // Fetch + store MOT history and tax status for the new plate so the detail page is ready.
+        if (form.registration.trim()) {
+          await Promise.allSettled([api.refreshMot(v.id), api.refreshTax(v.id)]);
+        }
         toast('Vehicle added');
         navigate(`/vehicles/${v.id}`);
       }

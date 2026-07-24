@@ -244,3 +244,16 @@ class MotTest(Base):
     location: Mapped[str | None] = mapped_column(Text)
     defects_json: Mapped[str] = mapped_column(Text, server_default=FetchedValue())
     raw_json: Mapped[str] = mapped_column(Text)
+
+
+class VehicleTax(Base):
+    __tablename__ = "vehicle_tax"
+
+    # One current road-tax snapshot per vehicle (migration 0004). Unlike dvsa_vehicles
+    # this cascades away with the vehicle — there is no detached-retention need for it.
+    vehicle_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    registration: Mapped[str | None] = mapped_column(Text)
+    tax_status: Mapped[str | None] = mapped_column(Text)
+    tax_due_date: Mapped[str | None] = mapped_column(Text)
+    raw_json: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())

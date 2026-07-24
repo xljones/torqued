@@ -16,6 +16,7 @@ from torqued.models import (
     Vehicle,
     VehicleHistory,
     VehicleSpec,
+    VehicleTax,
     to_dict,
 )
 from torqued.repositories.base import BaseRepository
@@ -108,11 +109,16 @@ class VehicleRepository(BaseRepository):
                 self.session.execute(stmt).all()
             )
         ]
+        ids = [v["id"] for v in vehicles]
         latest = self.latest_odometers()
-        baselines = self.mot_baselines([v["id"] for v in vehicles])
+        baselines = self.mot_baselines(ids)
+        mot_summaries = self.mot_summaries(ids)
+        tax_summaries = self.tax_summaries(ids)
         for v in vehicles:
             v["latest_odometer"] = latest.get(v["id"])
             v["mot_baseline"] = baselines.get(v["id"])
+            v["mot_summary"] = mot_summaries.get(v["id"])
+            v["tax_summary"] = tax_summaries.get(v["id"])
         return vehicles
 
     def get_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
@@ -191,6 +197,57 @@ class VehicleRepository(BaseRepository):
             )
         ).all()
         return {vid: mot.to_baseline(json.loads(raw)) for vid, raw in rows}
+
+    def mot_summaries(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Compact per-vehicle MOT status for the list view: ``{expiry, failed}``.
+
+        ``expiry`` is the latest test's expiry, falling back to the DVSA vehicle-level due
+        date; ``failed`` marks a latest test that didn't pass. Only vehicles with a stored
+        snapshot are included — the same colour/text the detail card derives, minus the tests.
+        """
+        if not vehicle_ids:
+            return {}
+        # vehicle_ids are live vehicle ids, so every matched row has a non-null vehicle_id
+        # (a detached snapshot's NULL can't match an IN list); the filter just narrows the type.
+        due: dict[int, str | None] = {
+            vid: due_date
+            for vid, due_date in self.session.execute(
+                select(DvsaVehicle.vehicle_id, DvsaVehicle.mot_test_due_date).where(
+                    DvsaVehicle.vehicle_id.in_(vehicle_ids)
+                )
+            ).all()
+            if vid is not None
+        }
+        latest: dict[int, tuple[Any, Any]] = {}
+        rows = self.session.execute(
+            select(MotTest.vehicle_id, MotTest.expiry_date, MotTest.test_result)
+            .where(MotTest.vehicle_id.in_(vehicle_ids))
+            .order_by(MotTest.vehicle_id, MotTest.completed_date.desc(), MotTest.id.desc())
+        ).all()
+        for vid, expiry, result in rows:
+            latest.setdefault(vid, (expiry, result))
+        summaries: dict[int, dict[str, Any]] = {}
+        for vid, due_date in due.items():
+            expiry, result = latest.get(vid, (None, None))
+            summaries[vid] = {
+                "expiry": expiry or due_date,
+                "failed": result is not None and (result or "").upper() != "PASSED",
+            }
+        return summaries
+
+    def tax_summaries(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Compact per-vehicle tax status for the list view: ``{tax_status, tax_due_date}``."""
+        if not vehicle_ids:
+            return {}
+        rows = self.session.execute(
+            select(
+                VehicleTax.vehicle_id, VehicleTax.tax_status, VehicleTax.tax_due_date
+            ).where(VehicleTax.vehicle_id.in_(vehicle_ids))
+        ).all()
+        return {
+            vid: {"tax_status": status, "tax_due_date": due}
+            for vid, status, due in rows
+        }
 
     def create(
         self, garage_id: int, data: dict[str, Any], changed_by: int | None = None

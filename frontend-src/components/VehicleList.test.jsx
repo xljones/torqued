@@ -108,4 +108,38 @@ describe('VehicleList', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Cars' })).toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'Motorcycles' })).not.toBeInTheDocument();
   });
+
+  it('shows a green MOT (due) and amber SORN cell in the status band', async () => {
+    const future = new Date();
+    future.setFullYear(future.getFullYear() + 1);
+    api.getVehicles.mockResolvedValue([{
+      id: 5, name: 'Rex', kind: 'car', odometer_unit: 'mi', archived: 0,
+      service_count: 0, photo_count: 0, cover_photo_id: null, latest_odometer: null,
+      mot_summary: { expiry: future.toISOString().slice(0, 10), failed: false },
+      tax_summary: { tax_status: 'SORN', tax_due_date: null },
+    }]);
+    const { container } = renderList();
+    await waitFor(() => expect(screen.getByText('Rex')).toBeInTheDocument());
+    const motCell = container.querySelector('.status-cell--ok');
+    expect(motCell).toHaveTextContent('MOT');
+    expect(motCell).toHaveTextContent('due');
+    expect(motCell.textContent).toMatch(/\d+(d|mo|y)/); // compact age, e.g. "12mo"
+    const taxCell = container.querySelector('.status-cell--warn');
+    expect(taxCell).toHaveTextContent('Tax');
+    expect(taxCell).toHaveTextContent('SORN');
+  });
+
+  it('shows expired MOT and untaxed tax cells in red', async () => {
+    api.getVehicles.mockResolvedValue([{
+      id: 6, name: 'Rusty', kind: 'car', odometer_unit: 'mi', archived: 0,
+      service_count: 0, photo_count: 0, cover_photo_id: null, latest_odometer: null,
+      mot_summary: { expiry: '2020-01-01', failed: false },
+      tax_summary: { tax_status: 'Untaxed', tax_due_date: null },
+    }]);
+    const { container } = renderList();
+    await waitFor(() => expect(screen.getByText('Rusty')).toBeInTheDocument());
+    expect(container.querySelectorAll('.status-cell--danger')).toHaveLength(2);
+    expect(container.textContent).toMatch(/expired/);
+    expect(container.textContent).toMatch(/Untaxed/);
+  });
 });

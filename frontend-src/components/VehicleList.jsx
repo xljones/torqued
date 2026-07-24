@@ -6,6 +6,9 @@ import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import RegPlate from './RegPlate.jsx';
 import { KIND_ICONS, KIND_LABELS, VehicleKind } from '../constants.js';
 import { fmtDistanceBoth } from '../units.js';
+import { isPast, motTone, taxTone, compactAge } from '../status.js';
+
+const cellClass = tone => `status-cell${tone ? ` status-cell--${tone}` : ''}`;
 
 export default function VehicleList() {
   const { currentGarage } = useAuth();
@@ -53,6 +56,34 @@ export default function VehicleList() {
   const cars = visible.filter(v => v.kind === VehicleKind.CAR);
   const motorcycles = visible.filter(v => v.kind === VehicleKind.MOTORCYCLE);
 
+  // A full-width MOT | Tax status band that divides the photo from the info below. Two equal
+  // cells, tinted with the same tones as the detail card (see status.js) and reduced to a
+  // glanceable "due 10mo" / "expired 3mo" / "SORN" using compact d/mo/y ages.
+  const motCell = (motS) => {
+    if (!motS) return <div className="status-cell"><span className="status-cell-key">MOT</span> —</div>;
+    let text;
+    if (motS.failed) text = 'failed';
+    else if (!motS.expiry) text = '—';
+    else text = `${isPast(motS.expiry) ? 'expired' : 'due'} ${compactAge(motS.expiry)}`;
+    return (
+      <div className={cellClass(motTone(motS.expiry, motS.failed))}>
+        <span className="status-cell-key">MOT</span> {text}
+      </div>
+    );
+  };
+  const taxCell = (taxS) => {
+    if (!taxS) return <div className="status-cell"><span className="status-cell-key">Tax</span> —</div>;
+    const taxed = (taxS.tax_status || '').toLowerCase() === 'taxed';
+    const text = taxed
+      ? (taxS.tax_due_date ? `due ${compactAge(taxS.tax_due_date)}` : 'taxed')
+      : (taxS.tax_status || '—');
+    return (
+      <div className={cellClass(taxTone(taxS.tax_status))}>
+        <span className="status-cell-key">Tax</span> {text}
+      </div>
+    );
+  };
+
   const renderCard = (v) => (
     <Link key={v.id} to={`/vehicles/${v.id}`} className={`vehicle-card${v.archived ? ' archived' : ''}`}>
       <div className="vehicle-card-photo">
@@ -60,6 +91,12 @@ export default function VehicleList() {
           ? <img src={api.photoUrl(v.cover_photo_id)} alt={v.name} loading="lazy" />
           : <span aria-hidden="true">{KIND_ICONS[v.kind]}</span>}
       </div>
+      {(v.mot_summary || v.tax_summary) && (
+        <div className="vehicle-card-status">
+          {motCell(v.mot_summary)}
+          {taxCell(v.tax_summary)}
+        </div>
+      )}
       <div className="vehicle-card-body">
         <div className="vehicle-card-name">
           {v.name}

@@ -729,3 +729,48 @@ def test_mot_reminders_empty_garages() -> None:
 
     with get_db() as db:
         assert MotRepository(db).reminders([]) == []
+
+
+# ── MOT summaries (vehicle list cards) ──────────────────────────────────────────
+
+def test_vehicle_list_includes_mot_summary(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    # Latest test passed; its expiry drives the summary.
+    assert row["mot_summary"] == {"expiry": "2025-11-04", "failed": False}
+
+
+def test_mot_summary_flags_a_failed_latest_test(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    payload: dict[str, Any] = {"registration": "A9XYZ", "motTests": [
+        {"completedDate": "2025-01-02T00:00:00.000Z", "testResult": "FAILED", "expiryDate": None},
+    ]}
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: payload)
+    v = mk_vehicle(auth_client, registration="A9 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    assert row["mot_summary"] == {"expiry": None, "failed": True}
+
+
+def test_mot_summary_falls_back_to_due_date(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # NEW_REG has a vehicle-level due date but no tests.
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: NEW_REG)
+    v = mk_vehicle(auth_client, registration="A2 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    assert row["mot_summary"] == {"expiry": "2027-09-01", "failed": False}
+
+
+def test_mot_summaries_empty() -> None:
+    from torqued.db import get_db
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        assert VehicleRepository(db).mot_summaries([]) == {}

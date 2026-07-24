@@ -3,6 +3,10 @@ import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import { fmtDistanceBoth, toKm } from '../units.js';
+import { isPast, taxTone, motTone } from '../status.js';
+
+// A summary tile takes its colour from the shared status tone (see status.js).
+const tileClass = tone => (tone ? `pressure-tile--${tone}` : '');
 
 const DEFECT_ORDER = ['DANGEROUS', 'MAJOR', 'FAIL', 'MINOR', 'ADVISORY'];
 
@@ -18,22 +22,21 @@ function defectClass(type) {
   return 'mot-defect-minor';
 }
 
-function expiryTileClass(expiry) {
-  if (!expiry) return '';
-  const date = new Date(expiry);
-  if (Number.isNaN(date.getTime())) return '';
-  const now = new Date();
-  const inAMonth = new Date(now);
-  inAMonth.setMonth(inAMonth.getMonth() + 1);
-  if (date < now) return 'pressure-tile--danger';     // out of date
-  if (date <= inAMonth) return 'pressure-tile--warn'; // ≤ 1 month to go
-  return 'pressure-tile--ok';                          // all good
-}
-
 function recallTileClass(value) {
   return String(value).toLowerCase() === 'yes'
     ? 'pressure-tile--danger'
     : 'pressure-tile--ok'; // No / Unknown / Unavailable → green
+}
+
+// Parse a stored timestamp — an ISO date or a "YYYY-MM-DD HH:MM:SS" UTC datetime — to a
+// Date (or null). Used only to compare the MOT vs tax refresh times, not to display them.
+function parseTs(value) {
+  if (!value) return null;
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value + 'T00:00:00Z'
+    : (value.endsWith('Z') ? value : value.replace(' ', 'T') + 'Z');
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function TestRow({ test, unit }) {
@@ -142,61 +145,137 @@ function JsonTree({ data }) {
 export default function MotCard({ vehicle, ro, onSynced }) {
   const toast = useToast();
   const [data, setData] = useState(null);
+  const [tax, setTax] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [jsonFmt, setJsonFmt] = useState('formatted');
 
-  const load = useCallback(() => { api.getMot(vehicle.id).then(setData); }, [vehicle.id]);
+  const load = useCallback(() => {
+    api.getMot(vehicle.id).then(setData);
+    api.getTax(vehicle.id).then(setTax);
+  }, [vehicle.id]);
   useEffect(load, [load]);
+
+  const motConfigured = data?.configured;
+  const taxConfigured = tax?.configured;
 
   async function handleRefresh() {
     setBusy(true);
     try {
-      const result = await api.refreshMot(vehicle.id);
-      setData(result);
-      toast('MOT history refreshed');
+      // Refresh whichever sources are enabled, independently, so one failing (e.g. an
+      // unknown plate at the DVLA) doesn't block the other.
+      const jobs = [];
+      if (motConfigured) jobs.push(api.refreshMot(vehicle.id).then(setData));
+      if (taxConfigured) jobs.push(api.refreshTax(vehicle.id).then(setTax));
+      const failure = (await Promise.allSettled(jobs)).find(r => r.status === 'rejected');
+      toast(
+        failure ? (failure.reason?.message ?? 'Refresh failed') : 'MOT & tax refreshed',
+        failure ? 'error' : undefined,
+      );
       onSynced?.();
-    } catch (err) {
-      toast(err.message, 'error');
     } finally {
       setBusy(false);
     }
   }
 
-  if (!data || (!vehicle.registration && !data.mot)) return null;
+  const mot = data?.mot;
+  const taxInfo = tax?.tax;
+  if (!data && !tax) return null;
+  if (!vehicle.registration && !mot && !taxInfo) return null;
 
-  const mot = data.mot;
   const tests = mot?.tests ?? [];
   const latest = tests[0];
   const expiry = latest?.expiry_date ?? mot?.mot_test_due_date;
+  const taxStatusLc = (taxInfo?.tax_status || '').toLowerCase();
+  const taxed = taxStatusLc === 'taxed';
+  // When a vehicle is untaxed (but not deliberately SORN'd) and we happen to have a date,
+  // it's the date the tax lapsed. Our gov.uk scrape doesn't provide this, but the VES API
+  // would — so surface it when present, like the MOT "Expired <date>" line.
+  const taxLapsedDate = taxInfo && !taxed && taxStatusLc !== 'sorn' ? taxInfo.tax_due_date : null;
+  const failed = !!latest && (latest.test_result || '').toUpperCase() !== 'PASSED';
+  const expired = !!expiry && isPast(expiry);
+  const motValid = !!expiry && !expired && !failed;  // a current, passed MOT
+  const motTileClass = tileClass(motTone(expiry, failed));
+  const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 5);
+
+  // Header refresh time. MOT and tax carry independent fetched_at stamps; they normally
+  // refresh together, so collapse to one label when within 2 min of each other (or when
+  // only one source is present) and split them out when they genuinely differ.
+  const motFetchedAt = mot?.fetched_at;
+  const taxFetchedAt = taxInfo?.fetched_at;
+  const motTs = parseTs(motFetchedAt);
+  const taxTs = parseTs(taxFetchedAt);
+  const oneRefresh = !motTs || !taxTs || Math.abs(motTs - taxTs) < 120_000;
+  const latestFetchedAt = motTs && (!taxTs || motTs >= taxTs) ? motFetchedAt : taxFetchedAt;
 
   return (
     <div className="card card-body mb-6">
       <div className="section-header">
         <div className="mot-header-left">
-          <h2 className="section-title">MOT history</h2>
-          {mot && (
+          <h2 className="section-title">MOT &amp; tax</h2>
+          {(mot || taxInfo) && (
             <span className="mot-reauth text-muted text-sm">
-              <span className="mot-reauth-dot" aria-hidden="true">•</span>
-              {' '}refreshed <RelativeTime value={mot.fetched_at} />
+              <span className="mot-reauth-dot" aria-hidden="true">•</span>{' '}
+              {oneRefresh
+                ? <>refreshed <RelativeTime value={latestFetchedAt} /></>
+                : <>MOT refreshed <RelativeTime value={motFetchedAt} />, tax <RelativeTime value={taxFetchedAt} /></>}
             </span>
           )}
         </div>
-        {!ro && data.configured && (
+        {!ro && (motConfigured || taxConfigured) && (
           <button className="btn btn-secondary btn-sm" onClick={handleRefresh} disabled={busy}>
-            {busy ? 'Refreshing…' : mot ? 'Refresh from DVSA' : 'Fetch from DVSA'}
+            {busy ? 'Refreshing…' : (mot || taxInfo) ? 'Refresh from DVSA & DVLA' : 'Fetch from DVSA & DVLA'}
           </button>
         )}
       </div>
 
-      {!mot && data.configured && (
+      {/* Core info: MOT (left) | tax (right), side by side */}
+      {(mot || taxInfo) && (
+        <div className="motax-primary">
+          {mot && (
+            <div className={`pressure-tile ${motTileClass}`}>
+              <div className="pressure-label">MOT</div>
+              <div className="pressure-value">
+                {failed ? 'Failed'
+                  : expired ? 'Expired'
+                  : expiry ? <>Expires <RelativeTime value={expiry} /></>
+                  : '—'}
+              </div>
+              <div className="pressure-alt">
+                {motValid ? `Expires ${expiry}`
+                  : expired ? `Expired ${expiry}`
+                  : '—'}
+              </div>
+            </div>
+          )}
+          {taxInfo && (
+            <div className={`pressure-tile ${tileClass(taxTone(taxInfo.tax_status))}`}>
+              {/* When taxed, the label carries the status and the value shows how long is
+                  left; otherwise the label is generic and the value is the status word. */}
+              <div className="pressure-label">{taxed ? 'Taxed' : 'Tax status'}</div>
+              <div className="pressure-value">
+                {taxed
+                  ? (taxInfo.tax_due_date ? <>Due <RelativeTime value={taxInfo.tax_due_date} /></> : 'Taxed')
+                  : (taxInfo.tax_status || '—')}
+              </div>
+              <div className="pressure-alt">
+                {taxed
+                  ? (taxInfo.tax_due_date || '—')
+                  : taxLapsedDate ? `Expired ${taxLapsedDate}` : '—'}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!mot && motConfigured && vehicle.registration && (
         <p className="text-muted text-sm">
           No MOT data yet — fetch the official test history for {vehicle.registration} from the DVSA.
         </p>
       )}
-      {!mot && !data.configured && (
+      {!mot && motConfigured === false && (
         <p className="text-muted text-sm">
           {import.meta.env.DEV
             ? 'DVSA MOT API credentials are not configured (set MOT_CLIENT_ID, MOT_CLIENT_SECRET, MOT_TOKEN_URL and MOT_API_KEY).'
@@ -206,39 +285,33 @@ export default function MotCard({ vehicle, ro, onSynced }) {
 
       {mot && (
         <>
-          <div className="mot-summary">
-            {expiry && (
-              <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
-                <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
-                <div className="pressure-value">{expiry}</div>
-                <div className="pressure-alt"><RelativeTime value={expiry} /></div>
-              </div>
-            )}
-            {String(mot.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown' && (
-              <div className={`pressure-tile ${recallTileClass(mot.has_outstanding_recall)}`}>
-                <div className="pressure-label">Outstanding recall</div>
-                <div className="pressure-value">{mot.has_outstanding_recall}</div>
-              </div>
-            )}
-            <div
-              className={`pressure-tile dvsa-record-tile${showJson ? ' dvsa-record-tile--open' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => setShowJson(v => !v)}
-              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
-            >
-              <div className="pressure-label">
-                DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
-              </div>
-              {/* The DVSA record shows the official data verbatim (all-caps as DVSA
-                  returns it) — never tidied — so it matches the raw JSON panel below. */}
-              <div className="pressure-size">
-                {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
-                {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
-                {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
-                {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
-                {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
-              </div>
+          {/* Outstanding recall (when present) sits under the core tiles */}
+          {showRecall && (
+            <div className={`pressure-tile mt-3 ${recallTileClass(mot.has_outstanding_recall)}`}>
+              <div className="pressure-label">Outstanding recall</div>
+              <div className="pressure-value">{mot.has_outstanding_recall}</div>
+            </div>
+          )}
+
+          {/* DVSA record: the full official record, full row width, expandable */}
+          <div
+            className={`pressure-tile dvsa-record-tile mt-3${showJson ? ' dvsa-record-tile--open' : ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowJson(v => !v)}
+            onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
+          >
+            <div className="pressure-label">
+              DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
+            </div>
+            {/* The DVSA record shows the official data verbatim (all-caps as DVSA
+                returns it) — never tidied — so it matches the raw JSON panel below. */}
+            <div className="pressure-size">
+              {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
+              {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
+              {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
+              {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
+              {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
             </div>
           </div>
 
