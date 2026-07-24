@@ -304,9 +304,13 @@ class ServiceLogRepository(BaseRepository):
                 {**s, "type": "service", "status": status, "km_remaining": km_remaining}
             )
         from torqued.repositories.mot_repository import MotRepository
+        from torqued.repositories.tax_repository import TaxRepository
 
         reminders.extend(
             MotRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
+        )
+        reminders.extend(
+            TaxRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
         )
         order = {"overdue": 0, "due_soon": 1, "upcoming": 2}
         reminders.sort(key=lambda r: (order[r["status"]], r["next_due_date"] or "9999-12-31"))
