@@ -381,3 +381,24 @@ def test_tax_reminders_empty_garages() -> None:
 
     with get_db() as db:
         assert TaxRepository(db).reminders([]) == []
+
+
+# ── tax summaries (vehicle list cards) ──────────────────────────────────────────
+
+def test_vehicle_list_includes_tax_summary(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, tax_enabled: None
+) -> None:
+    payload = {"registration": "A1XYZ", "tax_status": "Taxed", "tax_due_date": "2026-12-01"}
+    monkeypatch.setattr(tax, "fetch_tax", lambda reg: payload)
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/tax/refresh")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    assert row["tax_summary"] == {"tax_status": "Taxed", "tax_due_date": "2026-12-01"}
+
+
+def test_tax_summaries_empty() -> None:
+    from torqued.db import get_db
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        assert VehicleRepository(db).tax_summaries([]) == {}
