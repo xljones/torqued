@@ -13,11 +13,15 @@ import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
-import { fmtCost, fmtDistance, fmtDistanceBoth, fmtPressure, toKm } from '../units.js';
+import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, toKm } from '../units.js';
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
 
-function MileageCard({ vehicle, ro, onLogged }) {
+// Whole days between two YYYY-MM-DD dates, parsed as UTC midnight to avoid DST drift.
+const daysBetween = (a, b) =>
+  Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+
+export function MileageCard({ vehicle, ro, onLogged }) {
   const toast = useToast();
   const [series, setSeries] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -125,12 +129,20 @@ function MileageCard({ vehicle, ro, onLogged }) {
       {showLogs && series && (
         <div className="table-wrap mt-3">
           <table>
-            <thead><tr><th>Date</th><th>Reading</th><th>Source</th><th>Note</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Reading</th><th>Since previous</th><th>Source</th><th>Note</th><th></th></tr></thead>
             <tbody>
-              {[...series].reverse().map(l => (
+              {series
+                .map((l, i) => ({ ...l, prev: i > 0 ? series[i - 1] : null }))
+                .reverse()
+                .map(l => (
                 <tr key={`${l.source}-${l.id}`}>
                   <td>{l.date}</td>
                   <td>{fmtDistanceBoth(l.odometer_km, l.unit)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {l.prev
+                      ? `${fmtDistanceDelta(l.odometer_km - l.prev.odometer_km, vehicle.odometer_unit)} in ${fmtInterval(daysBetween(l.prev.date, l.date))}`
+                      : '—'}
+                  </td>
                   <td><span className={`badge badge-source-${l.source}`}>{SOURCE_LABEL[l.source] ?? l.source}</span></td>
                   <td>{l.note || '—'}</td>
                   <td className="col-shrink">
