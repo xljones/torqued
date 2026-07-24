@@ -15,5 +15,6 @@ class ServiceLog:
     odometer_unit: str | None = None
     next_due_date: str | None = None
     next_due_km: float | None = None
+    service_schedule_id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None

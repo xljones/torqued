@@ -145,6 +145,7 @@ class ServiceLog(Base):
     odometer_unit: Mapped[str | None] = mapped_column(Text)
     next_due_date: Mapped[str | None] = mapped_column(Text)
     next_due_km: Mapped[float | None] = mapped_column(Float)
+    service_schedule_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
     updated_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
 
@@ -175,6 +176,21 @@ class ServiceLogHistory(Base):
     odometer_unit: Mapped[str | None] = mapped_column(Text)
     next_due_date: Mapped[str | None] = mapped_column(Text)
     next_due_km: Mapped[float | None] = mapped_column(Float)
+    service_schedule_id: Mapped[int | None] = mapped_column(Integer)
+
+
+class ServiceSchedule(Base):
+    __tablename__ = "service_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vehicle_id: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(Text)
+    name: Mapped[str | None] = mapped_column(Text)
+    interval_months: Mapped[int | None] = mapped_column(Integer)
+    interval_km: Mapped[float | None] = mapped_column(Float)
+    enabled: Mapped[int] = mapped_column(Integer, server_default=FetchedValue())
+    created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
+    updated_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
 
 
 class OdometerLog(Base):
