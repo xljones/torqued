@@ -92,4 +92,20 @@ describe('VehicleList', () => {
     await userEvent.type(screen.getByPlaceholderText(/Filter by name/), 'volkswagen');
     expect(screen.getByText('Passat')).toBeInTheDocument();
   });
+
+  it('groups vehicles under Cars and Motorcycles headers', async () => {
+    api.getVehicles.mockResolvedValue(vehicles);
+    renderList();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Cars' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Motorcycles' })).toBeInTheDocument();
+    });
+  });
+
+  it('hides a category header when there are no vehicles of that kind', async () => {
+    api.getVehicles.mockResolvedValue([vehicles[1]]); // Daily — a car, no motorcycles
+    renderList();
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Cars' })).toBeInTheDocument());
+    expect(screen.queryByRole('heading', { name: 'Motorcycles' })).not.toBeInTheDocument();
+  });
 });

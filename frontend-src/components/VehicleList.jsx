@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import RegPlate from './RegPlate.jsx';
-import { KIND_ICONS, KIND_LABELS } from '../constants.js';
+import { KIND_ICONS, KIND_LABELS, VehicleKind } from '../constants.js';
 import { fmtDistanceBoth } from '../units.js';
 
 export default function VehicleList() {
@@ -50,6 +50,34 @@ export default function VehicleList() {
       )
     : (vehicles ?? []);
 
+  const cars = visible.filter(v => v.kind === VehicleKind.CAR);
+  const motorcycles = visible.filter(v => v.kind === VehicleKind.MOTORCYCLE);
+
+  const renderCard = (v) => (
+    <Link key={v.id} to={`/vehicles/${v.id}`} className={`vehicle-card${v.archived ? ' archived' : ''}`}>
+      <div className="vehicle-card-photo">
+        {v.cover_photo_id
+          ? <img src={api.photoUrl(v.cover_photo_id)} alt={v.name} loading="lazy" />
+          : <span aria-hidden="true">{KIND_ICONS[v.kind]}</span>}
+      </div>
+      <div className="vehicle-card-body">
+        <div className="vehicle-card-name">
+          {v.name}
+          <span className={`badge badge-${v.kind}`}>{KIND_LABELS[v.kind]}</span>
+          {!!v.archived && <span className="badge">Archived</span>}
+        </div>
+        <div className="vehicle-card-sub">
+          {[eff(v, 'year'), effName(v, 'make'), effName(v, 'model')].filter(Boolean).join(' ') || '—'}
+        </div>
+        {eff(v, 'registration') && <div><RegPlate reg={eff(v, 'registration')} /></div>}
+        <div className="vehicle-card-meta">
+          <span>{v.latest_odometer ? fmtDistanceBoth(v.latest_odometer.odometer_km, v.odometer_unit) : 'No mileage yet'}</span>
+          <span>{v.service_count} service{v.service_count !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+    </Link>
+  );
+
   return (
     <div>
       <div className="page-header">
@@ -75,32 +103,20 @@ export default function VehicleList() {
 
       {vehicles === null && <p className="text-muted">Loading…</p>}
 
-      <div className="vehicle-grid">
-        {visible.map(v => (
-          <Link key={v.id} to={`/vehicles/${v.id}`} className={`vehicle-card${v.archived ? ' archived' : ''}`}>
-            <div className="vehicle-card-photo">
-              {v.cover_photo_id
-                ? <img src={api.photoUrl(v.cover_photo_id)} alt={v.name} loading="lazy" />
-                : <span aria-hidden="true">{KIND_ICONS[v.kind]}</span>}
-            </div>
-            <div className="vehicle-card-body">
-              <div className="vehicle-card-name">
-                {v.name}
-                <span className={`badge badge-${v.kind}`}>{KIND_LABELS[v.kind]}</span>
-                {!!v.archived && <span className="badge">Archived</span>}
-              </div>
-              <div className="vehicle-card-sub">
-                {[eff(v, 'year'), effName(v, 'make'), effName(v, 'model')].filter(Boolean).join(' ') || '—'}
-              </div>
-              {eff(v, 'registration') && <div><RegPlate reg={eff(v, 'registration')} /></div>}
-              <div className="vehicle-card-meta">
-                <span>{v.latest_odometer ? fmtDistanceBoth(v.latest_odometer.odometer_km, v.odometer_unit) : 'No mileage yet'}</span>
-                <span>{v.service_count} service{v.service_count !== 1 ? 's' : ''}</span>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
+      {cars.length > 0 && (
+        <section className="vehicle-section">
+          <h2 className="list-section-header">Cars</h2>
+          <div className="vehicle-grid">{cars.map(renderCard)}</div>
+        </section>
+      )}
+
+      {motorcycles.length > 0 && (
+        <section className="vehicle-section">
+          <h2 className="list-section-header">Motorcycles</h2>
+          <div className="vehicle-grid">{motorcycles.map(renderCard)}</div>
+        </section>
+      )}
+
       {vehicles !== null && visible.length === 0 && (
         <div className="card"><p className="card-message">{filter ? 'No matches' : 'No vehicles yet — add your first one'}</p></div>
       )}

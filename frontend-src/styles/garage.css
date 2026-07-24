@@ -70,6 +70,14 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .vehicle-card-meta { font-size: 12px; color: var(--text2); display: flex; gap: 12px; margin-top: 4px; }
 .vehicle-card.archived { opacity: 0.55; }
 
+/* ── Vehicle list sections (label + full-width rule) ───────────────────────── */
+.vehicle-section + .vehicle-section { margin-top: 28px; }
+.list-section-header {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 12px;
+}
+.list-section-header::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+
 /* ── Kind & reminder badges ────────────────────────────────────────────────── */
 .badge-car { background: var(--tint-info-bg); color: var(--tint-info-fg); }
 .badge-motorcycle { background: var(--tint-accent2-bg); color: var(--tint-accent2-fg); }
