@@ -249,6 +249,7 @@ def test_readonly_blocked_from_service_and_photo_writes(
     assert readonly_client.delete(f"/api/odometer/{odo['id']}").status_code == 403
     assert readonly_client.put(f"/api/photos/{photo['id']}",
                                json={"caption": "x"}).status_code == 403
+    assert readonly_client.put(f"/api/photos/{photo['id']}/cover").status_code == 403
     assert readonly_client.delete(f"/api/photos/{photo['id']}").status_code == 403
     r = readonly_client.post(
         f"/api/vehicles/{v['id']}/photos",

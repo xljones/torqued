@@ -1,6 +1,6 @@
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: var(--radius); border: none;
+  padding: 7px 14px; border-radius: var(--radius); border: 1px solid transparent;
   font-size: 13px; font-weight: 500; line-height: 1.2; cursor: pointer; transition: background 0.1s;
 }
 .btn-primary { background: var(--accent); color: #fff; }

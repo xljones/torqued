@@ -1,6 +1,7 @@
 """Tests for /api/vehicles/<id>/photos and /api/photos: upload, serve, caption, delete."""
 import io
 import os
+from typing import Any
 
 from flask import Flask
 from flask.testing import FlaskClient
@@ -135,3 +136,71 @@ def test_photos_deleted_with_vehicle_cascade(auth_client: FlaskClient) -> None:
     photo = upload(auth_client, v["id"]).json
     auth_client.delete(f"/api/vehicles/{v['id']}")
     assert auth_client.get(f"/api/photos/{photo['id']}/file").status_code == 404
+
+
+# ── cover photo ─────────────────────────────────────────────────────────────────
+
+def _cover_id(client: FlaskClient, vehicle_id: int) -> Any:
+    """The vehicle's effective cover photo id as reported by the list endpoint."""
+    listed = next(v for v in client.get("/api/vehicles").json if v["id"] == vehicle_id)
+    return listed["cover_photo_id"]
+
+
+def test_cover_defaults_to_latest_upload(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    upload(auth_client, v["id"])
+    p2 = upload(auth_client, v["id"]).json
+    # With no explicit pick the cover is the most recently uploaded photo, on both
+    # the detail endpoint and the list card.
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["cover_photo_id"] == p2["id"]
+    assert _cover_id(auth_client, v["id"]) == p2["id"]
+
+
+def test_set_cover_photo_overrides_default(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    p1 = upload(auth_client, v["id"]).json
+    p2 = upload(auth_client, v["id"]).json
+    # Pin the older photo; it beats the latest-upload default everywhere.
+    assert auth_client.put(f"/api/photos/{p1['id']}/cover").status_code == 204
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["cover_photo_id"] == p1["id"]
+    assert _cover_id(auth_client, v["id"]) == p1["id"]
+    # Selecting another photo moves the cover.
+    assert auth_client.put(f"/api/photos/{p2['id']}/cover").status_code == 204
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["cover_photo_id"] == p2["id"]
+
+
+def test_cover_reverts_to_latest_when_pinned_photo_deleted(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    p1 = upload(auth_client, v["id"]).json
+    p2 = upload(auth_client, v["id"]).json
+    assert auth_client.put(f"/api/photos/{p1['id']}/cover").status_code == 204
+    assert auth_client.delete(f"/api/photos/{p1['id']}").status_code == 204
+    # The pinned photo is gone → falls back to the latest remaining upload.
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["cover_photo_id"] == p2["id"]
+    assert _cover_id(auth_client, v["id"]) == p2["id"]
+
+
+def test_cover_none_without_photos(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    assert auth_client.get(f"/api/vehicles/{v['id']}").json["cover_photo_id"] is None
+    assert _cover_id(auth_client, v["id"]) is None
+
+
+def test_set_cover_404(auth_client: FlaskClient) -> None:
+    assert auth_client.put("/api/photos/999/cover").status_code == 404
+
+
+def test_set_cover_cross_garage_404(client: FlaskClient, garage: dict[str, Any]) -> None:
+    from tests.conftest import login, make_member
+    from tests.test_garages import mk_garage
+
+    other = mk_garage()
+    make_member("alice", "testpass", "member", garage)
+    make_member("bob", "testpass", "member", other)
+
+    login(client, "bob")
+    foreign = mk_vehicle(client, garage_id=other["id"])
+    photo = upload(client, foreign["id"]).json
+
+    login(client, "alice")
+    assert client.put(f"/api/photos/{photo['id']}/cover").status_code == 404
