@@ -6,7 +6,7 @@ import { useToast } from './Toast.jsx';
  * Photo grid with upload, lightbox, caption editing, and delete.
  * Pass serviceLogId to scope uploads to a service log; ro disables editing.
  */
-export default function PhotoGallery({ photos, vehicleId, serviceLogId, ro, onChange }) {
+export default function PhotoGallery({ photos, vehicleId, serviceLogId, coverPhotoId, ro, onChange }) {
   const toast = useToast();
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -48,6 +48,12 @@ export default function PhotoGallery({ photos, vehicleId, serviceLogId, ro, onCh
     onChange?.();
   }
 
+  async function handleSetCover(photo) {
+    await api.setCover(photo.id);
+    toast('Cover photo set');
+    onChange?.();
+  }
+
   return (
     <div>
       <div className="section-header">
@@ -69,6 +75,9 @@ export default function PhotoGallery({ photos, vehicleId, serviceLogId, ro, onCh
             {photos.map(p => (
               <button key={p.id} type="button" className="photo-thumb" onClick={() => { setOpenPhoto(p); setEditingCaption(false); }}>
                 <img src={api.photoUrl(p.id)} alt={p.caption || p.original_name || 'Vehicle photo'} loading="lazy" />
+                {p.id === coverPhotoId && (
+                  <span className="photo-thumb-cover" title="Cover photo" aria-label="Cover photo">★</span>
+                )}
                 {(p.caption || p.service_title) && (
                   <span className="photo-thumb-caption">{p.caption || p.service_title}</span>
                 )}
@@ -99,6 +108,11 @@ export default function PhotoGallery({ photos, vehicleId, serviceLogId, ro, onCh
                 {!ro && (
                   <button className="btn btn-secondary btn-sm" onClick={() => { setCaption(openPhoto.caption ?? ''); setEditingCaption(true); }}>
                     Edit caption
+                  </button>
+                )}
+                {!ro && openPhoto.id !== coverPhotoId && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleSetCover(openPhoto)}>
+                    Set as cover
                   </button>
                 )}
                 {!ro && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(openPhoto)}>Delete</button>}

@@ -82,6 +82,10 @@ class Vehicle(Base):
     tyre_pressure_rear_psi: Mapped[float | None] = mapped_column(Float)
     notes: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[int] = mapped_column(Integer, server_default=FetchedValue())
+    # User-pinned cover photo (photos.id); NULL falls back to the latest upload. Set
+    # only via set_cover_photo, so it is deliberately absent from VEHICLE_FIELDS and
+    # survives ordinary vehicle edits/reverts untouched.
+    cover_photo_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
     updated_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
 

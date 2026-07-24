@@ -11,6 +11,7 @@ from torqued.access import can_write, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.photo_repository import PhotoRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
+from torqued.repositories.vehicle_repository import VehicleRepository
 
 bp = Blueprint("photos", __name__)
 
@@ -100,6 +101,19 @@ def update_photo(photo_id: int) -> ResponseReturnValue:
         if err:
             return err
         return jsonify(repo.update_caption(photo_id, d.get("caption") or None))
+
+
+@bp.put("/api/photos/<int:photo_id>/cover")
+@login_required
+def set_cover(photo_id: int) -> ResponseReturnValue:
+    with get_db() as db:
+        photo = PhotoRepository(db).get_by_id(photo_id)
+        err = _check_photo(db, photo, write=True)
+        if err:
+            return err
+        assert photo is not None
+        VehicleRepository(db).set_cover_photo(photo["vehicle_id"], photo_id)
+    return "", 204
 
 
 @bp.delete("/api/photos/<int:photo_id>")

@@ -72,13 +72,16 @@ class VehicleRepository(BaseRepository):
             .where(Photo.vehicle_id == Vehicle.id)
             .correlate(Vehicle)
         ).scalar_subquery()
-        cover_photo_id = (
-            select(Photo.id)
-            .where(Photo.vehicle_id == Vehicle.id)
-            .order_by(Photo.service_log_id.is_not(None), Photo.created_at.asc())
-            .limit(1)
-            .correlate(Vehicle)
-        ).scalar_subquery()
+        cover_photo_id = func.coalesce(
+            Vehicle.cover_photo_id,
+            (
+                select(Photo.id)
+                .where(Photo.vehicle_id == Vehicle.id)
+                .order_by(Photo.created_at.desc(), Photo.id.desc())
+                .limit(1)
+                .correlate(Vehicle)
+            ).scalar_subquery(),
+        )
         stmt = (
             select(
                 Vehicle,
@@ -147,6 +150,12 @@ class VehicleRepository(BaseRepository):
             {**to_dict(photo), "uploaded_by_username": username, "service_title": service_title}
             for photo, username, service_title in photo_rows
         ]
+        # Effective cover: the pinned photo if it still exists, else the latest upload
+        # (photos are ordered newest-first above). Keeps the detail-view glyph in step
+        # with the list card, which applies the same fallback in SQL.
+        photo_ids = {p["id"] for p in vehicle["photos"]}
+        if vehicle["cover_photo_id"] not in photo_ids:
+            vehicle["cover_photo_id"] = vehicle["photos"][0]["id"] if vehicle["photos"] else None
         vehicle["latest_odometer"] = self.latest_odometers().get(vehicle_id)
         vehicle["mot_baseline"] = self.mot_baseline(vehicle_id)
         return vehicle
@@ -210,6 +219,12 @@ class VehicleRepository(BaseRepository):
         if vehicle is not None:
             self._record_history(vehicle, changed_by)
         return vehicle
+
+    def set_cover_photo(self, vehicle_id: int, photo_id: int) -> None:
+        """Pin a specific photo as the vehicle's cover (get_detail derives the fallback)."""
+        self.session.execute(
+            update(Vehicle).where(Vehicle.id == vehicle_id).values(cover_photo_id=photo_id)
+        )
 
     def delete(self, vehicle_id: int) -> bool:
         """Delete a vehicle (cascades to specs, logs, photos); return True if a row was removed."""

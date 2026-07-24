@@ -1,6 +1,8 @@
 from typing import Any
 
-from torqued.models import Photo, to_dict
+from sqlalchemy import update
+
+from torqued.models import Photo, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
 
@@ -47,5 +49,9 @@ class PhotoRepository(BaseRepository):
         photo = self.session.get(Photo, photo_id)
         if photo is None:
             return False
+        # A vehicle pinning this photo as its cover reverts to the derived fallback.
+        self.session.execute(
+            update(Vehicle).where(Vehicle.cover_photo_id == photo_id).values(cover_photo_id=None)
+        )
         self.session.delete(photo)
         return True

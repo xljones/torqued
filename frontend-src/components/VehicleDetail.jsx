@@ -375,7 +375,7 @@ export default function VehicleDetail() {
       </div>
 
       <div className="mb-6">
-        <PhotoGallery photos={vehicle.photos} vehicleId={vehicle.id} ro={ro} onChange={refresh} />
+        <PhotoGallery photos={vehicle.photos} vehicleId={vehicle.id} coverPhotoId={vehicle.cover_photo_id} ro={ro} onChange={refresh} />
       </div>
 
       <div className="mt-4">
