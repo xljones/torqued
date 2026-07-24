@@ -2,10 +2,12 @@
 from datetime import date, timedelta
 from typing import Any
 
+import pytest
 from flask.testing import FlaskClient
 
 from tests.test_services import mk_service
 from tests.test_vehicles import mk_vehicle
+from torqued.units import from_km
 
 
 def mk_schedule(client: FlaskClient, vehicle_id: int, **overrides) -> dict:
@@ -309,6 +311,20 @@ def test_reminder_projects_from_newest_fulfilling_log(auth_client: FlaskClient) 
     [r] = _schedule_reminders(auth_client, v["id"])
     assert r["date"] == "2024-06-15"
     assert r["next_due_date"] == "2025-06-15"
+
+
+def test_reminder_projects_date_and_mileage_together(auth_client: FlaskClient) -> None:
+    # A minor schedule due every 12 months OR every 10,000 mi.
+    v = mk_vehicle(auth_client)  # vehicle odometer unit defaults to 'mi'
+    s = mk_schedule(auth_client, v["id"], kind="minor", interval_months=12,
+                    interval_distance=10000, interval_unit="mi")
+    # Fulfilled on 2000-09-11 at 56,000 mi.
+    mk_service(auth_client, v["id"], date="2000-09-11",
+               odometer=56000, odometer_unit="mi", service_schedule_id=s["id"])
+    [r] = _schedule_reminders(auth_client, v["id"])
+    # Next due exactly one year later, or 10,000 mi further on (66,000 mi).
+    assert r["next_due_date"] == "2001-09-11"
+    assert round(from_km(r["next_due_km"], "mi")) == 66000
 
 
 def test_reminder_excludes_archived(auth_client: FlaskClient) -> None:

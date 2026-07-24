@@ -20,7 +20,7 @@
   existing reminder stream (`type='schedule'`, alongside service and MOT reminders) on the
   dashboard, vehicle detail, and PDF report. Manage schedules from the vehicle detail page,
   pick one when logging a service, and see the fulfilled schedule on the service detail.
-  Migration `0003`.
+  Migration `0005`.
 - **Run DB/user commands against production.** The database and user `make` commands take an
   optional `prod=1` flag (e.g. `make create-admin username=x password=y prod=1`,
   `make migrate prod=1`, `make db-backup prod=1`) to target `PROD_DATABASE_URL` instead of the

@@ -90,7 +90,7 @@ class ServiceScheduleRepository(BaseRepository):
         """Delete a schedule; return True if a row was removed.
 
         The service_schedule_id link on service logs carries no live FK (see migration
-        0003), so its ON DELETE SET NULL behaviour is applied here: any fulfilling log
+        0005), so its ON DELETE SET NULL behaviour is applied here: any fulfilling log
         keeps its record with the now-dangling link cleared.
         """
         self.session.execute(
