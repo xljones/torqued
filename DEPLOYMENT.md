@@ -25,21 +25,19 @@ This resets to the latest `origin/deploy`, creates `venv/` if missing, and insta
 
 ### 3. Create your `.env` file
 
-The backend connects to **PostgreSQL** via `DATABASE_URL` (SQLAlchemy URL with the
-psycopg v3 driver). Provision a database first (PythonAnywhere offers Postgres, or use
-any external/managed Postgres), then:
+The app stores data in a local **SQLite** file (`data/garage.db`) by default, so no
+database URL is needed:
 
 ```bash
 cat > .env <<EOF
 SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 FLASK_DEBUG=0
-DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/torqued
 EOF
 ```
 
-Replace `USER`, `PASSWORD`, `HOST`, and the database name with your credentials. (If
-`DATABASE_URL` is omitted the app falls back to a local SQLite file at
-`data/garage.db` — fine for a quick try, but use Postgres for a real deployment.)
+To use PostgreSQL instead, add a `DATABASE_URL` (a full SQLAlchemy URL with the psycopg
+v3 driver, e.g. `postgresql+psycopg://USER:PASSWORD@HOST:5432/torqued`) — see
+[Optional: PostgreSQL](#optional-postgresql) below.
 
 `.env` is gitignored and will not be overwritten by `make deploy-pa`. See
 [.env.example](.env.example) for the full list of supported variables.
@@ -50,16 +48,6 @@ Replace `USER`, `PASSWORD`, `HOST`, and the database name with your credentials.
 echo "PA_API_TOKEN=<your-token>" >> .env
 echo "PA_USERNAME=<your-username>" >> .env
 ```
-
-**Optional — admin panel Neon database stats.** If your database is hosted on [Neon](https://neon.tech) and you want the admin panel to show live storage / compute usage, add a [Neon API key](https://console.neon.tech/app/settings/api-keys) (the project id is optional — the first project on the key is used when omitted):
-
-```bash
-echo "NEON_API_KEY=<your-api-key>" >> .env
-echo "NEON_PROJECT_ID=<your-project-id>" >> .env       # optional
-echo "NEON_COMPUTE_LIMIT_HOURS=100" >> .env            # optional — your plan's monthly compute-hours
-```
-
-Storage shows as a percentage of Neon's reported size limit automatically. Compute has no plan-inherent limit, so to show it as a percentage set `NEON_COMPUTE_LIMIT_HOURS` to your plan's monthly compute-hours allowance (the Free plan includes ≈100); otherwise the card shows a plain compute-hours figure.
 
 **Optional — DVSA MOT history.** To enable the "Refresh from DVSA" button on vehicle pages, [register for the MOT history API](https://documentation.history.mot.api.gov.uk/mot-history-api/register) (free for under 500,000 requests/year; DVSA emails credentials in 1–5 working days) and add:
 
@@ -98,7 +86,7 @@ In the **PythonAnywhere Web tab**:
 
 Hit **Reload** in the Web tab. The app will be live at `https://<you>.pythonanywhere.com`.
 
-The schema is created and kept current automatically: `run_migrations()` (Alembic `upgrade head`) runs against your `DATABASE_URL` on every app startup.
+The schema is created and kept current automatically: `run_migrations()` (Alembic `upgrade head`) runs against your database on every app startup.
 
 ---
 
@@ -159,42 +147,27 @@ for confirmation. (On PythonAnywhere `DATABASE_URL` already is production, so yo
 `prod=1` there — and it errors, since there's no separate `PROD_DATABASE_URL`.)
 
 `migrate` runs Alembic (`upgrade head`); `reset-db` drops and recreates the schema.
-For a Postgres database, `db-backup` / `db-restore` shell out to `pg_dump` / `psql`, so
-those client tools must be on `PATH` (they ship in the backend Docker image; on
-PythonAnywhere install or use the bundled `postgresql-client`).
+`db-backup` / `db-restore` auto-detect the backend: a SQLite database is dumped with
+`sqlite3`, while a Postgres database shells out to `pg_dump` / `psql` (those client tools
+ship in the backend Docker image).
 
 ---
 
-## Hosted Postgres (Neon, Supabase, …)
+## Optional: PostgreSQL
 
-A managed Postgres connection string works as-is — paste the one your provider gives
-you into `DATABASE_URL`. Using **Neon** as the example:
+The app defaults to SQLite, but any managed Postgres connection string works — paste it
+into `DATABASE_URL`:
 
-- **Driver & SSL.** Neon hands you `postgresql://…?sslmode=require&channel_binding=require`.
-  You don't need to add `+psycopg`: the app pins the psycopg v3 driver automatically, and
-  the `sslmode` / `channel_binding` query params are passed straight through to libpq.
-- **Pooled vs direct endpoint.** Neon exposes a direct host and a pooled host (the one with
-  `-pooler` in the hostname). Both work — the app disables psycopg's server-side prepared
-  statements so it is safe behind the transaction pooler. Use the **pooled** endpoint for the
-  running app; either endpoint is fine for migrations (Neon recommends the **direct** one for
-  schema changes).
+- **Driver & SSL.** A driverless URL (`postgres://…` or `postgresql://…?sslmode=require`)
+  is fine — the app pins the psycopg v3 driver automatically and passes `sslmode` /
+  `channel_binding` straight through to libpq.
+- **Pooled endpoints.** The app disables psycopg's server-side prepared statements, so it
+  is safe behind a transaction pooler (PgBouncer and similar).
 
-### Running migrations against Neon
+Migrations are ordinary Alembic (`run_migrations()` = `alembic upgrade head`). They run as
+part of `make deploy-pa` (against `DATABASE_URL`) and on app boot as a safety net; to push
+schema changes to another database from your laptop, set `PROD_DATABASE_URL` and run:
 
-Migrations are ordinary Alembic — `run_migrations()` is just `alembic upgrade head`. Pick
-whichever fits your flow:
-
-1. **As part of the deploy.** `make deploy-pa` runs the migration (against `DATABASE_URL`,
-   which is Neon on PythonAnywhere) behind a maintenance page before you reload — see
-   [Updating a deployment](#updating-a-deployment). `create_app()` also runs migrations on
-   boot as a safety net.
-2. **From your laptop, targeting production.** Put the Neon URL in `PROD_DATABASE_URL` (the
-   same var the dev DB switcher uses; the direct endpoint is the safe choice for schema
-   changes) and run:
-
-   ```bash
-   make migrate prod=1        # = manage.py migrate --prod = alembic upgrade head on PROD_DATABASE_URL
-   ```
-
-   Useful to push schema changes to prod ahead of (or without) a full code deploy, or to gate
-   migrations in CI before the app rolls out.
+```bash
+make migrate prod=1        # = manage.py migrate --prod = alembic upgrade head on PROD_DATABASE_URL
+```
