@@ -177,16 +177,6 @@ function NoGarage() {
   );
 }
 
-function ProductionBanner() {
-  const { user } = useAuth();
-  if (user?.database !== 'production') return null;
-  return (
-    <div className="prod-banner" role="alert">
-      ⚠ Connected to the <strong>PRODUCTION</strong> database — changes are live
-    </div>
-  );
-}
-
 function AppShell() {
   const { user, garages } = useAuth();
 
@@ -201,12 +191,10 @@ function AppShell() {
   if (user === null) return <LoginPage />;
 
   if (garages.length === 0 && !user.is_admin) {
-    return (<><ProductionBanner /><NoGarage /></>);
+    return <NoGarage />;
   }
 
   return (
-    <>
-    <ProductionBanner />
     <div className="layout">
       <Nav />
       <main className="main">
@@ -229,7 +217,6 @@ function AppShell() {
       </main>
       <BottomNav />
     </div>
-    </>
   );
 }
 

@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, has_request_context, jsonify, send_from_directory, session
+from flask import Flask, Response, jsonify, send_from_directory
 from flask.typing import ResponseReturnValue
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, logout_user
@@ -12,19 +12,6 @@ from torqued.domain.user import User
 _DIST_DIR = str(Path(__file__).parent.parent.parent / "dist")
 
 login_manager = LoginManager()
-
-
-def _resolve_db_target() -> str | None:
-    """Per-request database target for the dev-only login switcher (see torqued.db).
-
-    Only honoured inside a request and only when the switcher is enabled, so a
-    forged session cookie can never switch the database in a real deployment.
-    """
-    from torqued.db import db_switcher_enabled
-
-    if not db_switcher_enabled() or not has_request_context():
-        return None
-    return "production" if session.get("db_target") == "production" else None
 
 
 # A deploy can briefly take the app offline (e.g. while migrations run). When this
@@ -54,7 +41,7 @@ def _maintenance_flag() -> str:
 
 
 def create_app() -> Flask:
-    from torqued.db import get_db, run_migrations, set_target_resolver
+    from torqued.db import get_db, run_migrations
     from torqued.repositories.user_repository import UserRepository
     from torqued.routes import (
         admin,
@@ -80,7 +67,6 @@ def create_app() -> Flask:
     # stays, so the app is ready on first boot with no extra step.
     if not os.environ.get("PYTHONANYWHERE_SITE"):
         run_migrations()
-    set_target_resolver(_resolve_db_target)
 
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
@@ -155,14 +141,6 @@ def create_app() -> Flask:
         users.bp,
     ):
         app.register_blueprint(bp)
-
-    @app.get("/api/config")
-    def app_config() -> Response:
-        # Public, unauthenticated: lets the login page decide whether to offer the
-        # dev-only "use production database" switch.
-        from torqued.db import db_switcher_enabled
-
-        return jsonify(db_switcher=db_switcher_enabled())
 
     @app.get("/", defaults={"path": ""})
     @app.get("/<path:path>")

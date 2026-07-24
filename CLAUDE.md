@@ -6,39 +6,27 @@
 
 | Layer | Tech |
 |---|---|
-| Backend | Python 3.14, Flask, PostgreSQL via SQLAlchemy Core (psycopg v3 driver) |
+| Backend | Python 3.14, Flask, SQLite via SQLAlchemy ORM (PostgreSQL optional; psycopg v3 driver) |
 | Migrations | Alembic (`backend-src/migrations/`); portable across Postgres and SQLite |
 | Frontend | React 18, Vite, React Router |
 | Auth | Flask-Login + `werkzeug.security` password hashing |
 | Lint / typecheck / test | ruff, mypy, pytest (backend); eslint, vitest (frontend) |
-| Dev environment | Docker Compose (three services: `db` (Postgres), `backend`, `frontend`) |
+| Dev environment | Docker Compose (two services: `backend`, `frontend`) |
 | Deployment | PythonAnywhere (Flask serves built React `dist/`) |
 
-**Database is configurable, not hard-coded.** The backend talks to PostgreSQL in
-development and production and to SQLite in tests, through one SQLAlchemy engine
-chosen by `torqued.db.database_url()`: `DATABASE_URL` (a full SQLAlchemy URL, e.g.
-`postgresql+psycopg://…`) wins, else `DB_PATH` resolves to a `sqlite:///` URL, else
-an on-disk SQLite file. Repositories never import a driver — they get a dialect-agnostic
-`Connection` wrapper from `get_db()` and keep using the `execute("… ? …", (args,))`
-convention; the wrapper handles placeholders, row mapping, and transactions. Dates and
-timestamps are stored as TEXT (ISO strings) and 0/1 flags as INTEGER so values
-round-trip identically on both backends. A bare hosted-provider URL
-(`postgres://`/`postgresql://`, e.g. Neon) is accepted verbatim — the psycopg v3 driver is
-pinned and `?sslmode=…` passes through to libpq — and server-side prepared statements are
-disabled so the app is safe behind a transaction pooler (PgBouncer / Neon's `-pooler`
-endpoint). Migrations are just `alembic upgrade head` (`run_migrations()`), run on startup
-or as an explicit `make migrate` / CI step (see [DEPLOYMENT.md](DEPLOYMENT.md)).
-
-**Dev-only DB switcher.** With `ENABLE_DB_SWITCHER=1` *and* `PROD_DATABASE_URL` set (both
-wired up in `compose.yml` for local dev), the login page offers a Local/Production toggle
-(`GET /api/config` → `db_switcher`). The login route stores the choice in the signed
-session (`db_target`); a per-request resolver registered via `db.set_target_resolver()`
-makes `get_db()` route to `PROD_DATABASE_URL` for that session, and a red banner shows
-while on production. It is inert in a real deployment — production never sets
-`ENABLE_DB_SWITCHER`, so `db.db_switcher_enabled()` is False and a forged cookie can't
-switch the DB. The gate is a positive opt-in, **not** the absence of `FLASK_DEBUG`, so it
-doesn't depend on an entry point remembering to force debug off. Migrations always use the
-default `DATABASE_URL` (the resolver returns None outside a request).
+**Database is configurable, not hard-coded.** The backend uses **SQLite by default**
+(development, tests, and production) and can talk to PostgreSQL instead, through one
+SQLAlchemy engine chosen by `torqued.db.database_url()`: `DATABASE_URL` (a full SQLAlchemy
+URL, e.g. `postgresql+psycopg://…`) wins, else `DB_PATH` resolves to a `sqlite:///` URL,
+else an on-disk SQLite file under `data/`. Repositories never import a driver — they get a
+`Session` from `get_db()` and use the ORM directly (`execute_sql` remains for the occasional
+raw `?`-placeholder statement). Dates and timestamps are stored as TEXT (ISO strings) and
+0/1 flags as INTEGER so values round-trip identically on both backends. A bare
+hosted-provider URL (`postgres://`/`postgresql://`) is accepted verbatim — the psycopg v3
+driver is pinned and `?sslmode=…` passes through to libpq — and server-side prepared
+statements are disabled so the app is safe behind a transaction pooler (PgBouncer).
+Migrations are just `alembic upgrade head` (`run_migrations()`), run on startup or as an
+explicit `make migrate` / CI step (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ## Domain model
 
@@ -89,7 +77,7 @@ torqued/
 - **Auth:** Flask-Login guards all routes via `@login_required`; a `before_request` hook in `__init__.py` enforces account expiry (logs the user out). Read-only is per-garage and enforced in routes via `torqued.access`.
 - **Tenancy:** collection endpoints accept an optional `garage_id` query param and otherwise return data for all the user's garages; item endpoints resolve the garage through the vehicle. Out-of-scope resources return 404, write attempts by readonly members return 403.
 - **Version history:** vehicles and service logs snapshot to `*_history` tables on every create/update; `revert` endpoints restore a snapshot.
-- **Admin-only:** `routes/admin.py` exposes `/api/admin/pythonanywhere` (CPU, web app, scheduled task info — needs `PA_API_TOKEN` and `PA_USERNAME`) and `/api/admin/neon` (Neon database storage / compute usage via the Neon REST API — needs `NEON_API_KEY`, optional `NEON_PROJECT_ID` else the first project is used; storage shows as a % of Neon's reported size limit, compute as a % of `NEON_COMPUTE_LIMIT_HOURS` or a configured Neon consumption quota) — both gated on `current_user.is_admin`.
+- **Admin-only:** `routes/admin.py` exposes `/api/admin/pythonanywhere` (CPU, web app, scheduled task info — needs `PA_API_TOKEN` and `PA_USERNAME`), gated on `current_user.is_admin`.
 
 ### Frontend (`frontend-src/`)
 
@@ -110,9 +98,9 @@ styles/              Per-concern CSS modules (base, buttons, cards, forms, layou
 components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
                      ServiceList, ServiceDetail, ServiceForm, CodeLookup, LoginPage,
                      SettingsPage, AdminPage (site admin: garages + users +
-                     memberships + PythonAnywhere stats + Neon stats)
+                     memberships + PythonAnywhere stats)
                      Shared: PhotoGallery, MotCard, MotField, MileageChart, FaultCodeInput,
-                     SuggestInput, ExportDropdown, PythonAnywhereStats, NeonStats, RelativeTime,
+                     SuggestInput, ExportDropdown, PythonAnywhereStats, RelativeTime,
                      Skeleton, BuildInfo, Toast
 ```
 
@@ -121,7 +109,7 @@ components/          Pages: Dashboard, VehicleList, VehicleDetail, VehicleForm,
 - **ServiceList** — garage-scoped service history, filterable by free text and by a specific vehicle.
 - **Garage switcher** — in the sidebar (and mobile More menu); list pages (Dashboard, VehicleList, ServiceList) are scoped to `currentGarage`, detail pages derive the role from the resource's `garage_id` via `roleFor`.
 - **SettingsPage** (`/settings`) — sectioned settings page (Account, Appearance, Password). The **Appearance** section switches the theme (Light / Dark / System) via `ThemeContext`; a one-tap theme cycle button also lives in the sidebar and mobile More menu. Dark mode is driven entirely by CSS custom properties: light values live in `styles/base.css :root`, dark overrides in `styles/dark.css` under `[data-theme="dark"]`. Appearance also holds a **Tidy up vehicle names** On/Off toggle (`DisplayPrefsContext`) that title-cases DVSA make/model/colour/fuel on display only — the stored ALL-CAPS record is unchanged and user-typed overrides are shown verbatim.
-- **AdminPage** — site-admin page at `/admin`: create/rename/delete garages; create/delete users (optionally assigning a garage + role); manage an existing user's garage memberships and roles via the per-user editor (`addMember`/`setMemberRole`/`removeMember`); PythonAnywhere stats; Neon database stats. This is now the only UI for membership management — the former per-garage Members page was removed. The owner-role member endpoints (`POST/PUT/DELETE /api/garages/<id>/members`) still exist server-side, reachable via this admin UI or `make add-member`.
+- **AdminPage** — site-admin page at `/admin`: create/rename/delete garages; create/delete users (optionally assigning a garage + role); manage an existing user's garage memberships and roles via the per-user editor (`addMember`/`setMemberRole`/`removeMember`); PythonAnywhere stats. This is now the only UI for membership management — the former per-garage Members page was removed. The owner-role member endpoints (`POST/PUT/DELETE /api/garages/<id>/members`) still exist server-side, reachable via this admin UI or `make add-member`.
 
 ## Running locally
 

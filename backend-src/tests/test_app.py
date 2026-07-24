@@ -198,11 +198,11 @@ def test_maintenance_flag_serves_503(client: FlaskClient, monkeypatch, tmp_path:
     flag = tmp_path / "MAINTENANCE"
     flag.write_text("")
     monkeypatch.setenv("MAINTENANCE_FILE", str(flag))
-    r = client.get("/api/config")
+    r = client.get("/api/auth/me")
     assert r.status_code == 503
     assert b"maintenance" in r.data.lower()
 
 
 def test_no_maintenance_flag_serves_normally(client: FlaskClient, monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("MAINTENANCE_FILE", str(tmp_path / "absent"))
-    assert client.get("/api/config").status_code == 200
+    assert client.get("/api/auth/me").status_code != 503

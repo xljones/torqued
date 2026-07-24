@@ -11,7 +11,7 @@ vi.mock('../AuthContext.jsx', () => ({
 
 beforeEach(() => {
   mockLogin.mockReset();
-  mockAuth = { login: mockLogin, dbSwitcher: false };
+  mockAuth = { login: mockLogin };
 });
 
 function fillForm(username, password) {
@@ -27,14 +27,14 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
-  it('calls login with entered credentials (no DB hint when switcher off)', async () => {
+  it('calls login with entered credentials', async () => {
     mockLogin.mockResolvedValue(undefined);
     render(<LoginPage />);
 
     fillForm('alice', 'secret');
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
-    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'secret', undefined));
+    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'secret'));
   });
 
   it('shows error message on failed login', async () => {
@@ -47,25 +47,5 @@ describe('LoginPage', () => {
     await waitFor(() =>
       expect(screen.getByText('Invalid username or password')).toBeInTheDocument()
     );
-  });
-
-  it('hides the database switcher when not enabled', () => {
-    render(<LoginPage />);
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-  });
-
-  it('offers a toggle in dev mode and logs in against the chosen database', async () => {
-    mockAuth = { login: mockLogin, dbSwitcher: true };
-    mockLogin.mockResolvedValue(undefined);
-    render(<LoginPage />);
-
-    const toggle = screen.getByRole('switch', { name: 'Database' });
-    fireEvent.click(toggle); // flip from Local to Production
-    expect(screen.getByText(/changes are live/i)).toBeInTheDocument();
-
-    fillForm('alice', 'secret');
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
-
-    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('alice', 'secret', 'production'));
   });
 });
