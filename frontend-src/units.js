@@ -30,18 +30,22 @@ export function fmtDistanceDelta(deltaKm, unit) {
   return `${sign}${Math.abs(v).toLocaleString()} ${unit}`;
 }
 
-/** Humanised interval length: "<1 day", "7 days", "3 months", "1 year", "1.5 years". */
-export function fmtInterval(days) {
+/**
+ * Humanised interval length. Full: "<1 day", "7 days", "3 months", "1 year", "1.5 years".
+ * Compact (for tight layouts): "<1d", "7d", "3mo", "1y", "1.5y".
+ */
+export function fmtInterval(days, { compact = false } = {}) {
   if (days == null) return null;
   const d = Math.round(days);
-  if (d <= 0) return '<1 day'; // same-day (or same-value) neighbours
-  if (d < 31) return `${d} ${d === 1 ? 'day' : 'days'}`;
+  if (d <= 0) return compact ? '<1d' : '<1 day'; // same-day (or same-value) neighbours
+  if (d < 31) return compact ? `${d}d` : `${d} ${d === 1 ? 'day' : 'days'}`;
   if (d < 365) {
     const m = Math.max(1, Math.round(d / 30.44));
-    return `${m} ${m === 1 ? 'month' : 'months'}`;
+    return compact ? `${m}mo` : `${m} ${m === 1 ? 'month' : 'months'}`;
   }
   const y = Math.round((d / 365.25) * 10) / 10; // 1 dp
-  return `${Number.isInteger(y) ? y : y.toFixed(1)} ${y === 1 ? 'year' : 'years'}`;
+  const yv = Number.isInteger(y) ? y : y.toFixed(1);
+  return compact ? `${yv}y` : `${yv} ${y === 1 ? 'year' : 'years'}`;
 }
 
 /** "36 psi / 2.48 bar" */

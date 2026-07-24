@@ -45,6 +45,15 @@ describe('units', () => {
     expect(fmtInterval(null)).toBeNull();
   });
 
+  it('abbreviates intervals in compact mode', () => {
+    expect(fmtInterval(7, { compact: true })).toBe('7d');
+    expect(fmtInterval(1, { compact: true })).toBe('1d');
+    expect(fmtInterval(90, { compact: true })).toBe('3mo');
+    expect(fmtInterval(365, { compact: true })).toBe('1y');
+    expect(fmtInterval(548, { compact: true })).toBe('1.5y');
+    expect(fmtInterval(0, { compact: true })).toBe('<1d');
+  });
+
   it('formats pressures in both units', () => {
     expect(fmtPressure(36)).toBe('36 psi / 2.48 bar');
     expect(fmtPressure(null)).toBeNull();
