@@ -208,8 +208,16 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const tests = mot?.tests ?? [];
   const latest = tests[0];
   const expiry = latest?.expiry_date ?? mot?.mot_test_due_date;
-  const motResult = latest ? ((latest.test_result || '').toUpperCase() === 'PASSED' ? 'Passed' : 'Failed') : '—';
-  const expiryVerb = !latest ? 'Due' : (isPast(expiry) ? 'Expired' : 'Expires');
+  const taxStatusLc = (taxInfo?.tax_status || '').toLowerCase();
+  const taxed = taxStatusLc === 'taxed';
+  // When a vehicle is untaxed (but not deliberately SORN'd) and we happen to have a date,
+  // it's the date the tax lapsed. Our gov.uk scrape doesn't provide this, but the VES API
+  // would — so surface it when present, like the MOT "Expired <date>" line.
+  const taxLapsedDate = taxInfo && !taxed && taxStatusLc !== 'sorn' ? taxInfo.tax_due_date : null;
+  const failed = !!latest && (latest.test_result || '').toUpperCase() !== 'PASSED';
+  const expired = !!expiry && isPast(expiry);
+  const motValid = !!expiry && !expired && !failed;  // a current, passed MOT
+  const motTileClass = failed ? 'pressure-tile--danger' : expiryTileClass(expiry);
   const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 5);
 
@@ -244,28 +252,39 @@ export default function MotCard({ vehicle, ro, onSynced }) {
         )}
       </div>
 
-      {/* Core info: tax | MOT side by side */}
-      {(taxInfo || mot) && (
+      {/* Core info: MOT (left) | tax (right), side by side */}
+      {(mot || taxInfo) && (
         <div className="motax-primary">
-          {taxInfo && (
-            <div className={`pressure-tile ${taxStatusTileClass(taxInfo.tax_status)}`}>
-              <div className="pressure-label">Tax status</div>
-              <div className="pressure-value">{taxInfo.tax_status || '—'}</div>
+          {mot && (
+            <div className={`pressure-tile ${motTileClass}`}>
+              <div className="pressure-label">MOT</div>
+              <div className="pressure-value">
+                {failed ? 'Failed'
+                  : expired ? 'Expired'
+                  : expiry ? <>Expires <RelativeTime value={expiry} /></>
+                  : '—'}
+              </div>
               <div className="pressure-alt">
-                {taxInfo.tax_due_date
-                  ? <>Due {taxInfo.tax_due_date} (<RelativeTime value={taxInfo.tax_due_date} />)</>
+                {motValid ? `Expires ${expiry}`
+                  : expired ? `Expired ${expiry}`
                   : '—'}
               </div>
             </div>
           )}
-          {mot && (
-            <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
-              <div className="pressure-label">MOT status</div>
-              <div className="pressure-value">{motResult}</div>
+          {taxInfo && (
+            <div className={`pressure-tile ${taxStatusTileClass(taxInfo.tax_status)}`}>
+              {/* When taxed, the label carries the status and the value shows how long is
+                  left; otherwise the label is generic and the value is the status word. */}
+              <div className="pressure-label">{taxed ? 'Taxed' : 'Tax status'}</div>
+              <div className="pressure-value">
+                {taxed
+                  ? (taxInfo.tax_due_date ? <>Due <RelativeTime value={taxInfo.tax_due_date} /></> : 'Taxed')
+                  : (taxInfo.tax_status || '—')}
+              </div>
               <div className="pressure-alt">
-                {expiry
-                  ? <>{expiryVerb} {expiry} (<RelativeTime value={expiry} />)</>
-                  : '—'}
+                {taxed
+                  ? (taxInfo.tax_due_date || '—')
+                  : taxLapsedDate ? `Expired ${taxLapsedDate}` : '—'}
               </div>
             </div>
           )}

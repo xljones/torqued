@@ -101,15 +101,16 @@ describe('MotCard', () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
-      expect(screen.getByText('MOT status')).toBeInTheDocument();
+      expect(screen.getByText('MOT')).toBeInTheDocument();
       expect(screen.getByText('Pass')).toBeInTheDocument();
       expect(screen.getByText('Fail')).toBeInTheDocument();
       expect(screen.getByText(/VOLKSWAGEN PASSAT/)).toBeInTheDocument();
     });
-    // The MOT tile summarises the latest test (passed) and its (past) expiry.
-    const motTile = screen.getByText('MOT status').closest('.pressure-tile');
-    expect(motTile).toHaveTextContent('Passed');
-    expect(motTile).toHaveTextContent(/Expired 2025-11-04/);
+    // The fixture's latest test passed but its certificate has since lapsed → "Expired",
+    // with the expiry date on the bottom line.
+    const motTile = screen.getByText('MOT').closest('.pressure-tile');
+    expect(motTile).toHaveTextContent('Expired');
+    expect(motTile).toHaveTextContent('Expired 2025-11-04');
     await userEvent.click(screen.getByText('1 defect'));
     expect(screen.getByText('Tyre worn close to limit')).toBeInTheDocument();
   });
@@ -134,10 +135,10 @@ describe('MotCard', () => {
   it('colours the MOT tile by expiry and hides recall when unknown', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('MOT status')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
 
     // Fixture latest expiry (2025-11-04) is in the past → danger (red)
-    expect(screen.getByText('MOT status').closest('.pressure-tile'))
+    expect(screen.getByText('MOT').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--danger');
     // has_outstanding_recall: 'Unknown' → tile hidden entirely
     expect(screen.queryByText('Outstanding recall')).not.toBeInTheDocument();
@@ -161,9 +162,9 @@ describe('MotCard', () => {
     };
     api.getMot.mockResolvedValue({ configured: true, mot: expiring });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('MOT status')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
 
-    expect(screen.getByText('MOT status').closest('.pressure-tile'))
+    expect(screen.getByText('MOT').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--warn');
     expect(screen.getByText('Outstanding recall').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--danger');
@@ -249,10 +250,12 @@ describe('MotCard', () => {
     api.getMot.mockResolvedValue({ configured: true, mot: null });
     api.getTax.mockResolvedValue({ configured: true, tax });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
-    const taxTile = screen.getByText('Tax status').closest('.pressure-tile');
-    expect(taxTile).toHaveTextContent('Taxed');
-    expect(taxTile).toHaveTextContent(/Due 2026-12-01/);
+    // When taxed the label carries the status; the value shows "Due <relative>" and the
+    // exact due date sits on the bottom line.
+    await waitFor(() => expect(screen.getByText('Taxed')).toBeInTheDocument());
+    const taxTile = screen.getByText('Taxed').closest('.pressure-tile');
+    expect(taxTile).toHaveTextContent('Due');
+    expect(taxTile).toHaveTextContent('2026-12-01');
     expect(taxTile).toHaveClass('pressure-tile--ok');
   });
 
@@ -278,5 +281,17 @@ describe('MotCard', () => {
     await waitFor(() => expect(screen.getByText('Untaxed')).toBeInTheDocument());
     expect(screen.getByText('Tax status').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--danger');
+  });
+
+  it('shows when tax lapsed for an untaxed vehicle that carries a date', async () => {
+    // The gov.uk scrape leaves this null, but the VES API would supply it — show it when present.
+    api.getMot.mockResolvedValue({ configured: true, mot: null });
+    api.getTax.mockResolvedValue({
+      configured: true, tax: { ...tax, tax_status: 'Untaxed', tax_due_date: '2024-03-01' },
+    });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('Untaxed')).toBeInTheDocument());
+    expect(screen.getByText('Tax status').closest('.pressure-tile'))
+      .toHaveTextContent('Expired 2024-03-01');
   });
 });
