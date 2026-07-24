@@ -1,20 +1,15 @@
 from typing import Any
 
-from flask import Blueprint, Response, jsonify, request, session
+from flask import Blueprint, Response, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required, login_user, logout_user
 
 from torqued import analytics
-from torqued.db import db_switcher_enabled, get_db
+from torqued.db import get_db
 from torqued.domain.user import User
 from torqued.repositories.user_repository import UserRepository
 
 bp = Blueprint("auth", __name__)
-
-
-def _current_db_target() -> str:
-    """Which database this session is bound to: 'production' (dev switcher) or 'local'."""
-    return "production" if session.get("db_target") == "production" else "local"
 
 
 def _user_dict(row: dict[str, Any], memberships: list[dict[str, Any]]) -> dict[str, Any]:
@@ -43,12 +38,6 @@ def login() -> ResponseReturnValue:
     password = d.get("password") or ""
     if not username or not password:
         return jsonify(error="Username and password required"), 400
-    # Dev-only DB switcher: bind this session to the chosen database before the
-    # credentials are checked, so the lookup runs against the right backend.
-    if db_switcher_enabled() and d.get("database") == "production":
-        session["db_target"] = "production"
-    else:
-        session.pop("db_target", None)
     with get_db() as db:
         repo = UserRepository(db)
         row = repo.verify_password(username, password)
@@ -62,15 +51,14 @@ def login() -> ResponseReturnValue:
     analytics.capture(
         user.id,
         "user.logged_in",
-        {"is_admin": user.is_admin, "database": _current_db_target()},
+        {"is_admin": user.is_admin},
     )
-    return jsonify({**_user_dict(row, memberships), "database": _current_db_target()})
+    return jsonify(_user_dict(row, memberships))
 
 
 @bp.post("/api/auth/logout")
 def logout() -> ResponseReturnValue:
     logout_user()
-    session.pop("db_target", None)
     return "", 204
 
 
@@ -85,7 +73,6 @@ def me() -> Response:
         is_admin=bool(current_user.is_admin),
         expires_at=current_user.expires_at,
         memberships=memberships,
-        database=_current_db_target(),
     )
 
 

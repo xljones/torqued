@@ -1,22 +1,4 @@
 services:
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: torqued
-      POSTGRES_PASSWORD: torqued
-      POSTGRES_DB: torqued
-    # Host port 5433 (→ container 5432) avoids clashing with a local Postgres on
-    # 5432. The backend reaches the database over the compose network as `db`.
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U torqued -d torqued"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: .
@@ -30,14 +12,11 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://torqued:torqued@db:5432/torqued
+      # No DATABASE_URL: the app uses SQLite. DB_PATH points at the bind-mounted
+      # data/ dir (backend-src is mounted at /app, so the default path resolver
+      # can't find it). Set DATABASE_URL in .env to use PostgreSQL instead.
+      DB_PATH: /app/data/garage.db
       FLASK_DEBUG: "1"
-      # Opt in to the dev-only login DB switcher (needs PROD_DATABASE_URL from .env
-      # too). Production never sets this, so the switcher stays inert there.
-      ENABLE_DB_SWITCHER: "1"
-    depends_on:
-      db:
-        condition: service_healthy
 
   frontend:
     build:
@@ -56,6 +35,3 @@ services:
       API_URL: http://backend:5001
     depends_on:
       - backend
-
-volumes:
-  pgdata:
