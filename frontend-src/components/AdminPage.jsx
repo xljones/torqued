@@ -5,7 +5,6 @@ import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import DeploymentInfo from './DeploymentInfo.jsx';
 import PythonAnywhereStats from './PythonAnywhereStats.jsx';
-import NeonStats from './NeonStats.jsx';
 import { ROLE_LABELS } from '../constants.js';
 
 function statusLabel(u) {
@@ -377,7 +376,6 @@ export default function AdminPage() {
       </div>
       <DeploymentInfo />
       <PythonAnywhereStats />
-      <NeonStats />
     </div>
   );
 }
