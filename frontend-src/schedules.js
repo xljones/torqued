@@ -1,11 +1,6 @@
 // Helpers for displaying service schedules (minor / major / custom recurring services).
+import { SCHEDULE_KIND_LABELS } from './constants.js';
 import { fmtDistance } from './units.js';
-
-export const SCHEDULE_KIND_LABELS = Object.freeze({
-  minor: 'Minor service',
-  major: 'Major service',
-  custom: 'Custom',
-});
 
 // A schedule's display title: its name if set, else a label for its kind.
 export function scheduleTitle(s) {

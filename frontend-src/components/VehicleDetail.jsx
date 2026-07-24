@@ -12,8 +12,8 @@ import RegPlate from './RegPlate.jsx';
 import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
-import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
-import { SCHEDULE_KIND_LABELS, scheduleTitle, scheduleInterval } from '../schedules.js';
+import { KIND_LABELS, REMINDER_LABELS, ScheduleKind, SCHEDULE_KIND_LABELS } from '../constants.js';
+import { scheduleTitle, scheduleInterval } from '../schedules.js';
 import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, fromKm, toKm } from '../units.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
@@ -229,7 +229,7 @@ function SpecsCard({ vehicle, ro, onSaved }) {
   );
 }
 
-const EMPTY_SCHEDULE = { kind: 'minor', name: '', interval_months: '', interval_distance: '', enabled: true };
+const EMPTY_SCHEDULE = { kind: ScheduleKind.MINOR, name: '', interval_months: '', interval_distance: '', enabled: true };
 
 function ScheduleForm({ form, set, unit, onSave, onCancel }) {
   return (
@@ -243,7 +243,7 @@ function ScheduleForm({ form, set, unit, onSave, onCancel }) {
             ))}
           </select>
         </div>
-        {form.kind === 'custom' && (
+        {form.kind === ScheduleKind.CUSTOM && (
           <div className="field">
             <label>Name</label>
             <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Valve clearance" />
@@ -303,7 +303,7 @@ function SchedulesCard({ vehicle, ro }) {
   async function handleSave() {
     const body = {
       kind: form.kind,
-      name: form.kind === 'custom' ? form.name : null,
+      name: form.kind === ScheduleKind.CUSTOM ? form.name : null,
       interval_months: form.interval_months === '' ? null : Number(form.interval_months),
       interval_distance: form.interval_distance,
       interval_unit: unit,

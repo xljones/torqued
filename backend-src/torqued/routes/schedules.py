@@ -7,6 +7,7 @@ from flask_login import current_user, login_required
 from torqued import analytics
 from torqued.access import can_write, garage_role, vehicle_role
 from torqued.db import get_db
+from torqued.domain.service_schedule import ScheduleKind
 from torqued.repositories.service_schedule_repository import KINDS, ServiceScheduleRepository
 from torqued.units import parse_distance
 
@@ -43,7 +44,7 @@ def _schedule_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
         return jsonify(error="a schedule needs a month or distance interval"), 400
 
     name = opt("name")
-    if kind == "custom" and not name:
+    if kind == ScheduleKind.CUSTOM and not name:
         return jsonify(error="a custom schedule needs a name"), 400
 
     return {

@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import aliased
 
 from torqued.db import utcnow_text
+from torqued.domain.service_schedule import ScheduleKind
 from torqued.models import ServiceLog, ServiceSchedule, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
@@ -19,12 +20,12 @@ SCHEDULE_FIELDS: list[str] = [
     "enabled",
 ]
 
-# The recognised schedule kinds. A vehicle typically has one 'minor' and one 'major'
-# schedule plus any number of user-named 'custom' ones — but nothing here enforces
-# uniqueness; the routes validate the kind and the UI shapes the rest.
-KINDS = ("minor", "major", "custom")
+# The recognised schedule kinds (from the ScheduleKind enum). A vehicle typically has one
+# 'minor' and one 'major' schedule plus any number of user-named 'custom' ones — but
+# nothing here enforces uniqueness; the routes validate the kind and the UI shapes the rest.
+KINDS = tuple(ScheduleKind)
 
-_KIND_LABELS = {"minor": "Minor service", "major": "Major service"}
+_KIND_LABELS = {ScheduleKind.MINOR: "Minor service", ScheduleKind.MAJOR: "Major service"}
 
 
 def schedule_title(schedule: dict[str, Any]) -> str:

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { scheduleTitle, scheduleInterval, SCHEDULE_KIND_LABELS } from './schedules.js';
+import { scheduleTitle, scheduleInterval } from './schedules.js';
+import { SCHEDULE_KIND_LABELS } from './constants.js';
 
 describe('scheduleTitle', () => {
   it('uses the name when set', () => {

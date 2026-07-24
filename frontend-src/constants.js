@@ -18,6 +18,18 @@ export const KIND_ICONS = Object.freeze({
   motorcycle: '🏍️',
 });
 
+export const ScheduleKind = Object.freeze({
+  MINOR: 'minor',
+  MAJOR: 'major',
+  CUSTOM: 'custom',
+});
+
+export const SCHEDULE_KIND_LABELS = Object.freeze({
+  minor: 'Minor service',
+  major: 'Major service',
+  custom: 'Custom',
+});
+
 export const SERVICE_CATEGORIES = Object.freeze([
   'Service',
   'Oil change',
