@@ -22,6 +22,28 @@ export function fmtDistanceBoth(km, unit) {
   return `${fmtDistance(km, unit)} (${fmtDistance(km, otherUnit(unit))})`;
 }
 
+/** "+400 mi" / "−12 mi" / "±0 mi" — a signed odometer delta in the display unit. */
+export function fmtDistanceDelta(deltaKm, unit) {
+  if (deltaKm == null) return null;
+  const v = Math.round(fromKm(deltaKm, unit));
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '±';
+  return `${sign}${Math.abs(v).toLocaleString()} ${unit}`;
+}
+
+/** Humanised interval length: "<1 day", "7 days", "3 months", "1 year", "1.5 years". */
+export function fmtInterval(days) {
+  if (days == null) return null;
+  const d = Math.round(days);
+  if (d <= 0) return '<1 day'; // same-day (or same-value) neighbours
+  if (d < 31) return `${d} ${d === 1 ? 'day' : 'days'}`;
+  if (d < 365) {
+    const m = Math.max(1, Math.round(d / 30.44));
+    return `${m} ${m === 1 ? 'month' : 'months'}`;
+  }
+  const y = Math.round((d / 365.25) * 10) / 10; // 1 dp
+  return `${Number.isInteger(y) ? y : y.toFixed(1)} ${y === 1 ? 'year' : 'years'}`;
+}
+
 /** "36 psi / 2.48 bar" */
 export function fmtPressure(psi) {
   if (psi == null) return null;

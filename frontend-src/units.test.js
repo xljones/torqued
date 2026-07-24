@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   toKm, fromKm, psiToBar, barToPsi,
-  fmtDistance, fmtDistanceBoth, fmtPressure, fmtPressurePsiBar, fmtCost, titleCase,
+  fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval,
+  fmtPressure, fmtPressurePsiBar, fmtCost, titleCase,
 } from './units.js';
 
 describe('units', () => {
@@ -22,6 +23,26 @@ describe('units', () => {
     expect(fmtDistance(1609.344, 'km')).toBe('1,609 km');
     expect(fmtDistance(null, 'mi')).toBeNull();
     expect(fmtDistanceBoth(160.9344, 'mi')).toBe('100 mi (161 km)');
+  });
+
+  it('formats signed distance deltas in the display unit', () => {
+    expect(fmtDistanceDelta(643.7376, 'mi')).toBe('+400 mi'); // 400 mi in km
+    expect(fmtDistanceDelta(16093.44, 'mi')).toBe('+10,000 mi');
+    expect(fmtDistanceDelta(-19.312128, 'mi')).toBe('−12 mi'); // odometer went backwards
+    expect(fmtDistanceDelta(0, 'mi')).toBe('±0 mi');
+    expect(fmtDistanceDelta(400, 'km')).toBe('+400 km');
+    expect(fmtDistanceDelta(null, 'mi')).toBeNull();
+  });
+
+  it('humanises intervals in days/months/years', () => {
+    expect(fmtInterval(7)).toBe('7 days');
+    expect(fmtInterval(365)).toBe('1 year');
+    expect(fmtInterval(1)).toBe('1 day');
+    expect(fmtInterval(31)).toBe('1 month');
+    expect(fmtInterval(548)).toBe('1.5 years');
+    expect(fmtInterval(0)).toBe('<1 day');
+    expect(fmtInterval(-3)).toBe('<1 day');
+    expect(fmtInterval(null)).toBeNull();
   });
 
   it('formats pressures in both units', () => {
