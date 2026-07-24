@@ -339,6 +339,7 @@ def test_reminder_excludes_archived(auth_client: FlaskClient) -> None:
 
 def test_repository_units(app) -> None:
     from torqued.db import get_db
+    from torqued.repositories.garage_repository import GarageRepository
     from torqued.repositories.service_schedule_repository import (
         ServiceScheduleRepository,
         add_months,
@@ -357,6 +358,10 @@ def test_repository_units(app) -> None:
     with get_db() as db:
         repo = ServiceScheduleRepository(db)
         assert repo.reminders([]) == []
+        # Called standalone (no injected `latest`), it fetches the odometer map itself —
+        # the orchestrator normally passes its own to avoid the repeat scan.
+        garage = GarageRepository(db).create("Schedule Repo Garage")
+        assert repo.reminders([garage["id"]]) == []
         assert repo.get_by_id(999) is None
         assert repo.update(999, {"interval_months": 6}) is None
         assert repo.delete(999) is False

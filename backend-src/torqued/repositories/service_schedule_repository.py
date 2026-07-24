@@ -106,6 +106,7 @@ class ServiceScheduleRepository(BaseRepository):
         garage_ids: list[int],
         vehicle_id: int | None = None,
         today: date | None = None,
+        latest: dict[int, dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Return schedule-derived reminders, shaped to merge with the other streams.
 
@@ -116,6 +117,11 @@ class ServiceScheduleRepository(BaseRepository):
         yields no reminder, as does one that ends up with neither a due date nor a due
         mileage. Status is 'overdue' / 'due_soon' / 'upcoming' on the same thresholds as
         service-log reminders. Each carries type='schedule'.
+
+        ``latest`` is the per-vehicle latest-odometer map from
+        ``VehicleRepository.latest_odometers``; the orchestrating
+        ``ServiceLogRepository.reminders`` passes in the one it already computed so the
+        (fairly heavy) scan isn't repeated. Omitted → computed here for standalone use.
         """
         from torqued.repositories.service_log_repository import DUE_SOON_DAYS, DUE_SOON_KM
 
@@ -156,9 +162,10 @@ class ServiceScheduleRepository(BaseRepository):
             stmt = stmt.where(ServiceSchedule.vehicle_id == vehicle_id)
         rows = self.session.execute(stmt).all()
 
-        from torqued.repositories.vehicle_repository import VehicleRepository
+        if latest is None:
+            from torqued.repositories.vehicle_repository import VehicleRepository
 
-        latest = VehicleRepository(self.session).latest_odometers()
+            latest = VehicleRepository(self.session).latest_odometers()
         soon_cutoff = (today + timedelta(days=DUE_SOON_DAYS)).isoformat()
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []

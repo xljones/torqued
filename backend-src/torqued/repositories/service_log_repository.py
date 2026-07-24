@@ -316,7 +316,7 @@ class ServiceLogRepository(BaseRepository):
         )
         reminders.extend(
             ServiceScheduleRepository(self.session).reminders(
-                garage_ids, vehicle_id=vehicle_id, today=today
+                garage_ids, vehicle_id=vehicle_id, today=today, latest=latest
             )
         )
         order = {"overdue": 0, "due_soon": 1, "upcoming": 2}
