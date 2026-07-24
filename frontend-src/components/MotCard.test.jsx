@@ -11,6 +11,8 @@ vi.mock('../api.js', () => ({
   api: {
     getMot: vi.fn(),
     refreshMot: vi.fn(),
+    getTax: vi.fn(),
+    refreshTax: vi.fn(),
   },
 }));
 
@@ -42,7 +44,18 @@ const mot = {
   ],
 };
 
-beforeEach(() => vi.clearAllMocks());
+const tax = {
+  registration: 'A1XYZ', tax_status: 'Taxed', tax_due_date: '2026-12-01',
+  fetched_at: '2026-06-11 12:00:00',
+  raw: { registration: 'A1XYZ', tax_status: 'Taxed' },
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Default: tax enabled but nothing stored, so the MOT-only tests are unaffected.
+  api.getTax.mockResolvedValue({ configured: true, tax: null });
+  api.refreshTax.mockResolvedValue({ configured: true, tax: null });
+});
 
 describe('MotCard', () => {
   it('renders nothing without a registration or stored data', async () => {
@@ -57,23 +70,25 @@ describe('MotCard', () => {
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
       expect(screen.getByText(/No MOT data yet/)).toBeInTheDocument();
-      expect(screen.getByText('Fetch from DVSA')).toBeInTheDocument();
+      expect(screen.getByText('Fetch from DVSA & DVLA')).toBeInTheDocument();
     });
   });
 
-  it('shows the dev env-var hint and hides the button when credentials are missing', async () => {
+  it('shows the dev env-var hint and hides the button when nothing is configured', async () => {
     api.getMot.mockResolvedValue({ configured: false, mot: null });
+    api.getTax.mockResolvedValue({ configured: false, tax: null });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
       expect(screen.getByText(/credentials are not configured/)).toBeInTheDocument();
     });
     // No point offering a fetch that can never succeed without credentials
-    expect(screen.queryByText('Fetch from DVSA')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fetch from DVSA & DVLA')).not.toBeInTheDocument();
   });
 
-  it('shows a generic message in production when credentials are missing', async () => {
+  it('shows a generic message in production when nothing is configured', async () => {
     vi.stubEnv('DEV', false);
     api.getMot.mockResolvedValue({ configured: false, mot: null });
+    api.getTax.mockResolvedValue({ configured: false, tax: null });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
       expect(screen.getByText('MOT history is unavailable right now.')).toBeInTheDocument();
@@ -151,15 +166,17 @@ describe('MotCard', () => {
       .toHaveClass('pressure-tile--danger');
   });
 
-  it('refreshes from the DVSA and reports synced readings', async () => {
+  it('refreshes both MOT and tax and reports synced readings', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     api.refreshMot.mockResolvedValue({ configured: true, mot });
+    api.refreshTax.mockResolvedValue({ configured: true, tax });
     const onSynced = vi.fn();
     render(<MotCard vehicle={vehicle} ro={false} onSynced={onSynced} />);
-    await waitFor(() => expect(screen.getByText('Refresh from DVSA')).toBeInTheDocument());
-    await userEvent.click(screen.getByText('Refresh from DVSA'));
+    await waitFor(() => expect(screen.getByText('Refresh from DVSA & DVLA')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Refresh from DVSA & DVLA'));
     await waitFor(() => {
       expect(api.refreshMot).toHaveBeenCalledWith(1);
+      expect(api.refreshTax).toHaveBeenCalledWith(1);
       expect(onSynced).toHaveBeenCalled();
     });
   });
@@ -190,7 +207,44 @@ describe('MotCard', () => {
   it('hides the refresh button for readonly members', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={true} />);
-    await waitFor(() => expect(screen.getByText('MOT history')).toBeInTheDocument());
-    expect(screen.queryByText('Refresh from DVSA')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('MOT & tax')).toBeInTheDocument());
+    expect(screen.queryByText('Refresh from DVSA & DVLA')).not.toBeInTheDocument();
+  });
+
+  // ── tax ────────────────────────────────────────────────────────────────────
+
+  it('shows tax status and due date, green when taxed', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot: null });
+    api.getTax.mockResolvedValue({ configured: true, tax });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
+    expect(screen.getByText('Taxed')).toBeInTheDocument();
+    expect(screen.getByText('Tax due')).toBeInTheDocument();
+    expect(screen.getByText('2026-12-01')).toBeInTheDocument();
+    expect(screen.getByText('Tax status').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--ok');
+  });
+
+  it('colours a SORN vehicle amber with no due date', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot: null });
+    api.getTax.mockResolvedValue({
+      configured: true, tax: { ...tax, tax_status: 'SORN', tax_due_date: null },
+    });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('SORN')).toBeInTheDocument());
+    expect(screen.getByText('Tax status').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--warn');
+    expect(screen.getByText('Tax due').closest('.pressure-tile')).toHaveTextContent('—');
+  });
+
+  it('colours an untaxed vehicle red', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot: null });
+    api.getTax.mockResolvedValue({
+      configured: true, tax: { ...tax, tax_status: 'Untaxed', tax_due_date: null },
+    });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('Untaxed')).toBeInTheDocument());
+    expect(screen.getByText('Tax status').closest('.pressure-tile'))
+      .toHaveClass('pressure-tile--danger');
   });
 });

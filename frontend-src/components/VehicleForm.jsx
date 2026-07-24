@@ -37,7 +37,9 @@ export default function VehicleForm({ mode }) {
   const [archived, setArchived] = useState(false);
   const [saving, setSaving] = useState(false);
   const [motConfigured, setMotConfigured] = useState(false);
+  const [taxConfigured, setTaxConfigured] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   // Edit mode blocks on the vehicle load so the populated form (incl. the DVSA baseline)
   // renders all at once instead of fields popping in after first paint. Create has nothing
   // to load, so it renders immediately.
@@ -45,6 +47,7 @@ export default function VehicleForm({ mode }) {
 
   useEffect(() => {
     api.getMotStatus().then(s => setMotConfigured(s.configured)).catch(() => {});
+    api.getTaxStatus().then(s => setTaxConfigured(s.configured)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -122,6 +125,30 @@ export default function VehicleForm({ mode }) {
     }
   }
 
+  // Edit mode: explicitly re-pull and store MOT history + tax status for the saved vehicle
+  // (the create flow does this automatically once the vehicle exists).
+  async function handleRefreshStored() {
+    setRefreshing(true);
+    try {
+      const results = await Promise.allSettled([
+        motConfigured ? api.refreshMot(id) : Promise.resolve(),
+        taxConfigured ? api.refreshTax(id) : Promise.resolve(),
+      ]);
+      const failure = results.find(r => r.status === 'rejected');
+      if (failure) {
+        toast(failure.reason?.message ?? 'Refresh failed', 'error');
+      } else {
+        toast('MOT & tax refreshed');
+        // Reflect any new DVSA baseline in the form's split identity fields.
+        const v = await api.getVehicle(id);
+        setBaseline(v.mot_baseline);
+        setAttachedMotReg(v.mot_baseline?.registration ?? null);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   // Enter in the registration field fetches DVSA data instead of submitting the form.
   function handleRegKeyDown(e) {
     if (e.key !== 'Enter' || !motConfigured) return;
@@ -186,16 +213,18 @@ export default function VehicleForm({ mode }) {
       delete body.tyre_pressure_rear;
       if (isEdit) {
         // Drop the stale record in the same PUT; if aligned data was previewed, re-fetch it
-        // against the now-saved plate so the detail page shows the new MOT data.
+        // against the now-saved plate so the detail page shows the new MOT and tax data.
         if (shouldClear) body.disconnect_mot = true;
         await api.updateVehicle(id, body);
-        if (needRefresh) await api.refreshMot(id).catch(() => {});
+        if (needRefresh) await Promise.allSettled([api.refreshMot(id), api.refreshTax(id)]);
         toast('Vehicle updated');
         navigate(`/vehicles/${id}`);
       } else {
         const v = await api.createVehicle({ ...body, garage_id: currentGarage.id });
-        // Persist the MOT data the user previewed so the baseline is ready on the detail page.
-        if (baseline) await api.refreshMot(v.id).catch(() => {});
+        // Fetch + store MOT history and tax status for the new plate so the detail page is ready.
+        if (form.registration.trim()) {
+          await Promise.allSettled([api.refreshMot(v.id), api.refreshTax(v.id)]);
+        }
         toast('Vehicle added');
         navigate(`/vehicles/${v.id}`);
       }
@@ -237,6 +266,12 @@ export default function VehicleForm({ mode }) {
               <button type="button" className="btn btn-secondary" onClick={handleFetch}
                 disabled={fetching || !form.registration.trim()}>
                 {fetching ? 'Fetching…' : 'Fetch from DVSA'}
+              </button>
+            )}
+            {isEdit && (motConfigured || taxConfigured) && (
+              <button type="button" className="btn btn-secondary" onClick={handleRefreshStored}
+                disabled={refreshing}>
+                {refreshing ? 'Refreshing…' : 'Refresh MOT & tax'}
               </button>
             )}
           </div>

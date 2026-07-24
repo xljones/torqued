@@ -13,10 +13,12 @@ vi.mock('../AuthContext.jsx', () => ({
 vi.mock('../api.js', () => ({
   api: {
     getMotStatus: vi.fn(),
+    getTaxStatus: vi.fn(),
     lookupMot: vi.fn(),
     getVehicle: vi.fn(),
     createVehicle: vi.fn(),
     refreshMot: vi.fn(),
+    refreshTax: vi.fn(),
     updateVehicle: vi.fn(),
   },
 }));
@@ -44,7 +46,11 @@ function renderEdit() {
   );
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.getTaxStatus.mockResolvedValue({ configured: true });
+  api.refreshTax.mockResolvedValue({ configured: true, tax: null });
+});
 
 describe('VehicleForm DVSA lookup', () => {
   it('puts the registration plate input first with a fetch button when configured', async () => {
@@ -147,6 +153,22 @@ describe('VehicleForm DVSA lookup', () => {
     // Once loaded, the populated form replaces the skeleton in one step.
     await screen.findByDisplayValue('AB12 CDE');
     expect(container.querySelector('.skeleton-line')).not.toBeInTheDocument();
+  });
+
+  it('fetches and stores MOT + tax after creating a vehicle with a registration', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.createVehicle.mockResolvedValue({ id: 42 });
+    api.refreshMot.mockResolvedValue({});
+    renderCreate();
+    const plate = await screen.findByPlaceholderText('A1 XYZ');
+    await userEvent.type(plate, 'A1 XYZ');
+    await userEvent.type(screen.getByPlaceholderText('e.g. Street Triple, Daily'), 'Daily');
+    await userEvent.click(screen.getByRole('button', { name: 'Add vehicle' }));
+    await waitFor(() => {
+      expect(api.createVehicle).toHaveBeenCalled();
+      expect(api.refreshMot).toHaveBeenCalledWith(42);
+      expect(api.refreshTax).toHaveBeenCalledWith(42);
+    });
   });
 });
 
