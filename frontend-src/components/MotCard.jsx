@@ -192,6 +192,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const tests = mot?.tests ?? [];
   const latest = tests[0];
   const expiry = latest?.expiry_date ?? mot?.mot_test_due_date;
+  const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 5);
 
   return (
@@ -247,20 +248,27 @@ export default function MotCard({ vehicle, ro, onSynced }) {
 
       {mot && (
         <>
+          {/* MOT (middle): expiry + any outstanding recall */}
+          {(expiry || showRecall) && (
+            <div className="mot-summary">
+              {expiry && (
+                <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
+                  <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
+                  <div className="pressure-value">{expiry}</div>
+                  <div className="pressure-alt"><RelativeTime value={expiry} /></div>
+                </div>
+              )}
+              {showRecall && (
+                <div className={`pressure-tile ${recallTileClass(mot.has_outstanding_recall)}`}>
+                  <div className="pressure-label">Outstanding recall</div>
+                  <div className="pressure-value">{mot.has_outstanding_recall}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* DVSA record (last): the full official record, expandable */}
           <div className="mot-summary">
-            {expiry && (
-              <div className={`pressure-tile ${expiryTileClass(expiry)}`}>
-                <div className="pressure-label">{latest ? 'MOT expires' : 'First MOT due'}</div>
-                <div className="pressure-value">{expiry}</div>
-                <div className="pressure-alt"><RelativeTime value={expiry} /></div>
-              </div>
-            )}
-            {String(mot.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown' && (
-              <div className={`pressure-tile ${recallTileClass(mot.has_outstanding_recall)}`}>
-                <div className="pressure-label">Outstanding recall</div>
-                <div className="pressure-value">{mot.has_outstanding_recall}</div>
-              </div>
-            )}
             <div
               className={`pressure-tile dvsa-record-tile${showJson ? ' dvsa-record-tile--open' : ''}`}
               role="button"
