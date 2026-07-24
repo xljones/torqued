@@ -15,12 +15,12 @@
 - **Service schedules.** Each vehicle can define recurring service schedules — a *minor*,
   a *major*, and any number of user-named *custom* ones — with an interval expressed as
   every N months and/or every N km/mi (stored canonically in km). A service log can record
-  which schedule it fulfilled (`service_schedule_id`); the newest fulfilling log is the
-  anchor from which the next due date/mileage is projected, and the result surfaces in the
+  which schedule(s) it fulfilled (many-to-many); the newest fulfilling log is the anchor
+  from which the next due date/mileage is projected, and the result surfaces in the
   existing reminder stream (`type='schedule'`, alongside service and MOT reminders) on the
-  dashboard, vehicle detail, and PDF report. Manage schedules from the vehicle detail page,
-  pick one when logging a service, and see the fulfilled schedule on the service detail.
-  Migration `0005`.
+  dashboard, vehicle detail, and PDF report. When logging a service you tick every schedule
+  it covers, and because a major service includes the minor, ticking the major auto-ticks
+  the minor so it isn't left showing overdue. Migration `0005`.
 - **Run DB/user commands against production.** The database and user `make` commands take an
   optional `prod=1` flag (e.g. `make create-admin username=x password=y prod=1`,
   `make migrate prod=1`, `make db-backup prod=1`) to target `PROD_DATABASE_URL` instead of the

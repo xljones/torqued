@@ -22,9 +22,10 @@ export default function ServiceDetail() {
   const refresh = useCallback(() => { api.getService(id).then(setLog); }, [id]);
   useEffect(refresh, [refresh]);
   useEffect(() => { api.getServiceHistory(id).then(setHistory); }, [id]);
+  const scheduleCount = log?.service_schedule_ids?.length ?? 0;
   useEffect(() => {
-    if (log?.service_schedule_id) api.getSchedules(log.vehicle_id).then(setSchedules).catch(() => {});
-  }, [log?.service_schedule_id, log?.vehicle_id]);
+    if (scheduleCount > 0) api.getSchedules(log.vehicle_id).then(setSchedules).catch(() => {});
+  }, [scheduleCount, log?.vehicle_id]);
 
   async function handleDelete() {
     if (!confirm('Delete this service log (and its photos)?')) return;
@@ -73,10 +74,13 @@ export default function ServiceDetail() {
             <span>{log.odometer_km != null ? fmtDistanceBoth(log.odometer_km, unit) : '—'}</span>
           </div>
           <div className="field"><label>Logged</label><span><RelativeTime value={log.created_at} /></span></div>
-          {log.service_schedule_id && (() => {
-            const s = schedules.find(x => x.id === log.service_schedule_id);
-            return s ? (
-              <div className="field"><label>Fulfils schedule</label><span>{scheduleTitle(s)}</span></div>
+          {scheduleCount > 0 && (() => {
+            const names = (log.service_schedule_ids || [])
+              .map(sid => schedules.find(x => x.id === sid))
+              .filter(Boolean)
+              .map(scheduleTitle);
+            return names.length ? (
+              <div className="field"><label>Fulfils schedules</label><span>{names.join(', ')}</span></div>
             ) : null;
           })()}
           {(log.next_due_date || log.next_due_km != null) && (

@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import SuggestInput from './SuggestInput.jsx';
 import FaultCodeInput from './FaultCodeInput.jsx';
-import { FormMode, SERVICE_CATEGORIES } from '../constants.js';
+import { FormMode, SERVICE_CATEGORIES, ScheduleKind } from '../constants.js';
 import { fromKm } from '../units.js';
 import { scheduleTitle, scheduleInterval } from '../schedules.js';
 
@@ -12,7 +12,7 @@ const EMPTY = {
   date: new Date().toISOString().slice(0, 10),
   title: '', category: '', description: '', performed_by: '', cost: '',
   odometer: '', odometer_unit: 'mi', next_due_date: '', next_due_distance: '',
-  service_schedule_id: '', fault_codes: [],
+  service_schedule_ids: [], fault_codes: [],
 };
 
 export default function ServiceForm({ mode }) {
@@ -44,7 +44,7 @@ export default function ServiceForm({ mode }) {
           odometer_unit: unit,
           next_due_date: s.next_due_date ?? '',
           next_due_distance: s.next_due_km != null ? +fromKm(s.next_due_km, unit).toFixed(0) : '',
-          service_schedule_id: s.service_schedule_id ?? '',
+          service_schedule_ids: s.service_schedule_ids ?? [],
           fault_codes: (s.fault_codes || []).map(fc => fc.code),
         });
         api.getVehicle(s.vehicle_id).then(setVehicle);
@@ -58,6 +58,23 @@ export default function ServiceForm({ mode }) {
   }, [isEdit, id, vehicleId]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Toggle a schedule link. A major service includes the minor, so ticking a major
+  // auto-ticks the minor schedule(s) too (still individually removable).
+  function toggleSchedule(schedule, checked) {
+    setForm(f => {
+      const ids = new Set(f.service_schedule_ids);
+      if (checked) {
+        ids.add(schedule.id);
+        if (schedule.kind === ScheduleKind.MAJOR) {
+          schedules.filter(s => s.kind === ScheduleKind.MINOR).forEach(s => ids.add(s.id));
+        }
+      } else {
+        ids.delete(schedule.id);
+      }
+      return { ...f, service_schedule_ids: [...ids] };
+    });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -155,16 +172,21 @@ export default function ServiceForm({ mode }) {
             </div>
             {schedules.length > 0 && (
               <div className="field span-2">
-                <label>Fulfils schedule</label>
-                <select value={form.service_schedule_id} onChange={e => set('service_schedule_id', e.target.value)}>
-                  <option value="">— None —</option>
+                <label>Fulfils schedules</label>
+                <div className="checkbox-list">
                   {schedules.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {scheduleTitle(s)} ({scheduleInterval(s, vehicle?.odometer_unit)})
-                    </option>
+                    <label key={s.id} className="checkbox-row text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.service_schedule_ids.includes(s.id)}
+                        onChange={e => toggleSchedule(s, e.target.checked)}
+                      />
+                      {' '}{scheduleTitle(s)}{' '}
+                      <span className="muted">({scheduleInterval(s, vehicle?.odometer_unit)})</span>
+                    </label>
                   ))}
-                </select>
-                <p className="form-hint muted">Anchors this schedule’s next-due reminder to this service.</p>
+                </div>
+                <p className="form-hint muted">Anchors each schedule’s next-due reminder to this service. Ticking a major service also ticks the minor.</p>
               </div>
             )}
           </div>
