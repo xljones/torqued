@@ -44,4 +44,30 @@ describe('MileageCard — "Since previous" column', () => {
     expect(screen.getByText('+10 mi in <1 day')).toBeInTheDocument(); // same-day pair
     expect(screen.getByText('—')).toBeInTheDocument(); // oldest row has no previous entry
   });
+
+  it('uses compact interval labels when the viewport is narrow', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = (query) => ({
+      matches: true, // pretend we're below the mobile breakpoint
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    });
+    try {
+      api.getMileage.mockResolvedValue(series);
+      render(<MileageCard vehicle={vehicle} ro />);
+
+      await userEvent.click(await screen.findByRole('button', { name: /Entries \(4\)/ }));
+
+      expect(screen.getByText('+400 mi in 7d')).toBeInTheDocument();
+      expect(screen.getByText('+10,000 mi in 1y')).toBeInTheDocument();
+      expect(screen.getByText('+10 mi in <1d')).toBeInTheDocument();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 });

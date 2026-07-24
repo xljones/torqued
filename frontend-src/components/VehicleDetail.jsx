@@ -14,6 +14,7 @@ import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
 import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, toKm } from '../units.js';
+import { useMediaQuery } from '../useMediaQuery.js';
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
 
@@ -23,6 +24,9 @@ const daysBetween = (a, b) =>
 
 export function MileageCard({ vehicle, ro, onLogged }) {
   const toast = useToast();
+  // Below the mobile breakpoint the entries table gets cramped — abbreviate the
+  // interval ("7 days" → "7d") so the "Since previous" column stays on one line.
+  const compactInterval = useMediaQuery('(max-width: 768px)');
   const [series, setSeries] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
   const [form, setForm] = useState({
@@ -140,7 +144,7 @@ export function MileageCard({ vehicle, ro, onLogged }) {
                   <td>{fmtDistanceBoth(l.odometer_km, l.unit)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {l.prev
-                      ? `${fmtDistanceDelta(l.odometer_km - l.prev.odometer_km, vehicle.odometer_unit)} in ${fmtInterval(daysBetween(l.prev.date, l.date))}`
+                      ? `${fmtDistanceDelta(l.odometer_km - l.prev.odometer_km, vehicle.odometer_unit)} in ${fmtInterval(daysBetween(l.prev.date, l.date), { compact: compactInterval })}`
                       : '—'}
                   </td>
                   <td><span className={`badge badge-source-${l.source}`}>{SOURCE_LABEL[l.source] ?? l.source}</span></td>
