@@ -69,12 +69,13 @@ export default function Dashboard() {
         {reminders?.map(r => {
           const isMot = r.type === 'mot';
           const isTax = r.type === 'tax';
-          const isExternal = isMot || isTax; // MOT/tax reminders link to the vehicle, not a service
+          // Only service reminders open a service page; MOT/tax/schedule link to the vehicle.
+          const toVehicle = r.type !== 'service';
           return (
             <div
-              key={isExternal ? `${r.type}-${r.vehicle_id}` : r.id}
+              key={`${r.type}-${r.id ?? r.vehicle_id}`}
               className="reminder-row row-clickable"
-              onClick={() => navigate(isExternal ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}
+              onClick={() => navigate(toVehicle ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}
             >
               <div className="reminder-main">
                 <span className="reminder-title">{r.vehicle_name} — {r.category || r.title}</span>

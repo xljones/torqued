@@ -6,12 +6,13 @@ import SuggestInput from './SuggestInput.jsx';
 import FaultCodeInput from './FaultCodeInput.jsx';
 import { FormMode, SERVICE_CATEGORIES } from '../constants.js';
 import { fromKm } from '../units.js';
+import { scheduleTitle, scheduleInterval } from '../schedules.js';
 
 const EMPTY = {
   date: new Date().toISOString().slice(0, 10),
   title: '', category: '', description: '', performed_by: '', cost: '',
   odometer: '', odometer_unit: 'mi', next_due_date: '', next_due_distance: '',
-  fault_codes: [],
+  service_schedule_id: '', fault_codes: [],
 };
 
 export default function ServiceForm({ mode }) {
@@ -23,9 +24,13 @@ export default function ServiceForm({ mode }) {
   const [form, setForm] = useState(EMPTY);
   const [vehicle, setVehicle] = useState(null);
   const [performers, setPerformers] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { api.getPerformers().then(setPerformers).catch(() => {}); }, []);
+  useEffect(() => {
+    if (vehicle) api.getSchedules(vehicle.id).then(setSchedules).catch(() => {});
+  }, [vehicle]);
 
   useEffect(() => {
     if (isEdit && id) {
@@ -39,6 +44,7 @@ export default function ServiceForm({ mode }) {
           odometer_unit: unit,
           next_due_date: s.next_due_date ?? '',
           next_due_distance: s.next_due_km != null ? +fromKm(s.next_due_km, unit).toFixed(0) : '',
+          service_schedule_id: s.service_schedule_id ?? '',
           fault_codes: (s.fault_codes || []).map(fc => fc.code),
         });
         api.getVehicle(s.vehicle_id).then(setVehicle);
@@ -147,6 +153,20 @@ export default function ServiceForm({ mode }) {
               <label>Next due (odometer, {form.odometer_unit})</label>
               <input type="number" step="any" min="0" value={form.next_due_distance} onChange={e => set('next_due_distance', e.target.value)} placeholder="Reading when next due" />
             </div>
+            {schedules.length > 0 && (
+              <div className="field span-2">
+                <label>Fulfils schedule</label>
+                <select value={form.service_schedule_id} onChange={e => set('service_schedule_id', e.target.value)}>
+                  <option value="">— None —</option>
+                  {schedules.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {scheduleTitle(s)} ({scheduleInterval(s, vehicle?.odometer_unit)})
+                    </option>
+                  ))}
+                </select>
+                <p className="form-hint muted">Anchors this schedule’s next-due reminder to this service.</p>
+              </div>
+            )}
           </div>
 
           <div className="form-actions">

@@ -13,7 +13,8 @@ import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
-import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, toKm } from '../units.js';
+import { SCHEDULE_KIND_LABELS, scheduleTitle, scheduleInterval } from '../schedules.js';
+import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, fromKm, toKm } from '../units.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
@@ -228,6 +229,144 @@ function SpecsCard({ vehicle, ro, onSaved }) {
   );
 }
 
+const EMPTY_SCHEDULE = { kind: 'minor', name: '', interval_months: '', interval_distance: '', enabled: true };
+
+function ScheduleForm({ form, set, unit, onSave, onCancel }) {
+  return (
+    <div className="schedule-edit mb-2">
+      <div className="form-grid">
+        <div className="field">
+          <label>Type</label>
+          <select value={form.kind} onChange={e => set('kind', e.target.value)}>
+            {Object.entries(SCHEDULE_KIND_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+        </div>
+        {form.kind === 'custom' && (
+          <div className="field">
+            <label>Name</label>
+            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Valve clearance" />
+          </div>
+        )}
+        <div className="field">
+          <label>Every (months)</label>
+          <input type="number" min="1" step="1" value={form.interval_months}
+            onChange={e => set('interval_months', e.target.value)} placeholder="e.g. 12" />
+        </div>
+        <div className="field">
+          <label>Every (distance, {unit})</label>
+          <input type="number" min="1" step="any" value={form.interval_distance}
+            onChange={e => set('interval_distance', e.target.value)} placeholder={`e.g. 6000`} />
+        </div>
+        <div className="field">
+          <label>Active</label>
+          <label className="text-sm">
+            <input type="checkbox" checked={form.enabled} onChange={e => set('enabled', e.target.checked)} />
+            {' '}Generate reminders
+          </label>
+        </div>
+      </div>
+      <p className="form-hint muted">Set a month interval, a distance interval, or both.</p>
+      <div className="btn-group">
+        <button type="button" className="btn btn-success btn-sm" onClick={onSave}>Save</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function SchedulesCard({ vehicle, ro }) {
+  const toast = useToast();
+  const unit = vehicle.odometer_unit;
+  const [schedules, setSchedules] = useState(null);
+  const [editing, setEditing] = useState(null); // 'new' | schedule id | null
+  const [form, setForm] = useState(EMPTY_SCHEDULE);
+
+  const refresh = useCallback(() => { api.getSchedules(vehicle.id).then(setSchedules); }, [vehicle.id]);
+  useEffect(refresh, [refresh]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function startAdd() { setForm(EMPTY_SCHEDULE); setEditing('new'); }
+  function startEdit(s) {
+    setForm({
+      kind: s.kind,
+      name: s.name ?? '',
+      interval_months: s.interval_months ?? '',
+      interval_distance: s.interval_km != null ? +fromKm(s.interval_km, unit).toFixed(0) : '',
+      enabled: !!s.enabled,
+    });
+    setEditing(s.id);
+  }
+
+  async function handleSave() {
+    const body = {
+      kind: form.kind,
+      name: form.kind === 'custom' ? form.name : null,
+      interval_months: form.interval_months === '' ? null : Number(form.interval_months),
+      interval_distance: form.interval_distance,
+      interval_unit: unit,
+      enabled: form.enabled,
+    };
+    try {
+      if (editing === 'new') await api.createSchedule(vehicle.id, body);
+      else await api.updateSchedule(editing, body);
+      setEditing(null);
+      toast('Schedule saved');
+      refresh();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('Delete this schedule? Any services that fulfilled it are kept.')) return;
+    await api.deleteSchedule(id);
+    toast('Schedule deleted');
+    refresh();
+  }
+
+  return (
+    <div className="card card-body mb-6">
+      <div className="section-header">
+        <h2 className="section-title">Service schedules</h2>
+        {!ro && editing !== 'new' && (
+          <button className="btn btn-secondary btn-sm" onClick={startAdd}>+ Add schedule</button>
+        )}
+      </div>
+      {schedules === null && <p className="text-muted text-sm">Loading…</p>}
+      {schedules?.length === 0 && editing !== 'new' && (
+        <p className="text-muted text-sm">Recurring services (minor, major, or your own) generate a reminder from the last time you logged them.</p>
+      )}
+      {schedules?.map(s => editing === s.id ? (
+        <ScheduleForm key={s.id} form={form} set={set} unit={unit}
+          onSave={handleSave} onCancel={() => setEditing(null)} />
+      ) : (
+        <div key={s.id} className="reminder-row">
+          <div className="reminder-main">
+            <span className="reminder-title">
+              {scheduleTitle(s)}
+              {!s.enabled && <span className="badge"> Off</span>}
+            </span>
+            <span className="reminder-sub">{scheduleInterval(s, unit)}</span>
+          </div>
+          {!ro && (
+            <div className="btn-group">
+              <button className="btn btn-secondary btn-sm" onClick={() => startEdit(s)}>Edit</button>
+              <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>✕</button>
+            </div>
+          )}
+        </div>
+      ))}
+      {editing === 'new' && (
+        <ScheduleForm form={form} set={set} unit={unit}
+          onSave={handleSave} onCancel={() => setEditing(null)} />
+      )}
+    </div>
+  );
+}
+
 export default function VehicleDetail() {
   const { roleFor } = useAuth();
   const { formatName } = useDisplayPrefs();
@@ -300,7 +439,7 @@ export default function VehicleDetail() {
       {dueReminders.length > 0 && (
         <div className="card mb-6">
           {dueReminders.map(r => (
-            <div key={r.type === 'service' ? r.id : r.type} className="reminder-row">
+            <div key={r.id == null ? r.type : `${r.type}-${r.id}`} className="reminder-row">
               <div className="reminder-main">
                 <span className="reminder-title">{r.category || r.title}</span>
                 <span className="reminder-sub">
@@ -366,6 +505,7 @@ export default function VehicleDetail() {
       <SpecsCard vehicle={vehicle} ro={ro} onSaved={refresh} />
       <MileageCard vehicle={vehicle} ro={ro} onLogged={refresh} />
       <MotCard vehicle={vehicle} ro={ro} onSynced={refresh} />
+      <SchedulesCard vehicle={vehicle} ro={ro} />
 
       <div className="section-header">
         <h2 className="section-title">Service history ({services?.length ?? 0})</h2>

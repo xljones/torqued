@@ -106,6 +106,22 @@ describe('Dashboard', () => {
     });
   });
 
+  it('shows a schedule reminder and links it to the vehicle', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([{
+      type: 'schedule', id: 3, vehicle_id: 1, vehicle_name: 'Street Triple',
+      title: 'Minor service', category: null, date: '2024-06-15', status: 'overdue',
+      next_due_date: '2025-06-15', next_due_km: null, km_remaining: null,
+      vehicle_odometer_unit: 'mi',
+    }]);
+    renderDashboard();
+    await waitFor(() => {
+      const row = screen.getByText('Street Triple — Minor service').closest('.reminder-row');
+      expect(row).toBeInTheDocument();
+      expect(screen.getByText(/After “Minor service” \(2024-06-15\)/)).toBeInTheDocument();
+    });
+  });
+
   it('converts odometer to the vehicle display unit', async () => {
     renderDashboard();
     // 160.9344 km == 100 mi
