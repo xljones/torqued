@@ -1,6 +1,6 @@
 [project]
 name = "torqued"
-version = "0.0.10"
+version = "0.1.0"
 
 [tool.ruff]
 line-length = 100
