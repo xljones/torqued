@@ -54,6 +54,12 @@
 - Per-garage **Members page** — garage membership management now lives in the admin
   panel's Users section (site admins add/remove memberships and change roles per user).
 
+### Fixed
+- **Mileage notes are now visible.** A note added with an odometer reading was saved but
+  only surfaced in the collapsed "Entries" table and the chart's hover tooltip, so it
+  looked like it had been lost. The entries list now opens automatically after you log a
+  reading, and on page load when any reading already carries a note.
+
 ## [2.0.0] — 2026-06-11
 
 ### Changed

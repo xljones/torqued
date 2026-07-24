@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
@@ -17,7 +17,7 @@ import { fmtCost, fmtDistance, fmtDistanceBoth, fmtPressure, toKm } from '../uni
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
 
-function MileageCard({ vehicle, ro, onLogged }) {
+export function MileageCard({ vehicle, ro, onLogged }) {
   const toast = useToast();
   const [series, setSeries] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -33,11 +33,22 @@ function MileageCard({ vehicle, ro, onLogged }) {
   }, [vehicle.id]);
   useEffect(refresh, [refresh]);
 
+  // On first load, reveal the entries list if any manual reading carries a note, so saved
+  // notes are visible without expanding the panel or hovering the chart. One-shot, so it
+  // never re-opens a panel the user deliberately collapsed.
+  const didAutoOpen = useRef(false);
+  useEffect(() => {
+    if (didAutoOpen.current || !series) return;
+    didAutoOpen.current = true;
+    if (series.some(p => p.source === 'manual' && p.note)) setShowLogs(true);
+  }, [series]);
+
   async function handleAdd(e) {
     e.preventDefault();
     try {
       await api.createOdometerLog(vehicle.id, form);
       setForm(f => ({ ...f, odometer: '', note: '' }));
+      setShowLogs(true); // reveal the entries list so the just-logged reading + note shows
       toast('Mileage logged');
       refresh();
       onLogged?.();
