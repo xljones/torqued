@@ -13,7 +13,6 @@ vi.mock('../AuthContext.jsx', () => ({
 vi.mock('../api.js', () => ({
   api: {
     getMotStatus: vi.fn(),
-    getTaxStatus: vi.fn(),
     lookupMot: vi.fn(),
     getVehicle: vi.fn(),
     createVehicle: vi.fn(),
@@ -48,7 +47,6 @@ function renderEdit() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.getTaxStatus.mockResolvedValue({ configured: true });
   api.refreshTax.mockResolvedValue({ configured: true, tax: null });
 });
 

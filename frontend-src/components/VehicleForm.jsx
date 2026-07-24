@@ -37,9 +37,7 @@ export default function VehicleForm({ mode }) {
   const [archived, setArchived] = useState(false);
   const [saving, setSaving] = useState(false);
   const [motConfigured, setMotConfigured] = useState(false);
-  const [taxConfigured, setTaxConfigured] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   // Edit mode blocks on the vehicle load so the populated form (incl. the DVSA baseline)
   // renders all at once instead of fields popping in after first paint. Create has nothing
   // to load, so it renders immediately.
@@ -47,7 +45,6 @@ export default function VehicleForm({ mode }) {
 
   useEffect(() => {
     api.getMotStatus().then(s => setMotConfigured(s.configured)).catch(() => {});
-    api.getTaxStatus().then(s => setTaxConfigured(s.configured)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -122,30 +119,6 @@ export default function VehicleForm({ mode }) {
       toast(err.message, 'error');
     } finally {
       setFetching(false);
-    }
-  }
-
-  // Edit mode: explicitly re-pull and store MOT history + tax status for the saved vehicle
-  // (the create flow does this automatically once the vehicle exists).
-  async function handleRefreshStored() {
-    setRefreshing(true);
-    try {
-      const results = await Promise.allSettled([
-        motConfigured ? api.refreshMot(id) : Promise.resolve(),
-        taxConfigured ? api.refreshTax(id) : Promise.resolve(),
-      ]);
-      const failure = results.find(r => r.status === 'rejected');
-      if (failure) {
-        toast(failure.reason?.message ?? 'Refresh failed', 'error');
-      } else {
-        toast('MOT & tax refreshed');
-        // Reflect any new DVSA baseline in the form's split identity fields.
-        const v = await api.getVehicle(id);
-        setBaseline(v.mot_baseline);
-        setAttachedMotReg(v.mot_baseline?.registration ?? null);
-      }
-    } finally {
-      setRefreshing(false);
     }
   }
 
@@ -266,12 +239,6 @@ export default function VehicleForm({ mode }) {
               <button type="button" className="btn btn-secondary" onClick={handleFetch}
                 disabled={fetching || !form.registration.trim()}>
                 {fetching ? 'Fetching…' : 'Fetch from DVSA'}
-              </button>
-            )}
-            {isEdit && (motConfigured || taxConfigured) && (
-              <button type="button" className="btn btn-secondary" onClick={handleRefreshStored}
-                disabled={refreshing}>
-                {refreshing ? 'Refreshing…' : 'Refresh MOT & tax'}
               </button>
             )}
           </div>

@@ -74,7 +74,7 @@ status (`404` unknown plate, `502` scrape failure).
 Tax data is **stored**, not fetched on every view. A refresh happens only when:
 
 - a vehicle is **created** with a registration (the form calls `refreshTax` after create),
-- the user clicks **Refresh MOT & tax** in the edit-vehicle form, or
+- a vehicle is **edited to a new registration** (Save re-fetches MOT + tax for the new plate), or
 - the user refreshes the **MOT & tax** card on the vehicle detail page.
 
 ## Reminders
