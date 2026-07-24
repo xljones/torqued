@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import MotCard from './MotCard';
+import { DisplayPrefsProvider } from '../DisplayPrefsContext.jsx';
 import { api } from '../api.js';
 
 vi.mock('./Toast.jsx', () => ({ useToast: () => vi.fn() }));
@@ -93,6 +94,23 @@ describe('MotCard', () => {
     });
     await userEvent.click(screen.getByText('1 defect'));
     expect(screen.getByText('Tyre worn close to limit')).toBeInTheDocument();
+  });
+
+  it('shows the DVSA record verbatim even when name tidying is on', async () => {
+    // The DVSA record reflects the official data as-is (all-caps as DVSA returns it);
+    // the 'Tidy up vehicle names' setting must never touch it, unlike the vehicle
+    // identity card. Rendered inside the provider (which defaults tidying ON).
+    localStorage.setItem('torqued.titleCaseNames', 'true');
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    render(
+      <DisplayPrefsProvider>
+        <MotCard vehicle={vehicle} ro={false} />
+      </DisplayPrefsProvider>,
+    );
+    await waitFor(() => expect(screen.getByText(/VOLKSWAGEN PASSAT/)).toBeInTheDocument());
+    // Not tidied to 'Volkswagen Passat'
+    expect(screen.queryByText(/Volkswagen Passat/)).not.toBeInTheDocument();
+    localStorage.removeItem('torqued.titleCaseNames');
   });
 
   it('colours the summary tiles by MOT expiry and recall status', async () => {
