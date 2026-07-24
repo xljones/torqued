@@ -184,6 +184,35 @@ describe('MotCard', () => {
     });
   });
 
+  it('shows one refreshed time when MOT and tax were refreshed together', async () => {
+    // Fixture mot + tax share the same fetched_at → collapse to a single label.
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    api.getTax.mockResolvedValue({ configured: true, tax });
+    const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(container.querySelector('.mot-reauth')).toBeInTheDocument());
+    expect(container.querySelector('.mot-reauth').textContent).toMatch(/refreshed/);
+    expect(container.querySelector('.mot-reauth').textContent).not.toMatch(/MOT refreshed/);
+  });
+
+  it('splits the refreshed times when MOT and tax differ', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot }); // fetched 2026-06-11
+    api.getTax.mockResolvedValue({
+      configured: true, tax: { ...tax, fetched_at: '2026-01-01 09:00:00' },
+    });
+    const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(container.querySelector('.mot-reauth')).toBeInTheDocument());
+    expect(container.querySelector('.mot-reauth').textContent).toMatch(/MOT refreshed/);
+    expect(container.querySelector('.mot-reauth').textContent).toMatch(/tax/);
+  });
+
+  it('shows the refreshed time from tax alone when there is no MOT data', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot: null });
+    api.getTax.mockResolvedValue({ configured: true, tax });
+    const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(container.querySelector('.mot-reauth')).toBeInTheDocument());
+    expect(container.querySelector('.mot-reauth').textContent).toMatch(/refreshed/);
+  });
+
   it('browses the raw DVSA record as an expandable tree, with nested arrays collapsed', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={false} />);

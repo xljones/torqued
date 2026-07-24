@@ -41,6 +41,17 @@ function isPast(dateStr) {
   return !Number.isNaN(d.getTime()) && d < new Date();
 }
 
+// Parse a stored timestamp — an ISO date or a "YYYY-MM-DD HH:MM:SS" UTC datetime — to a
+// Date (or null). Used only to compare the MOT vs tax refresh times, not to display them.
+function parseTs(value) {
+  if (!value) return null;
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value + 'T00:00:00Z'
+    : (value.endsWith('Z') ? value : value.replace(' ', 'T') + 'Z');
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function taxStatusTileClass(status) {
   const s = (status || '').toLowerCase();
   if (s === 'taxed') return 'pressure-tile--ok';       // green
@@ -202,15 +213,27 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 5);
 
+  // Header refresh time. MOT and tax carry independent fetched_at stamps; they normally
+  // refresh together, so collapse to one label when within 2 min of each other (or when
+  // only one source is present) and split them out when they genuinely differ.
+  const motFetchedAt = mot?.fetched_at;
+  const taxFetchedAt = taxInfo?.fetched_at;
+  const motTs = parseTs(motFetchedAt);
+  const taxTs = parseTs(taxFetchedAt);
+  const oneRefresh = !motTs || !taxTs || Math.abs(motTs - taxTs) < 120_000;
+  const latestFetchedAt = motTs && (!taxTs || motTs >= taxTs) ? motFetchedAt : taxFetchedAt;
+
   return (
     <div className="card card-body mb-6">
       <div className="section-header">
         <div className="mot-header-left">
           <h2 className="section-title">MOT &amp; tax</h2>
-          {mot && (
+          {(mot || taxInfo) && (
             <span className="mot-reauth text-muted text-sm">
-              <span className="mot-reauth-dot" aria-hidden="true">•</span>
-              {' '}refreshed <RelativeTime value={mot.fetched_at} />
+              <span className="mot-reauth-dot" aria-hidden="true">•</span>{' '}
+              {oneRefresh
+                ? <>refreshed <RelativeTime value={latestFetchedAt} /></>
+                : <>MOT refreshed <RelativeTime value={motFetchedAt} />, tax <RelativeTime value={taxFetchedAt} /></>}
             </span>
           )}
         </div>
