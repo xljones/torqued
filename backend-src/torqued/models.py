@@ -145,7 +145,6 @@ class ServiceLog(Base):
     odometer_unit: Mapped[str | None] = mapped_column(Text)
     next_due_date: Mapped[str | None] = mapped_column(Text)
     next_due_km: Mapped[float | None] = mapped_column(Float)
-    service_schedule_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
     updated_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
 
@@ -156,6 +155,16 @@ class ServiceLogFaultCode(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     service_log_id: Mapped[int] = mapped_column(Integer)
     code: Mapped[str] = mapped_column(Text)
+
+
+class ServiceLogServiceSchedule(Base):
+    """Many-to-many link: which schedule(s) a service log fulfilled (migration 0005)."""
+
+    __tablename__ = "service_log_service_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    service_log_id: Mapped[int] = mapped_column(Integer)
+    service_schedule_id: Mapped[int] = mapped_column(Integer)
 
 
 class ServiceLogHistory(Base):
@@ -176,7 +185,6 @@ class ServiceLogHistory(Base):
     odometer_unit: Mapped[str | None] = mapped_column(Text)
     next_due_date: Mapped[str | None] = mapped_column(Text)
     next_due_km: Mapped[float | None] = mapped_column(Float)
-    service_schedule_id: Mapped[int | None] = mapped_column(Integer)
 
 
 class ServiceSchedule(Base):

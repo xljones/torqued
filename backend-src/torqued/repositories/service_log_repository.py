@@ -12,6 +12,7 @@ from torqued.models import (
     ServiceLog,
     ServiceLogFaultCode,
     ServiceLogHistory,
+    ServiceLogServiceSchedule,
     User,
     Vehicle,
     to_dict,
@@ -30,7 +31,6 @@ SERVICE_FIELDS: list[str] = [
     "odometer_unit",
     "next_due_date",
     "next_due_km",
-    "service_schedule_id",
 ]
 
 # Reminder proximity thresholds: "due soon" within this window.
@@ -110,6 +110,33 @@ class ServiceLogRepository(BaseRepository):
             if stripped:
                 self.session.add(ServiceLogFaultCode(service_log_id=log_id, code=stripped))
 
+    def _schedule_ids_for_logs(self, log_ids: list[int]) -> dict[int, list[int]]:
+        """Batch-load the fulfilled-schedule ids for a set of service log IDs."""
+        rows = self.session.execute(
+            select(
+                ServiceLogServiceSchedule.service_log_id,
+                ServiceLogServiceSchedule.service_schedule_id,
+            )
+            .where(ServiceLogServiceSchedule.service_log_id.in_(log_ids))
+            .order_by(ServiceLogServiceSchedule.service_schedule_id)
+        ).all()
+        result: dict[int, list[int]] = {}
+        for log_id, schedule_id in rows:
+            result.setdefault(log_id, []).append(schedule_id)
+        return result
+
+    def _replace_schedule_links(self, log_id: int, schedule_ids: list[int]) -> None:
+        """Delete and re-insert the schedule links for a service log (deduped)."""
+        self.session.execute(
+            delete(ServiceLogServiceSchedule).where(
+                ServiceLogServiceSchedule.service_log_id == log_id
+            )
+        )
+        for schedule_id in dict.fromkeys(schedule_ids):  # preserve order, drop dups
+            self.session.add(
+                ServiceLogServiceSchedule(service_log_id=log_id, service_schedule_id=schedule_id)
+            )
+
     def list_for_garages(self, garage_ids: list[int]) -> list[dict[str, Any]]:
         """Return the garages' service logs across vehicles, newest first."""
         if not garage_ids:
@@ -146,6 +173,7 @@ class ServiceLogRepository(BaseRepository):
             {**to_dict(photo), "uploaded_by_username": username} for photo, username in photo_rows
         ]
         self._attach_fault_codes([log])
+        log["service_schedule_ids"] = self._schedule_ids_for_logs([log_id]).get(log_id, [])
         return log
 
     def create(self, data: dict[str, Any], changed_by: int | None = None) -> dict[str, Any]:
@@ -156,6 +184,8 @@ class ServiceLogRepository(BaseRepository):
         fault_codes = data.get("fault_codes") or []
         if fault_codes:
             self._replace_fault_codes(log_row.id, fault_codes)
+        if data.get("service_schedule_ids"):
+            self._replace_schedule_links(log_row.id, data["service_schedule_ids"])
         log = self.get_by_id(log_row.id)
         if log is None:  # pragma: no cover
             raise RuntimeError(f"Row {log_row.id} not found after INSERT")
@@ -171,6 +201,8 @@ class ServiceLogRepository(BaseRepository):
         self.session.execute(update(ServiceLog).where(ServiceLog.id == log_id).values(values))
         if "fault_codes" in data:
             self._replace_fault_codes(log_id, data["fault_codes"] or [])
+        if "service_schedule_ids" in data:
+            self._replace_schedule_links(log_id, data["service_schedule_ids"] or [])
         log = self.get_by_id(log_id)
         if log is not None:
             self._record_history(log, changed_by)

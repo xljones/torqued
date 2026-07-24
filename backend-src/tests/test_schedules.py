@@ -2,7 +2,6 @@
 from datetime import date, timedelta
 from typing import Any
 
-import pytest
 from flask.testing import FlaskClient
 
 from tests.test_services import mk_service
@@ -154,13 +153,14 @@ def test_delete(auth_client: FlaskClient) -> None:
     assert auth_client.get(f"/api/vehicles/{v['id']}/schedules").json == []
 
 
-def test_delete_nulls_fulfilling_service_link(auth_client: FlaskClient) -> None:
+def test_delete_removes_link_keeps_service(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"])
-    log = mk_service(auth_client, v["id"], service_schedule_id=s["id"])
-    assert log["service_schedule_id"] == s["id"]
+    log = mk_service(auth_client, v["id"], service_schedule_ids=[s["id"]])
+    assert log["service_schedule_ids"] == [s["id"]]
     auth_client.delete(f"/api/schedules/{s['id']}")
-    assert auth_client.get(f"/api/services/{log['id']}").json["service_schedule_id"] is None
+    # The service log survives; only its (now-dangling) link is gone.
+    assert auth_client.get(f"/api/services/{log['id']}").json["service_schedule_ids"] == []
 
 
 def test_delete_404(auth_client: FlaskClient) -> None:
@@ -172,40 +172,69 @@ def test_delete_readonly_403(readonly_client: FlaskClient, garage: dict[str, Any
     assert readonly_client.delete(f"/api/schedules/{s['id']}").status_code == 403
 
 
-# ── service-log linkage ─────────────────────────────────────────────────────
+# ── service-log linkage (many-to-many) ──────────────────────────────────────
+
+def test_service_links_multiple_schedules(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    minor = mk_schedule(auth_client, v["id"], kind="minor", interval_months=6)
+    major = mk_schedule(auth_client, v["id"], kind="major", interval_months=24)
+    log = mk_service(auth_client, v["id"], service_schedule_ids=[minor["id"], major["id"]])
+    assert sorted(log["service_schedule_ids"]) == sorted([minor["id"], major["id"]])
+
+
+def test_service_dedupes_repeated_schedule(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    s = mk_schedule(auth_client, v["id"])
+    log = mk_service(auth_client, v["id"], service_schedule_ids=[s["id"], s["id"]])
+    assert log["service_schedule_ids"] == [s["id"]]
+
 
 def test_service_rejects_foreign_schedule(auth_client: FlaskClient) -> None:
     v1 = mk_vehicle(auth_client, name="Bike")
     v2 = mk_vehicle(auth_client, name="Car", kind="car")
     s = mk_schedule(auth_client, v1["id"])
-    r = auth_client.post(f"/api/vehicles/{v2['id']}/services",
-                         json={"date": "2025-01-01", "title": "x", "service_schedule_id": s["id"]})
+    r = auth_client.post(
+        f"/api/vehicles/{v2['id']}/services",
+        json={"date": "2025-01-01", "title": "x", "service_schedule_ids": [s["id"]]},
+    )
     assert r.status_code == 400
 
 
 def test_service_rejects_unknown_schedule(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     r = auth_client.post(f"/api/vehicles/{v['id']}/services",
-                         json={"date": "2025-01-01", "title": "x", "service_schedule_id": 999})
+                         json={"date": "2025-01-01", "title": "x", "service_schedule_ids": [999]})
     assert r.status_code == 400
 
 
 def test_service_rejects_non_integer_schedule(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     r = auth_client.post(f"/api/vehicles/{v['id']}/services",
-                         json={"date": "2025-01-01", "title": "x", "service_schedule_id": "abc"})
+                         json={"date": "2025-01-01", "title": "x", "service_schedule_ids": ["abc"]})
     assert r.status_code == 400
 
 
-def test_service_update_sets_schedule(auth_client: FlaskClient) -> None:
+def test_service_rejects_non_list_schedules(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    r = auth_client.post(f"/api/vehicles/{v['id']}/services",
+                         json={"date": "2025-01-01", "title": "x", "service_schedule_ids": 5})
+    assert r.status_code == 400
+
+
+def test_service_update_sets_and_clears_schedules(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"])
     log = mk_service(auth_client, v["id"])
     r = auth_client.put(f"/api/services/{log['id']}",
                         json={"date": log["date"], "title": log["title"],
-                              "service_schedule_id": s["id"]})
+                              "service_schedule_ids": [s["id"]]})
     assert r.status_code == 200
-    assert r.json["service_schedule_id"] == s["id"]
+    assert r.json["service_schedule_ids"] == [s["id"]]
+    # An empty list clears the links.
+    r = auth_client.put(f"/api/services/{log['id']}",
+                        json={"date": log["date"], "title": log["title"],
+                              "service_schedule_ids": []})
+    assert r.json["service_schedule_ids"] == []
 
 
 def test_service_update_rejects_foreign_schedule(auth_client: FlaskClient) -> None:
@@ -215,7 +244,7 @@ def test_service_update_rejects_foreign_schedule(auth_client: FlaskClient) -> No
     log = mk_service(auth_client, v1["id"])
     r = auth_client.put(f"/api/services/{log['id']}",
                         json={"date": log["date"], "title": log["title"],
-                              "service_schedule_id": s["id"]})
+                              "service_schedule_ids": [s["id"]]})
     assert r.status_code == 400
 
 
@@ -231,7 +260,7 @@ def _schedule_reminders(client: FlaskClient, vehicle_id: int) -> list[dict]:
 def test_reminder_overdue_by_date(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"], interval_months=12)
-    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_ids=[s["id"]])
     [r] = _schedule_reminders(auth_client, v["id"])
     assert r["status"] == "overdue"
     assert r["title"] == "Minor service"
@@ -242,7 +271,7 @@ def test_reminder_due_soon_by_date(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     anchor = (date.today() + timedelta(days=10) - timedelta(days=365)).isoformat()
     s = mk_schedule(auth_client, v["id"], interval_months=12)
-    mk_service(auth_client, v["id"], date=anchor, service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date=anchor, service_schedule_ids=[s["id"]])
     [r] = _schedule_reminders(auth_client, v["id"])
     assert r["status"] == "due_soon"
 
@@ -250,7 +279,7 @@ def test_reminder_due_soon_by_date(auth_client: FlaskClient) -> None:
 def test_reminder_upcoming(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"], interval_months=12)
-    mk_service(auth_client, v["id"], date=date.today().isoformat(), service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date=date.today().isoformat(), service_schedule_ids=[s["id"]])
     [r] = _schedule_reminders(auth_client, v["id"])
     assert r["status"] == "upcoming"
 
@@ -260,7 +289,7 @@ def test_reminder_overdue_by_km(auth_client: FlaskClient) -> None:
     s = mk_schedule(auth_client, v["id"], kind="major", interval_months=None,
                     interval_distance=2000, interval_unit="km")
     mk_service(auth_client, v["id"], date=date.today().isoformat(),
-               odometer=1000, odometer_unit="km", service_schedule_id=s["id"])
+               odometer=1000, odometer_unit="km", service_schedule_ids=[s["id"]])
     auth_client.post(f"/api/vehicles/{v['id']}/odometer",
                      json={"date": date.today().isoformat(), "odometer": 3500, "unit": "km"})
     [r] = _schedule_reminders(auth_client, v["id"])
@@ -274,7 +303,7 @@ def test_reminder_due_soon_by_km(auth_client: FlaskClient) -> None:
     s = mk_schedule(auth_client, v["id"], kind="major", interval_months=None,
                     interval_distance=2000, interval_unit="km")
     mk_service(auth_client, v["id"], date=date.today().isoformat(),
-               odometer=1000, odometer_unit="km", service_schedule_id=s["id"])
+               odometer=1000, odometer_unit="km", service_schedule_ids=[s["id"]])
     auth_client.post(f"/api/vehicles/{v['id']}/odometer",
                      json={"date": date.today().isoformat(), "odometer": 2800, "unit": "km"})
     [r] = _schedule_reminders(auth_client, v["id"])
@@ -292,25 +321,38 @@ def test_reminder_absent_when_km_interval_but_no_odometer(auth_client: FlaskClie
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"], kind="major", interval_months=None,
                     interval_distance=2000, interval_unit="km")
-    mk_service(auth_client, v["id"], date="2025-01-01", service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date="2025-01-01", service_schedule_ids=[s["id"]])
     assert _schedule_reminders(auth_client, v["id"]) == []
 
 
 def test_reminder_absent_when_disabled(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"], interval_months=12, enabled=False)
-    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_ids=[s["id"]])
     assert _schedule_reminders(auth_client, v["id"]) == []
 
 
 def test_reminder_projects_from_newest_fulfilling_log(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"], interval_months=12)
-    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_id=s["id"])
-    mk_service(auth_client, v["id"], date="2024-06-15", service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_ids=[s["id"]])
+    mk_service(auth_client, v["id"], date="2024-06-15", service_schedule_ids=[s["id"]])
     [r] = _schedule_reminders(auth_client, v["id"])
     assert r["date"] == "2024-06-15"
     assert r["next_due_date"] == "2025-06-15"
+
+
+def test_reminder_major_service_resets_both_minor_and_major(auth_client: FlaskClient) -> None:
+    # A major service includes the minor work, so one log fulfils both schedules and
+    # anchors both reminders — the minor doesn't immediately show as overdue.
+    v = mk_vehicle(auth_client)
+    minor = mk_schedule(auth_client, v["id"], kind="minor", interval_months=6)
+    major = mk_schedule(auth_client, v["id"], kind="major", interval_months=24)
+    mk_service(auth_client, v["id"], date="2024-01-01",
+               service_schedule_ids=[minor["id"], major["id"]])
+    reminders = {r["title"]: r for r in _schedule_reminders(auth_client, v["id"])}
+    assert reminders["Minor service"]["next_due_date"] == "2024-07-01"
+    assert reminders["Major service"]["next_due_date"] == "2026-01-01"
 
 
 def test_reminder_projects_date_and_mileage_together(auth_client: FlaskClient) -> None:
@@ -320,7 +362,7 @@ def test_reminder_projects_date_and_mileage_together(auth_client: FlaskClient) -
                     interval_distance=10000, interval_unit="mi")
     # Fulfilled on 2000-09-11 at 56,000 mi.
     mk_service(auth_client, v["id"], date="2000-09-11",
-               odometer=56000, odometer_unit="mi", service_schedule_id=s["id"])
+               odometer=56000, odometer_unit="mi", service_schedule_ids=[s["id"]])
     [r] = _schedule_reminders(auth_client, v["id"])
     # Next due exactly one year later, or 10,000 mi further on (66,000 mi).
     assert r["next_due_date"] == "2001-09-11"
@@ -330,7 +372,7 @@ def test_reminder_projects_date_and_mileage_together(auth_client: FlaskClient) -
 def test_reminder_excludes_archived(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     s = mk_schedule(auth_client, v["id"], interval_months=12)
-    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_id=s["id"])
+    mk_service(auth_client, v["id"], date="2020-01-01", service_schedule_ids=[s["id"]])
     auth_client.put(f"/api/vehicles/{v['id']}", json={"name": v["name"], "archived": True})
     assert auth_client.get("/api/reminders").json == []
 

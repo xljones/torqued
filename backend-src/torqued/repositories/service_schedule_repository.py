@@ -7,7 +7,13 @@ from sqlalchemy.orm import aliased
 
 from torqued.db import utcnow_text
 from torqued.domain.service_schedule import ScheduleKind
-from torqued.models import ServiceLog, ServiceSchedule, Vehicle, to_dict
+from torqued.models import (
+    ServiceLog,
+    ServiceLogServiceSchedule,
+    ServiceSchedule,
+    Vehicle,
+    to_dict,
+)
 from torqued.repositories.base import BaseRepository
 
 # Persisted schedule columns (id/created_at/updated_at are managed by the DB / here).
@@ -90,15 +96,9 @@ class ServiceScheduleRepository(BaseRepository):
     def delete(self, schedule_id: int) -> bool:
         """Delete a schedule; return True if a row was removed.
 
-        The service_schedule_id link on service logs carries no live FK (see migration
-        0005), so its ON DELETE SET NULL behaviour is applied here: any fulfilling log
-        keeps its record with the now-dangling link cleared.
+        The join rows linking it to fulfilling service logs are removed by the join
+        table's ``ON DELETE CASCADE`` (migration 0005); the service logs themselves stay.
         """
-        self.session.execute(
-            update(ServiceLog)
-            .where(ServiceLog.service_schedule_id == schedule_id)
-            .values(service_schedule_id=None)
-        )
         return self.affected(delete(ServiceSchedule).where(ServiceSchedule.id == schedule_id)) > 0
 
     def reminders(
@@ -128,12 +128,15 @@ class ServiceScheduleRepository(BaseRepository):
         today = today or date.today()
         if not garage_ids:
             return []
-        # The anchor is the newest fulfilling log. A correlated subquery picks its id;
-        # a separate alias joins that row so date and odometer come from the same record.
+        # The anchor is the newest service log linked to this schedule (via the
+        # many-to-many join table). A correlated subquery picks its id; a separate alias
+        # joins that row so date and odometer come from the same record.
         newest = aliased(ServiceLog)
+        link = aliased(ServiceLogServiceSchedule)
         newest_log = (
             select(newest.id)
-            .where(newest.service_schedule_id == ServiceSchedule.id)
+            .join(link, link.service_log_id == newest.id)
+            .where(link.service_schedule_id == ServiceSchedule.id)
             .order_by(newest.date.desc(), newest.id.desc())
             .limit(1)
             .correlate(ServiceSchedule)

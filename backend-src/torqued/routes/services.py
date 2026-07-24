@@ -37,10 +37,14 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
     except ValueError:
         return jsonify(error="odometer, next_due_distance, and cost must be numeric"), 400
 
-    try:
-        schedule_id = int(opt("service_schedule_id")) if opt("service_schedule_id") else None
-    except (TypeError, ValueError):
-        return jsonify(error="service_schedule_id must be an integer"), 400
+    schedule_ids = d.get("service_schedule_ids")
+    if schedule_ids is not None:
+        if not isinstance(schedule_ids, list):
+            return jsonify(error="service_schedule_ids must be a list"), 400
+        try:
+            schedule_ids = [int(s) for s in schedule_ids]
+        except (TypeError, ValueError):
+            return jsonify(error="service_schedule_ids must be integers"), 400
 
     fault_codes = d.get("fault_codes")
     if fault_codes is not None and not isinstance(fault_codes, list):
@@ -57,8 +61,9 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
         "odometer_unit": unit if odometer_km is not None else None,
         "next_due_date": opt("next_due_date"),
         "next_due_km": next_due_km,
-        "service_schedule_id": schedule_id,
     }
+    if schedule_ids is not None:
+        result["service_schedule_ids"] = schedule_ids
     if fault_codes is not None:
         result["fault_codes"] = [str(c) for c in fault_codes]
     return result
@@ -67,13 +72,15 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
 def _check_schedule(
     db: Any, data: dict[str, Any], vehicle_id: int
 ) -> tuple[Response, int] | None:
-    """Reject a payload whose service_schedule_id doesn't belong to `vehicle_id`."""
-    schedule_id = data.get("service_schedule_id")
-    if schedule_id is None:
+    """Reject a payload whose service_schedule_ids don't all belong to `vehicle_id`."""
+    schedule_ids = data.get("service_schedule_ids")
+    if not schedule_ids:
         return None
-    schedule = ServiceScheduleRepository(db).get_by_id(schedule_id)
-    if schedule is None or schedule["vehicle_id"] != vehicle_id:
-        return jsonify(error="service_schedule_id does not belong to this vehicle"), 400
+    repo = ServiceScheduleRepository(db)
+    for schedule_id in schedule_ids:
+        schedule = repo.get_by_id(schedule_id)
+        if schedule is None or schedule["vehicle_id"] != vehicle_id:
+            return jsonify(error="a service schedule does not belong to this vehicle"), 400
     return None
 
 

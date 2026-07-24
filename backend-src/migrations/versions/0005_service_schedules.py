@@ -6,19 +6,18 @@ Create Date: 2026-07-24
 
 Per-vehicle recurring service schedules. A vehicle can have a 'minor' schedule, a
 'major' schedule, and any number of user-named 'custom' schedules, each with an
-interval expressed as every N months and/or every N km. Service logs gain a nullable
-``service_schedule_id`` recording which schedule a given service fulfilled — the anchor
-from which the next due date/mileage is projected.
+interval expressed as every N months and/or every N km.
 
-Portability: the new column is added with a plain ``ADD COLUMN`` carrying **no** foreign
-key. Alembic implements an inline-FK ``add_column`` as a separate ``ADD CONSTRAINT``,
-which SQLite (the test backend) cannot do in place — and the only alternative, a full
-``service_logs`` rebuild, would be unsafe on a populated database anyway, since dropping
-the table cascades to the photos and fault-code rows that reference it. So the FK is
-omitted and its ``ON DELETE SET NULL`` behaviour is enforced in
-``ServiceScheduleRepository.delete`` instead (null the fulfilling logs' link before
-removing the schedule). ``service_log_history`` likewise carries a plain column, matching
-the denormalised audit-snapshot convention of the other ``*_history`` tables.
+A single service can fulfil more than one schedule (e.g. a major service that also
+covers the minor one), so the link is many-to-many: ``service_log_service_schedules``
+joins a service log to each schedule it fulfilled. The newest fulfilling log is the
+anchor from which a schedule's next due date/mileage is projected. Both foreign keys
+cascade on delete — removing a schedule or a service log just drops its join rows —
+which is safe here because the join table is created fresh (a ``CREATE TABLE`` with
+inline FKs is fully supported on SQLite, unlike an ``ALTER … ADD COLUMN … REFERENCES``).
+
+The schedule linkage is intentionally not snapshotted into ``service_log_history``:
+it is auxiliary to the log's own fields and the live links are always queryable.
 """
 from collections.abc import Sequence
 
@@ -60,22 +59,36 @@ def upgrade() -> None:
     )
     op.create_index("idx_service_schedules_vehicle", "service_schedules", ["vehicle_id"])
 
-    # Link a service log to the schedule it fulfilled. No live FK (see module docstring);
-    # the repository nulls this column when its schedule is deleted.
-    op.add_column(
-        "service_logs",
-        sa.Column("service_schedule_id", sa.Integer, nullable=True),
+    # Many-to-many link: which schedule(s) a given service fulfilled. Both sides cascade
+    # on delete; the unique pair keeps a service from linking the same schedule twice.
+    op.create_table(
+        "service_log_service_schedules",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column(
+            "service_log_id",
+            sa.Integer,
+            sa.ForeignKey("service_logs.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "service_schedule_id",
+            sa.Integer,
+            sa.ForeignKey("service_schedules.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.UniqueConstraint(
+            "service_log_id", "service_schedule_id", name="uq_service_log_schedule"
+        ),
     )
-    # History is a denormalised audit snapshot (like the other *_history tables): a plain
-    # nullable column, no foreign key.
-    op.add_column(
-        "service_log_history",
-        sa.Column("service_schedule_id", sa.Integer, nullable=True),
+    op.create_index(
+        "idx_slss_schedule", "service_log_service_schedules", ["service_schedule_id"]
     )
+    op.create_index("idx_slss_log", "service_log_service_schedules", ["service_log_id"])
 
 
 def downgrade() -> None:
-    op.drop_column("service_log_history", "service_schedule_id")
-    op.drop_column("service_logs", "service_schedule_id")
+    op.drop_index("idx_slss_log", table_name="service_log_service_schedules")
+    op.drop_index("idx_slss_schedule", table_name="service_log_service_schedules")
+    op.drop_table("service_log_service_schedules")
     op.drop_index("idx_service_schedules_vehicle", table_name="service_schedules")
     op.drop_table("service_schedules")
