@@ -20,11 +20,13 @@ def test_domain_models_importable() -> None:
     from torqued.domain.odometer_log import OdometerLog
     from torqued.domain.photo import Photo
     from torqued.domain.service_log import ServiceLog
+    from torqued.domain.service_schedule import ScheduleKind, ServiceSchedule
     from torqued.domain.vehicle import Vehicle
 
     assert Garage(id=1, name="Home").name == "Home"
     assert Vehicle(id=1, name="Daily").name == "Daily"
     assert ServiceLog(id=1, vehicle_id=1, date="2025-01-01", title="Oil").title == "Oil"
+    assert ServiceSchedule(id=1, vehicle_id=1, kind=ScheduleKind.MINOR).kind == "minor"
     assert OdometerLog(id=1, vehicle_id=1, date="2025-01-01", odometer_km=100.0).odometer_km == 100.0
     assert Photo(id=1, vehicle_id=1, filename="x.jpg").filename == "x.jpg"
 

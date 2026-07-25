@@ -8,6 +8,7 @@ from torqued import analytics
 from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.service_log_repository import ServiceLogRepository
+from torqued.repositories.service_schedule_repository import ServiceScheduleRepository
 from torqued.units import parse_distance
 
 bp = Blueprint("services", __name__)
@@ -36,6 +37,22 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
     except ValueError:
         return jsonify(error="odometer, next_due_distance, and cost must be numeric"), 400
 
+    schedule_ids = d.get("service_schedule_ids")
+    if schedule_ids is not None:
+        if not isinstance(schedule_ids, list):
+            return jsonify(error="service_schedule_ids must be a list"), 400
+        try:
+            schedule_ids = [int(s) for s in schedule_ids]
+        except (TypeError, ValueError):
+            return jsonify(error="service_schedule_ids must be integers"), 400
+
+    # A service's next-due comes from either the schedule(s) it fulfils or a manual
+    # next-due, never both — otherwise the same maintenance shows two reminders.
+    if schedule_ids and (opt("next_due_date") is not None or next_due_km is not None):
+        return jsonify(
+            error="a service can fulfil schedules or set its own next-due, not both"
+        ), 400
+
     fault_codes = d.get("fault_codes")
     if fault_codes is not None and not isinstance(fault_codes, list):
         return jsonify(error="fault_codes must be a list"), 400
@@ -52,9 +69,26 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
         "next_due_date": opt("next_due_date"),
         "next_due_km": next_due_km,
     }
+    if schedule_ids is not None:
+        result["service_schedule_ids"] = schedule_ids
     if fault_codes is not None:
         result["fault_codes"] = [str(c) for c in fault_codes]
     return result
+
+
+def _check_schedule(
+    db: Any, data: dict[str, Any], vehicle_id: int
+) -> tuple[Response, int] | None:
+    """Reject a payload whose service_schedule_ids don't all belong to `vehicle_id`."""
+    schedule_ids = data.get("service_schedule_ids")
+    if not schedule_ids:
+        return None
+    repo = ServiceScheduleRepository(db)
+    for schedule_id in schedule_ids:
+        schedule = repo.get_by_id(schedule_id)
+        if schedule is None or schedule["vehicle_id"] != vehicle_id:
+            return jsonify(error="a service schedule does not belong to this vehicle"), 400
+    return None
 
 
 def _check_log(
@@ -115,6 +149,9 @@ def create_service(vehicle_id: int) -> ResponseReturnValue:
             return jsonify(error="Not found"), 404
         if not can_write(role):
             return jsonify(error="Read-only access to this garage"), 403
+        err = _check_schedule(db, data, vehicle_id)
+        if err:
+            return err
         log = ServiceLogRepository(db).create(
             {**data, "vehicle_id": vehicle_id}, changed_by=current_user.id
         )
@@ -145,7 +182,12 @@ def update_service(log_id: int) -> ResponseReturnValue:
         return data
     with get_db() as db:
         repo = ServiceLogRepository(db)
-        err = _check_log(db, repo.get_by_id(log_id), write=True)
+        log = repo.get_by_id(log_id)
+        err = _check_log(db, log, write=True)
+        if err:
+            return err
+        assert log is not None  # _check_log returns a 404 response when the log is missing
+        err = _check_schedule(db, data, log["vehicle_id"])
         if err:
             return err
         return jsonify(repo.update(log_id, data, changed_by=current_user.id))

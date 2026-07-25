@@ -4,14 +4,16 @@ import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import SuggestInput from './SuggestInput.jsx';
 import FaultCodeInput from './FaultCodeInput.jsx';
-import { FormMode, SERVICE_CATEGORIES } from '../constants.js';
+import ScheduleForm, { EMPTY_SCHEDULE } from './ScheduleForm.jsx';
+import { FormMode, SERVICE_CATEGORIES, ScheduleKind } from '../constants.js';
 import { fromKm } from '../units.js';
+import { scheduleTitle, scheduleInterval } from '../schedules.js';
 
 const EMPTY = {
   date: new Date().toISOString().slice(0, 10),
   title: '', category: '', description: '', performed_by: '', cost: '',
   odometer: '', odometer_unit: 'mi', next_due_date: '', next_due_distance: '',
-  fault_codes: [],
+  service_schedule_ids: [], fault_codes: [],
 };
 
 export default function ServiceForm({ mode }) {
@@ -23,9 +25,15 @@ export default function ServiceForm({ mode }) {
   const [form, setForm] = useState(EMPTY);
   const [vehicle, setVehicle] = useState(null);
   const [performers, setPerformers] = useState([]);
+  const [schedules, setSchedules] = useState(null); // null = still loading
+  const [addingSchedule, setAddingSchedule] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState(EMPTY_SCHEDULE);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { api.getPerformers().then(setPerformers).catch(() => {}); }, []);
+  useEffect(() => {
+    if (vehicle) api.getSchedules(vehicle.id).then(setSchedules).catch(() => setSchedules([]));
+  }, [vehicle]);
 
   useEffect(() => {
     if (isEdit && id) {
@@ -39,6 +47,7 @@ export default function ServiceForm({ mode }) {
           odometer_unit: unit,
           next_due_date: s.next_due_date ?? '',
           next_due_distance: s.next_due_km != null ? +fromKm(s.next_due_km, unit).toFixed(0) : '',
+          service_schedule_ids: s.service_schedule_ids ?? [],
           fault_codes: (s.fault_codes || []).map(fc => fc.code),
         });
         api.getVehicle(s.vehicle_id).then(setVehicle);
@@ -52,6 +61,49 @@ export default function ServiceForm({ mode }) {
   }, [isEdit, id, vehicleId]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Toggle a schedule link. A major service includes the minor, so ticking a major
+  // auto-ticks the minor schedule(s) too (still individually removable).
+  function toggleSchedule(schedule, checked) {
+    setForm(f => {
+      const ids = new Set(f.service_schedule_ids);
+      if (checked) {
+        ids.add(schedule.id);
+        if (schedule.kind === ScheduleKind.MAJOR) {
+          (schedules || []).filter(s => s.kind === ScheduleKind.MINOR).forEach(s => ids.add(s.id));
+        }
+      } else {
+        ids.delete(schedule.id);
+      }
+      return { ...f, service_schedule_ids: [...ids] };
+    });
+  }
+
+  const setSchedule = (k, v) => setScheduleForm(f => ({ ...f, [k]: v }));
+
+  // Create a schedule without leaving the service form, then tick it (unless a manual
+  // next-due is set, which blocks schedule selection).
+  async function handleAddSchedule() {
+    const body = {
+      kind: scheduleForm.kind,
+      name: scheduleForm.kind === ScheduleKind.CUSTOM ? scheduleForm.name : null,
+      interval_months: scheduleForm.interval_months === '' ? null : Number(scheduleForm.interval_months),
+      interval_distance: scheduleForm.interval_distance,
+      interval_unit: vehicle.odometer_unit,
+      enabled: scheduleForm.enabled,
+    };
+    try {
+      const created = await api.createSchedule(vehicle.id, body);
+      setSchedules(await api.getSchedules(vehicle.id));
+      setAddingSchedule(false);
+      setScheduleForm(EMPTY_SCHEDULE);
+      toast('Schedule added');
+      const manualDue = form.next_due_date !== '' || form.next_due_distance !== '';
+      if (!manualDue) toggleSchedule(created, true);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -74,6 +126,11 @@ export default function ServiceForm({ mode }) {
   }
 
   const backTo = isEdit ? `/services/${id}` : `/vehicles/${vehicleId}`;
+
+  // A service's next-due comes from either the schedule(s) it fulfils or a manual
+  // next-due, never both — so each side disables the other once it's in use.
+  const hasSchedules = form.service_schedule_ids.length > 0;
+  const hasManualDue = form.next_due_date !== '' || form.next_due_distance !== '';
 
   return (
     <div>
@@ -140,13 +197,55 @@ export default function ServiceForm({ mode }) {
             </div>
             <div className="field">
               <label>Next due (date)</label>
-              <input type="date" value={form.next_due_date} onChange={e => set('next_due_date', e.target.value)} />
+              <input type="date" value={form.next_due_date} disabled={hasSchedules} onChange={e => set('next_due_date', e.target.value)} />
               <p className="form-hint muted">Sets a reminder for this category.</p>
             </div>
             <div className="field">
               <label>Next due (odometer, {form.odometer_unit})</label>
-              <input type="number" step="any" min="0" value={form.next_due_distance} onChange={e => set('next_due_distance', e.target.value)} placeholder="Reading when next due" />
+              <input type="number" step="any" min="0" value={form.next_due_distance} disabled={hasSchedules} onChange={e => set('next_due_distance', e.target.value)} placeholder="Reading when next due" />
             </div>
+            {schedules !== null && (
+              <div className="field span-2">
+                <div className="field-label-row">
+                  <label>Fulfils schedules</label>
+                  {!addingSchedule && (
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      onClick={() => { setScheduleForm(EMPTY_SCHEDULE); setAddingSchedule(true); }}>
+                      + Add schedule
+                    </button>
+                  )}
+                </div>
+                {schedules.length > 0 ? (
+                  <div className="checkbox-list">
+                    {schedules.map(s => (
+                      <label key={s.id} className={`checkbox-row text-sm${hasManualDue ? ' is-disabled' : ''}`}>
+                        <input
+                          type="checkbox"
+                          disabled={hasManualDue}
+                          checked={form.service_schedule_ids.includes(s.id)}
+                          onChange={e => toggleSchedule(s, e.target.checked)}
+                        />
+                        {' '}{scheduleTitle(s)}{' '}
+                        <span className="muted">({scheduleInterval(s, vehicle?.odometer_unit)})</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  !addingSchedule && <p className="checkbox-empty">No scheduled services</p>
+                )}
+                {addingSchedule && (
+                  <ScheduleForm form={scheduleForm} set={setSchedule} unit={vehicle?.odometer_unit}
+                    onSave={handleAddSchedule} onCancel={() => setAddingSchedule(false)} />
+                )}
+                {schedules.length > 0 && (
+                  <p className="form-hint muted">
+                    {hasManualDue
+                      ? 'Clear the manual next-due above to fulfil a schedule instead.'
+                      : 'Anchors each schedule’s next-due reminder to this service (instead of a manual next-due). Ticking a major service also ticks the minor.'}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="form-actions">

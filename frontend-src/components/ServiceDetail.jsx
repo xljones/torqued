@@ -7,6 +7,7 @@ import RelativeTime from './RelativeTime.jsx';
 import PhotoGallery from './PhotoGallery.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { fmtCost, fmtDistance, fmtDistanceBoth } from '../units.js';
+import { scheduleTitle } from '../schedules.js';
 
 export default function ServiceDetail() {
   const { roleFor } = useAuth();
@@ -16,10 +17,15 @@ export default function ServiceDetail() {
   const [log, setLog] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState(null);
+  const [schedules, setSchedules] = useState([]);
 
   const refresh = useCallback(() => { api.getService(id).then(setLog); }, [id]);
   useEffect(refresh, [refresh]);
   useEffect(() => { api.getServiceHistory(id).then(setHistory); }, [id]);
+  const scheduleCount = log?.service_schedule_ids?.length ?? 0;
+  useEffect(() => {
+    if (scheduleCount > 0) api.getSchedules(log.vehicle_id).then(setSchedules).catch(() => {});
+  }, [scheduleCount, log?.vehicle_id]);
 
   async function handleDelete() {
     if (!confirm('Delete this service log (and its photos)?')) return;
@@ -68,6 +74,15 @@ export default function ServiceDetail() {
             <span>{log.odometer_km != null ? fmtDistanceBoth(log.odometer_km, unit) : '—'}</span>
           </div>
           <div className="field"><label>Logged</label><span><RelativeTime value={log.created_at} /></span></div>
+          {scheduleCount > 0 && (() => {
+            const names = (log.service_schedule_ids || [])
+              .map(sid => schedules.find(x => x.id === sid))
+              .filter(Boolean)
+              .map(scheduleTitle);
+            return names.length ? (
+              <div className="field"><label>Fulfils schedules</label><span>{names.join(', ')}</span></div>
+            ) : null;
+          })()}
           {(log.next_due_date || log.next_due_km != null) && (
             <div className="field span-2">
               <label>Next due</label>

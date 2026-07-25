@@ -12,8 +12,11 @@ import RegPlate from './RegPlate.jsx';
 import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
-import { KIND_LABELS, REMINDER_LABELS } from '../constants.js';
-import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, toKm } from '../units.js';
+import { KIND_LABELS, REMINDER_LABELS, ScheduleKind } from '../constants.js';
+import ScheduleForm, { EMPTY_SCHEDULE } from './ScheduleForm.jsx';
+import { scheduleTitle, scheduleInterval } from '../schedules.js';
+import { overdueBy } from '../reminders.js';
+import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, fromKm, toKm } from '../units.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
@@ -228,6 +231,113 @@ function SpecsCard({ vehicle, ro, onSaved }) {
   );
 }
 
+function SchedulesCard({ vehicle, ro }) {
+  const toast = useToast();
+  const unit = vehicle.odometer_unit;
+  const [schedules, setSchedules] = useState(null);
+  const [editing, setEditing] = useState(null); // 'new' | schedule id | null
+  const [form, setForm] = useState(EMPTY_SCHEDULE);
+
+  const refresh = useCallback(() => { api.getSchedules(vehicle.id).then(setSchedules); }, [vehicle.id]);
+  useEffect(refresh, [refresh]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function startAdd() { setForm(EMPTY_SCHEDULE); setEditing('new'); }
+  function startEdit(s) {
+    setForm({
+      kind: s.kind,
+      name: s.name ?? '',
+      interval_months: s.interval_months ?? '',
+      interval_distance: s.interval_km != null ? +fromKm(s.interval_km, unit).toFixed(0) : '',
+      enabled: !!s.enabled,
+    });
+    setEditing(s.id);
+  }
+
+  async function handleSave() {
+    const body = {
+      kind: form.kind,
+      name: form.kind === ScheduleKind.CUSTOM ? form.name : null,
+      interval_months: form.interval_months === '' ? null : Number(form.interval_months),
+      interval_distance: form.interval_distance,
+      interval_unit: unit,
+      enabled: form.enabled,
+    };
+    try {
+      if (editing === 'new') await api.createSchedule(vehicle.id, body);
+      else await api.updateSchedule(editing, body);
+      setEditing(null);
+      toast('Schedule saved');
+      refresh();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('Delete this schedule? Any services that fulfilled it are kept.')) return;
+    await api.deleteSchedule(id);
+    toast('Schedule deleted');
+    refresh();
+  }
+
+  const cols = ro ? 2 : 3;
+
+  return (
+    <>
+      <div className="section-header">
+        <h2 className="section-title">Service schedules{schedules ? ` (${schedules.length})` : ''}</h2>
+        {!ro && editing !== 'new' && (
+          <button className="btn btn-primary btn-sm" onClick={startAdd}>+ Add schedule</button>
+        )}
+      </div>
+      <div className="card mb-6">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Schedule</th><th>Interval</th>{!ro && <th></th>}</tr></thead>
+            <tbody>
+              {schedules === null && <tr><td colSpan={cols} className="empty">Loading…</td></tr>}
+              {schedules?.map(s => editing === s.id ? (
+                <tr key={s.id}>
+                  <td colSpan={cols}>
+                    <ScheduleForm form={form} set={set} unit={unit}
+                      onSave={handleSave} onCancel={() => setEditing(null)} />
+                  </td>
+                </tr>
+              ) : (
+                <tr key={s.id}>
+                  <td>{scheduleTitle(s)}{!s.enabled && <span className="badge"> Off</span>}</td>
+                  <td>{scheduleInterval(s, unit)}</td>
+                  {!ro && (
+                    <td className="col-shrink">
+                      <div className="btn-group">
+                        <button className="btn btn-secondary btn-sm" onClick={() => startEdit(s)}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>✕</button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {editing === 'new' && (
+                <tr>
+                  <td colSpan={cols}>
+                    <ScheduleForm form={form} set={set} unit={unit}
+                      onSave={handleSave} onCancel={() => setEditing(null)} />
+                  </td>
+                </tr>
+              )}
+              {schedules?.length === 0 && editing !== 'new' && (
+                <tr><td colSpan={cols} className="empty">No schedules yet — recurring services (minor, major, or your own) remind you from the last time you logged them.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function VehicleDetail() {
   const { roleFor } = useAuth();
   const { formatName } = useDisplayPrefs();
@@ -300,7 +410,7 @@ export default function VehicleDetail() {
       {dueReminders.length > 0 && (
         <div className="card mb-6">
           {dueReminders.map(r => (
-            <div key={r.type === 'service' ? r.id : r.type} className="reminder-row">
+            <div key={r.id == null ? r.type : `${r.type}-${r.id}`} className="reminder-row">
               <div className="reminder-main">
                 <span className="reminder-title">{r.category || r.title}</span>
                 <span className="reminder-sub">
@@ -314,6 +424,9 @@ export default function VehicleDetail() {
                         {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
                         {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
                       </>}
+                  {overdueBy(r, unit) && (
+                    <span className="reminder-overdue"> — {overdueBy(r, unit)}</span>
+                  )}
                 </span>
               </div>
               <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
@@ -366,6 +479,7 @@ export default function VehicleDetail() {
       <SpecsCard vehicle={vehicle} ro={ro} onSaved={refresh} />
       <MileageCard vehicle={vehicle} ro={ro} onLogged={refresh} />
       <MotCard vehicle={vehicle} ro={ro} onSynced={refresh} />
+      <SchedulesCard vehicle={vehicle} ro={ro} />
 
       <div className="section-header">
         <h2 className="section-title">Service history ({services?.length ?? 0})</h2>

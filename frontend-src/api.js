@@ -76,6 +76,12 @@ export const api = {
   revertService:      (id, versionId)  => req('POST',   `/services/${id}/revert/${versionId}`),
   getPerformers:      ()               => req('GET',    '/services/performers'),
 
+  // Service schedules
+  getSchedules:    (vehicleId)      => req('GET',    `/vehicles/${vehicleId}/schedules`),
+  createSchedule:  (vehicleId, body)=> req('POST',   `/vehicles/${vehicleId}/schedules`, body),
+  updateSchedule:  (id, body)       => req('PUT',    `/schedules/${id}`, body),
+  deleteSchedule:  (id)             => req('DELETE', `/schedules/${id}`),
+
   // Reminders
   getReminders:       (garageId)       => req('GET',    `/reminders${garageId ? `?garage_id=${garageId}` : ''}`),
 
