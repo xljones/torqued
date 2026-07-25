@@ -46,6 +46,13 @@ def _service_data(d: dict[str, Any]) -> dict[str, Any] | tuple[Response, int]:
         except (TypeError, ValueError):
             return jsonify(error="service_schedule_ids must be integers"), 400
 
+    # A service's next-due comes from either the schedule(s) it fulfils or a manual
+    # next-due, never both — otherwise the same maintenance shows two reminders.
+    if schedule_ids and (opt("next_due_date") is not None or next_due_km is not None):
+        return jsonify(
+            error="a service can fulfil schedules or set its own next-due, not both"
+        ), 400
+
     fault_codes = d.get("fault_codes")
     if fault_codes is not None and not isinstance(fault_codes, list):
         return jsonify(error="fault_codes must be a list"), 400

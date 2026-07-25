@@ -98,6 +98,11 @@ export default function ServiceForm({ mode }) {
 
   const backTo = isEdit ? `/services/${id}` : `/vehicles/${vehicleId}`;
 
+  // A service's next-due comes from either the schedule(s) it fulfils or a manual
+  // next-due, never both — so each side disables the other once it's in use.
+  const hasSchedules = form.service_schedule_ids.length > 0;
+  const hasManualDue = form.next_due_date !== '' || form.next_due_distance !== '';
+
   return (
     <div>
       <div className="page-header">
@@ -163,21 +168,22 @@ export default function ServiceForm({ mode }) {
             </div>
             <div className="field">
               <label>Next due (date)</label>
-              <input type="date" value={form.next_due_date} onChange={e => set('next_due_date', e.target.value)} />
+              <input type="date" value={form.next_due_date} disabled={hasSchedules} onChange={e => set('next_due_date', e.target.value)} />
               <p className="form-hint muted">Sets a reminder for this category.</p>
             </div>
             <div className="field">
               <label>Next due (odometer, {form.odometer_unit})</label>
-              <input type="number" step="any" min="0" value={form.next_due_distance} onChange={e => set('next_due_distance', e.target.value)} placeholder="Reading when next due" />
+              <input type="number" step="any" min="0" value={form.next_due_distance} disabled={hasSchedules} onChange={e => set('next_due_distance', e.target.value)} placeholder="Reading when next due" />
             </div>
             {schedules.length > 0 && (
               <div className="field span-2">
                 <label>Fulfils schedules</label>
                 <div className="checkbox-list">
                   {schedules.map(s => (
-                    <label key={s.id} className="checkbox-row text-sm">
+                    <label key={s.id} className={`checkbox-row text-sm${hasManualDue ? ' is-disabled' : ''}`}>
                       <input
                         type="checkbox"
+                        disabled={hasManualDue}
                         checked={form.service_schedule_ids.includes(s.id)}
                         onChange={e => toggleSchedule(s, e.target.checked)}
                       />
@@ -186,7 +192,11 @@ export default function ServiceForm({ mode }) {
                     </label>
                   ))}
                 </div>
-                <p className="form-hint muted">Anchors each schedule’s next-due reminder to this service. Ticking a major service also ticks the minor.</p>
+                <p className="form-hint muted">
+                  {hasManualDue
+                    ? 'Clear the manual next-due above to fulfil a schedule instead.'
+                    : 'Anchors each schedule’s next-due reminder to this service (instead of a manual next-due). Ticking a major service also ticks the minor.'}
+                </p>
               </div>
             )}
           </div>

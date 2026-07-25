@@ -189,6 +189,26 @@ def test_service_dedupes_repeated_schedule(auth_client: FlaskClient) -> None:
     assert log["service_schedule_ids"] == [s["id"]]
 
 
+def test_service_rejects_schedule_and_manual_due_together(auth_client: FlaskClient) -> None:
+    # A service drives its next-due from either the schedule(s) it fulfils OR a manual
+    # next-due, never both (else the same maintenance shows two reminders).
+    v = mk_vehicle(auth_client)
+    s = mk_schedule(auth_client, v["id"])
+    by_date = auth_client.post(f"/api/vehicles/{v['id']}/services", json={
+        "date": "2025-01-01", "title": "x",
+        "service_schedule_ids": [s["id"]], "next_due_date": "2026-01-01",
+    })
+    assert by_date.status_code == 400
+    by_km = auth_client.post(f"/api/vehicles/{v['id']}/services", json={
+        "date": "2025-01-01", "title": "x", "service_schedule_ids": [s["id"]],
+        "next_due_distance": 5000, "odometer_unit": "mi",
+    })
+    assert by_km.status_code == 400
+    # Either one alone is fine.
+    assert mk_service(auth_client, v["id"], service_schedule_ids=[s["id"]])
+    assert mk_service(auth_client, v["id"], next_due_date="2026-01-01")
+
+
 def test_service_rejects_foreign_schedule(auth_client: FlaskClient) -> None:
     v1 = mk_vehicle(auth_client, name="Bike")
     v2 = mk_vehicle(auth_client, name="Car", kind="car")

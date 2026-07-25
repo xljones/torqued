@@ -51,6 +51,7 @@ select { cursor: pointer; }
 /* Checkbox multi-select (e.g. schedules a service fulfils) */
 .checkbox-list { display: flex; flex-direction: column; gap: 6px; }
 .checkbox-row { display: flex; align-items: center; gap: 4px; }
+.checkbox-row.is-disabled { opacity: 0.5; cursor: not-allowed; }
 /* Identity field split: two-thirds editable input + one-third fixed DVSA value. */
 .dvsa-split { display: flex; gap: 8px; align-items: stretch; }
 .dvsa-split > input { flex: 2; min-width: 0; }
