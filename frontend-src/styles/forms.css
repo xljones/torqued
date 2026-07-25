@@ -50,8 +50,16 @@ select { cursor: pointer; }
 .form-hint.muted { color: var(--text2); }
 /* Checkbox multi-select (e.g. schedules a service fulfils) */
 .checkbox-list { display: flex; flex-direction: column; gap: 6px; }
-.checkbox-row { display: flex; align-items: center; gap: 4px; }
-.checkbox-row.is-disabled { opacity: 0.5; cursor: not-allowed; }
+/* These option rows are <label>s inside a .field, so they'd inherit the uppercase
+   field-label styling — `.field label.checkbox-row` (0,2,1) out-specifies `.field label`
+   (0,1,1) to render the option names as normal text rather than caps. */
+.field label.checkbox-row {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 400; color: var(--text);
+  text-transform: none; letter-spacing: normal;
+}
+.field label.checkbox-row.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.checkbox-empty { color: var(--text2); font-style: italic; }
 /* Identity field split: two-thirds editable input + one-third fixed DVSA value. */
 .dvsa-split { display: flex; gap: 8px; align-items: stretch; }
 .dvsa-split > input { flex: 2; min-width: 0; }

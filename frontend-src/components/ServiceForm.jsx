@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import SuggestInput from './SuggestInput.jsx';
 import FaultCodeInput from './FaultCodeInput.jsx';
+import ScheduleForm, { EMPTY_SCHEDULE } from './ScheduleForm.jsx';
 import { FormMode, SERVICE_CATEGORIES, ScheduleKind } from '../constants.js';
 import { fromKm } from '../units.js';
 import { scheduleTitle, scheduleInterval } from '../schedules.js';
@@ -24,12 +25,14 @@ export default function ServiceForm({ mode }) {
   const [form, setForm] = useState(EMPTY);
   const [vehicle, setVehicle] = useState(null);
   const [performers, setPerformers] = useState([]);
-  const [schedules, setSchedules] = useState([]);
+  const [schedules, setSchedules] = useState(null); // null = still loading
+  const [addingSchedule, setAddingSchedule] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState(EMPTY_SCHEDULE);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { api.getPerformers().then(setPerformers).catch(() => {}); }, []);
   useEffect(() => {
-    if (vehicle) api.getSchedules(vehicle.id).then(setSchedules).catch(() => {});
+    if (vehicle) api.getSchedules(vehicle.id).then(setSchedules).catch(() => setSchedules([]));
   }, [vehicle]);
 
   useEffect(() => {
@@ -67,13 +70,39 @@ export default function ServiceForm({ mode }) {
       if (checked) {
         ids.add(schedule.id);
         if (schedule.kind === ScheduleKind.MAJOR) {
-          schedules.filter(s => s.kind === ScheduleKind.MINOR).forEach(s => ids.add(s.id));
+          (schedules || []).filter(s => s.kind === ScheduleKind.MINOR).forEach(s => ids.add(s.id));
         }
       } else {
         ids.delete(schedule.id);
       }
       return { ...f, service_schedule_ids: [...ids] };
     });
+  }
+
+  const setSchedule = (k, v) => setScheduleForm(f => ({ ...f, [k]: v }));
+
+  // Create a schedule without leaving the service form, then tick it (unless a manual
+  // next-due is set, which blocks schedule selection).
+  async function handleAddSchedule() {
+    const body = {
+      kind: scheduleForm.kind,
+      name: scheduleForm.kind === ScheduleKind.CUSTOM ? scheduleForm.name : null,
+      interval_months: scheduleForm.interval_months === '' ? null : Number(scheduleForm.interval_months),
+      interval_distance: scheduleForm.interval_distance,
+      interval_unit: vehicle.odometer_unit,
+      enabled: scheduleForm.enabled,
+    };
+    try {
+      const created = await api.createSchedule(vehicle.id, body);
+      setSchedules(await api.getSchedules(vehicle.id));
+      setAddingSchedule(false);
+      setScheduleForm(EMPTY_SCHEDULE);
+      toast('Schedule added');
+      const manualDue = form.next_due_date !== '' || form.next_due_distance !== '';
+      if (!manualDue) toggleSchedule(created, true);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 
   async function handleSubmit(e) {
@@ -175,28 +204,46 @@ export default function ServiceForm({ mode }) {
               <label>Next due (odometer, {form.odometer_unit})</label>
               <input type="number" step="any" min="0" value={form.next_due_distance} disabled={hasSchedules} onChange={e => set('next_due_distance', e.target.value)} placeholder="Reading when next due" />
             </div>
-            {schedules.length > 0 && (
+            {schedules !== null && (
               <div className="field span-2">
-                <label>Fulfils schedules</label>
-                <div className="checkbox-list">
-                  {schedules.map(s => (
-                    <label key={s.id} className={`checkbox-row text-sm${hasManualDue ? ' is-disabled' : ''}`}>
-                      <input
-                        type="checkbox"
-                        disabled={hasManualDue}
-                        checked={form.service_schedule_ids.includes(s.id)}
-                        onChange={e => toggleSchedule(s, e.target.checked)}
-                      />
-                      {' '}{scheduleTitle(s)}{' '}
-                      <span className="muted">({scheduleInterval(s, vehicle?.odometer_unit)})</span>
-                    </label>
-                  ))}
+                <div className="field-label-row">
+                  <label>Fulfils schedules</label>
+                  {!addingSchedule && (
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      onClick={() => { setScheduleForm(EMPTY_SCHEDULE); setAddingSchedule(true); }}>
+                      + Add schedule
+                    </button>
+                  )}
                 </div>
-                <p className="form-hint muted">
-                  {hasManualDue
-                    ? 'Clear the manual next-due above to fulfil a schedule instead.'
-                    : 'Anchors each schedule’s next-due reminder to this service (instead of a manual next-due). Ticking a major service also ticks the minor.'}
-                </p>
+                {schedules.length > 0 ? (
+                  <div className="checkbox-list">
+                    {schedules.map(s => (
+                      <label key={s.id} className={`checkbox-row text-sm${hasManualDue ? ' is-disabled' : ''}`}>
+                        <input
+                          type="checkbox"
+                          disabled={hasManualDue}
+                          checked={form.service_schedule_ids.includes(s.id)}
+                          onChange={e => toggleSchedule(s, e.target.checked)}
+                        />
+                        {' '}{scheduleTitle(s)}{' '}
+                        <span className="muted">({scheduleInterval(s, vehicle?.odometer_unit)})</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  !addingSchedule && <p className="checkbox-empty">No scheduled services</p>
+                )}
+                {addingSchedule && (
+                  <ScheduleForm form={scheduleForm} set={setSchedule} unit={vehicle?.odometer_unit}
+                    onSave={handleAddSchedule} onCancel={() => setAddingSchedule(false)} />
+                )}
+                {schedules.length > 0 && (
+                  <p className="form-hint muted">
+                    {hasManualDue
+                      ? 'Clear the manual next-due above to fulfil a schedule instead.'
+                      : 'Anchors each schedule’s next-due reminder to this service (instead of a manual next-due). Ticking a major service also ticks the minor.'}
+                  </p>
+                )}
               </div>
             )}
           </div>
