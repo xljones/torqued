@@ -316,6 +316,7 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .reminder-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .reminder-title { font-weight: 600; font-size: 13px; }
 .reminder-sub { font-size: 12px; color: var(--text2); }
+.reminder-overdue { color: var(--tint-bad-fg); font-weight: 600; }
 
 /* Inline add/edit form for a service schedule */
 .schedule-edit { background: var(--surface2); border-radius: 8px; padding: 12px 16px; }

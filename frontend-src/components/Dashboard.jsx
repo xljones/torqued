@@ -7,6 +7,7 @@ import { SkeletonRows } from './Skeleton.jsx';
 import RegPlate from './RegPlate.jsx';
 import { REMINDER_LABELS } from '../constants.js';
 import { fmtCost, fmtDistance } from '../units.js';
+import { overdueBy } from '../reminders.js';
 
 const statSkeleton = <span className="skeleton-line" style={{ width: 48, height: 34, display: 'inline-block' }} />;
 
@@ -89,6 +90,9 @@ export default function Dashboard() {
                         {r.next_due_date && ` — due ${r.next_due_date}`}
                         {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, r.vehicle_odometer_unit)}`}
                       </>}
+                  {overdueBy(r, r.vehicle_odometer_unit) && (
+                    <span className="reminder-overdue"> — {overdueBy(r, r.vehicle_odometer_unit)}</span>
+                  )}
                 </span>
               </div>
               <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>

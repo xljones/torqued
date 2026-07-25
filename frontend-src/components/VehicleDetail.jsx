@@ -14,6 +14,7 @@ import MotField from './MotField.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
 import { KIND_LABELS, REMINDER_LABELS, ScheduleKind, SCHEDULE_KIND_LABELS } from '../constants.js';
 import { scheduleTitle, scheduleInterval } from '../schedules.js';
+import { overdueBy } from '../reminders.js';
 import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, fromKm, toKm } from '../units.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
@@ -453,6 +454,9 @@ export default function VehicleDetail() {
                         {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
                         {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
                       </>}
+                  {overdueBy(r, unit) && (
+                    <span className="reminder-overdue"> — {overdueBy(r, unit)}</span>
+                  )}
                 </span>
               </div>
               <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
