@@ -328,43 +328,59 @@ function SchedulesCard({ vehicle, ro }) {
     refresh();
   }
 
+  const cols = ro ? 2 : 3;
+
   return (
-    <div className="card card-body mb-6">
+    <>
       <div className="section-header">
-        <h2 className="section-title">Service schedules</h2>
+        <h2 className="section-title">Service schedules{schedules ? ` (${schedules.length})` : ''}</h2>
         {!ro && editing !== 'new' && (
-          <button className="btn btn-secondary btn-sm" onClick={startAdd}>+ Add schedule</button>
+          <button className="btn btn-primary btn-sm" onClick={startAdd}>+ Add schedule</button>
         )}
       </div>
-      {schedules === null && <p className="text-muted text-sm">Loading…</p>}
-      {schedules?.length === 0 && editing !== 'new' && (
-        <p className="text-muted text-sm">Recurring services (minor, major, or your own) generate a reminder from the last time you logged them.</p>
-      )}
-      {schedules?.map(s => editing === s.id ? (
-        <ScheduleForm key={s.id} form={form} set={set} unit={unit}
-          onSave={handleSave} onCancel={() => setEditing(null)} />
-      ) : (
-        <div key={s.id} className="reminder-row">
-          <div className="reminder-main">
-            <span className="reminder-title">
-              {scheduleTitle(s)}
-              {!s.enabled && <span className="badge"> Off</span>}
-            </span>
-            <span className="reminder-sub">{scheduleInterval(s, unit)}</span>
-          </div>
-          {!ro && (
-            <div className="btn-group">
-              <button className="btn btn-secondary btn-sm" onClick={() => startEdit(s)}>Edit</button>
-              <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>✕</button>
-            </div>
-          )}
+      <div className="card mb-6">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Schedule</th><th>Interval</th>{!ro && <th></th>}</tr></thead>
+            <tbody>
+              {schedules === null && <tr><td colSpan={cols} className="empty">Loading…</td></tr>}
+              {schedules?.map(s => editing === s.id ? (
+                <tr key={s.id}>
+                  <td colSpan={cols}>
+                    <ScheduleForm form={form} set={set} unit={unit}
+                      onSave={handleSave} onCancel={() => setEditing(null)} />
+                  </td>
+                </tr>
+              ) : (
+                <tr key={s.id}>
+                  <td>{scheduleTitle(s)}{!s.enabled && <span className="badge"> Off</span>}</td>
+                  <td>{scheduleInterval(s, unit)}</td>
+                  {!ro && (
+                    <td className="col-shrink">
+                      <div className="btn-group">
+                        <button className="btn btn-secondary btn-sm" onClick={() => startEdit(s)}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>✕</button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {editing === 'new' && (
+                <tr>
+                  <td colSpan={cols}>
+                    <ScheduleForm form={form} set={set} unit={unit}
+                      onSave={handleSave} onCancel={() => setEditing(null)} />
+                  </td>
+                </tr>
+              )}
+              {schedules?.length === 0 && editing !== 'new' && (
+                <tr><td colSpan={cols} className="empty">No schedules yet — recurring services (minor, major, or your own) remind you from the last time you logged them.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      ))}
-      {editing === 'new' && (
-        <ScheduleForm form={form} set={set} unit={unit}
-          onSave={handleSave} onCancel={() => setEditing(null)} />
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 
