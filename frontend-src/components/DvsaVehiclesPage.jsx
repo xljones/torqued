@@ -3,11 +3,90 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import RegPlate from './RegPlate.jsx';
 import RelativeTime from './RelativeTime.jsx';
+import DvsaRecord from './DvsaRecord.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
+
+const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+// One vehicle row: a summary line that expands to reveal every stored DVSA record for
+// the vehicle (the snapshot plus each MOT test), each browsable with the shared record
+// viewer. The records are fetched lazily on first expand.
+function DvsaRow({ v }) {
+  const [open, setOpen] = useState(false);
+  const [records, setRecords] = useState(null);
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && records === null) {
+      api.getDvsaVehicleRecords(v.id).then(setRecords);
+    }
+  }
+
+  const makeModel = [v.make, v.model].filter(Boolean).join(' ') || '—';
+
+  return (
+    <>
+      <tr
+        className="dvsa-row"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={toggle}
+        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle())}
+      >
+        <td>
+          <span className="dvsa-record-caret">{open ? '▲' : '▼'}</span>{' '}
+          {v.vehicle_id != null
+            ? <Link to={`/vehicles/${v.vehicle_id}`} onClick={e => e.stopPropagation()}>{makeModel}</Link>
+            : (
+              <>
+                {makeModel}
+                <span className="user-badge user-badge-readonly">vehicle deleted</span>
+              </>
+            )}
+          <span className="meta"> · {plural(v.record_count, 'record')}</span>
+        </td>
+        <td><RegPlate reg={v.registration} /></td>
+        <td className="meta"><RelativeTime value={v.fetched_at} /></td>
+      </tr>
+      {open && (
+        <tr className="dvsa-records-row">
+          <td colSpan={3}>
+            {records === null
+              ? <p className="meta">Loading records…</p>
+              : (
+                <div className="dvsa-records">
+                  <DvsaRecord
+                    label="Vehicle"
+                    raw={records.vehicle}
+                    summary={
+                      [records.vehicle.make, records.vehicle.model].filter(Boolean).join(' ') || '—'
+                    }
+                  />
+                  {records.tests.map((t, i) => (
+                    <DvsaRecord
+                      key={t.motTestNumber ?? i}
+                      label="MOT test"
+                      raw={t}
+                      summary={
+                        [t.completedDate?.slice(0, 10), t.testResult].filter(Boolean).join(' · ') || '—'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
 
 export default function DvsaVehiclesPage() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
+  const [filter, setFilter] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -19,11 +98,33 @@ export default function DvsaVehiclesPage() {
   const items = data?.items ?? [];
   const pages = data?.pages ?? 0;
 
+  // Filter the rows already loaded on this page (make/model or registration).
+  const q = filter.trim().toLowerCase();
+  const visible = q
+    ? items.filter(v =>
+      [v.make, v.model].filter(Boolean).join(' ').toLowerCase().includes(q) ||
+      (v.registration ?? '').toLowerCase().replace(/\s+/g, '').includes(q.replace(/\s+/g, '')))
+    : items;
+
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">DVSA vehicles</h1>
-        {data && <span className="meta">{data.total} stored</span>}
+        {data && (
+          <span className="meta">
+            {plural(data.total, 'vehicle')}, {plural(data.total_records, 'record')}
+          </span>
+        )}
+      </div>
+
+      <div className="mb-4 inline-form-sm">
+        <input
+          type="search"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          placeholder="Filter by make, model or registration…"
+          className="search-input"
+        />
       </div>
 
       <div className="card">
@@ -35,27 +136,13 @@ export default function DvsaVehiclesPage() {
             <tbody>
               {data === null
                 ? <SkeletonRows cols={['40%', '110px', '110px']} />
-                : items.map(v => {
-                  const makeModel = [v.make, v.model].filter(Boolean).join(' ') || '—';
-                  return (
-                    <tr key={v.id}>
-                      <td>
-                        {v.vehicle_id != null
-                          ? <Link to={`/vehicles/${v.vehicle_id}`}>{makeModel}</Link>
-                          : (
-                            <>
-                              {makeModel}
-                              <span className="user-badge user-badge-readonly">vehicle deleted</span>
-                            </>
-                          )}
-                      </td>
-                      <td><RegPlate reg={v.registration} /></td>
-                      <td className="meta"><RelativeTime value={v.fetched_at} /></td>
-                    </tr>
-                  );
-                })}
-              {data !== null && items.length === 0 && (
-                <tr><td colSpan={3} className="empty">No DVSA vehicles stored yet</td></tr>
+                : visible.map(v => <DvsaRow key={v.id} v={v} />)}
+              {data !== null && visible.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    {items.length === 0 ? 'No DVSA vehicles stored yet' : 'No matches on this page'}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

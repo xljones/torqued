@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import DvsaVehiclesPage from './DvsaVehiclesPage';
 
 vi.mock('../api.js', () => ({
-  api: { getDvsaVehicles: vi.fn() },
+  api: { getDvsaVehicles: vi.fn(), getDvsaVehicleRecords: vi.fn() },
 }));
 
 import { api } from '../api.js';
@@ -21,22 +21,110 @@ function renderPage() {
 describe('DvsaVehiclesPage', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('renders a row with an uppercase plate and a link to the vehicle', async () => {
+  it('renders a row with an uppercase plate, a record count, and a link to the vehicle', async () => {
     api.getDvsaVehicles.mockResolvedValue({
       items: [{
         id: 1, vehicle_id: 7, registration: 'a1xyz',
         make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-01-01 00:00:00',
+        record_count: 3,
       }],
-      total: 1, page: 1, per_page: 25, pages: 1,
+      total: 1, total_records: 3, page: 1, per_page: 25, pages: 1,
     });
     renderPage();
 
     await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
     expect(api.getDvsaVehicles).toHaveBeenCalledWith(1);
     expect(screen.getByText('A1XYZ')).toBeInTheDocument();  // RegPlate forces uppercase
-    expect(screen.getByText('1 stored')).toBeInTheDocument();
+    expect(screen.getByText('1 vehicle, 3 records')).toBeInTheDocument();
+    expect(screen.getByText('· 3 records')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'VOLKSWAGEN PASSAT' }))
       .toHaveAttribute('href', '/vehicles/7');
+  });
+
+  it('expands a row to browse each stored record with the shared viewer', async () => {
+    api.getDvsaVehicles.mockResolvedValue({
+      items: [{
+        id: 1, vehicle_id: 7, registration: 'A1XYZ',
+        make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-01-01 00:00:00',
+        record_count: 2,
+      }],
+      total: 1, total_records: 2, page: 1, per_page: 25, pages: 1,
+    });
+    api.getDvsaVehicleRecords.mockResolvedValue({
+      id: 1, vehicle_id: 7, registration: 'A1XYZ',
+      vehicle: { make: 'VOLKSWAGEN', model: 'PASSAT', registration: 'A1XYZ' },
+      tests: [{ completedDate: '2024-03-04T10:00:00', testResult: 'PASSED', odometerValue: '42000' }],
+    });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
+
+    // Records load lazily on first expand.
+    expect(api.getDvsaVehicleRecords).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText('VOLKSWAGEN PASSAT').closest('tr'));
+
+    await waitFor(() => expect(screen.getByText('Vehicle')).toBeInTheDocument());
+    expect(api.getDvsaVehicleRecords).toHaveBeenCalledWith(1);
+    expect(screen.getByText('MOT test')).toBeInTheDocument();
+
+    // The shared viewer expands a record into its raw fields.
+    await userEvent.click(screen.getByText('MOT test'));
+    expect(screen.getByText('testResult')).toBeInTheDocument();
+    expect(screen.getByText('PASSED')).toBeInTheDocument();
+  });
+
+  it('does not toggle the row when the vehicle link is clicked', async () => {
+    api.getDvsaVehicles.mockResolvedValue({
+      items: [{
+        id: 1, vehicle_id: 7, registration: 'A1XYZ',
+        make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-01-01 00:00:00',
+        record_count: 1,
+      }],
+      total: 1, total_records: 1, page: 1, per_page: 25, pages: 1,
+    });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('link', { name: 'VOLKSWAGEN PASSAT' }));
+    expect(api.getDvsaVehicleRecords).not.toHaveBeenCalled();
+  });
+
+  it('filters the loaded rows by make/model or registration', async () => {
+    api.getDvsaVehicles.mockResolvedValue({
+      items: [
+        {
+          id: 1, vehicle_id: 7, registration: 'A1 XYZ',
+          make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-01-01 00:00:00',
+          record_count: 1,
+        },
+        {
+          id: 2, vehicle_id: 8, registration: 'FD09 ABC',
+          make: 'FORD', model: 'FOCUS', fetched_at: '2024-01-01 00:00:00',
+          record_count: 1,
+        },
+      ],
+      total: 2, total_records: 2, page: 1, per_page: 25, pages: 1,
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
+
+    const box = screen.getByPlaceholderText(/Filter by make, model or registration/);
+
+    // Match on make/model
+    await userEvent.type(box, 'focus');
+    expect(screen.getByText('FORD FOCUS')).toBeInTheDocument();
+    expect(screen.queryByText('VOLKSWAGEN PASSAT')).not.toBeInTheDocument();
+
+    // Match on registration, ignoring spacing
+    await userEvent.clear(box);
+    await userEvent.type(box, 'a1xyz');
+    expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument();
+    expect(screen.queryByText('FORD FOCUS')).not.toBeInTheDocument();
+
+    // No matches on this page
+    await userEvent.clear(box);
+    await userEvent.type(box, 'zzz');
+    expect(screen.getByText('No matches on this page')).toBeInTheDocument();
   });
 
   it('marks a detached record (deleted vehicle) with no link', async () => {
@@ -44,8 +132,9 @@ describe('DvsaVehiclesPage', () => {
       items: [{
         id: 2, vehicle_id: null, registration: 'OLD123',
         make: 'FORD', model: 'FOCUS', fetched_at: '2024-01-01 00:00:00',
+        record_count: 1,
       }],
-      total: 1, page: 1, per_page: 25, pages: 1,
+      total: 1, total_records: 1, page: 1, per_page: 25, pages: 1,
     });
     renderPage();
 
@@ -58,8 +147,9 @@ describe('DvsaVehiclesPage', () => {
       items: [{
         id: page, vehicle_id: page, registration: `REG${page}`,
         make: 'M', model: `Model${page}`, fetched_at: '2024-01-01 00:00:00',
+        record_count: 1,
       }],
-      total: 30, page, per_page: 25, pages: 2,
+      total: 30, total_records: 30, page, per_page: 25, pages: 2,
     }));
     renderPage();
 
@@ -73,7 +163,9 @@ describe('DvsaVehiclesPage', () => {
   });
 
   it('shows an empty state', async () => {
-    api.getDvsaVehicles.mockResolvedValue({ items: [], total: 0, page: 1, per_page: 25, pages: 0 });
+    api.getDvsaVehicles.mockResolvedValue({
+      items: [], total: 0, total_records: 0, page: 1, per_page: 25, pages: 0,
+    });
     renderPage();
     await waitFor(() => expect(screen.getByText(/No DVSA vehicles stored yet/)).toBeInTheDocument());
   });
