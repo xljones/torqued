@@ -171,12 +171,25 @@ describe('DvsaVehiclesPage', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('looks up a registration and saves it, then reloads the list', async () => {
+  it('looks up a registration, saves it, reloads, and auto-expands the found row', async () => {
     api.getMotStatus.mockResolvedValue({ configured: true });
-    api.getDvsaVehicles.mockResolvedValue({
-      items: [], total: 0, total_records: 0, page: 1, per_page: 25, pages: 0,
-    });
+    // Empty first, then the freshly-saved record appears on reload.
+    api.getDvsaVehicles
+      .mockResolvedValueOnce({ items: [], total: 0, total_records: 0, page: 1, per_page: 25, pages: 0 })
+      .mockResolvedValue({
+        items: [{
+          id: 9, vehicle_id: null, vehicle_name: null, garage_name: null,
+          registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT',
+          fetched_at: '2024-01-01 00:00:00', record_count: 1,
+        }],
+        total: 1, total_records: 1, page: 1, per_page: 25, pages: 1,
+      });
     api.lookupDvsaVehicle.mockResolvedValue({ registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT' });
+    api.getDvsaVehicleRecords.mockResolvedValue({
+      registration: 'A1XYZ',
+      records: [{ id: 9, vehicle_id: null, make: 'VOLKSWAGEN', model: 'PASSAT',
+        fetched_at: '2024-01-01 00:00:00', raw: { registration: 'A1XYZ' } }],
+    });
     renderPage();
 
     const box = await screen.findByLabelText('Registration to look up');
@@ -184,8 +197,10 @@ describe('DvsaVehiclesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /Look up & save/ }));
 
     await waitFor(() => expect(api.lookupDvsaVehicle).toHaveBeenCalledWith('a1 xyz'));
-    // The list is re-fetched after a successful lookup (initial load + reload).
+    // The list is re-fetched (initial load + reload) and the found row auto-expands.
     await waitFor(() => expect(api.getDvsaVehicles).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.getDvsaVehicleRecords).toHaveBeenCalledWith(9));
+    expect(await screen.findByText('DVSA record')).toBeInTheDocument();
   });
 
   it('hides the lookup form when the DVSA API is not configured', async () => {

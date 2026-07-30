@@ -270,6 +270,12 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .dvsa-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .dvsa-toolbar .search-input { flex: 1 1 auto; min-width: 180px; }
 .dvsa-lookup { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+/* Match the search field's height (same font-size, line-height and padding) and keep the
+   plate only as wide as a UK plate needs. */
+.dvsa-lookup .reg-plate-input {
+  font-size: 13px !important; line-height: 1.2 !important; letter-spacing: 1px;
+  padding: 8px 10px !important; width: 9em;
+}
 .dvsa-view-link { margin-left: 6px; font-size: 0.85em; }
 .dvsa-add-btn { margin-left: 8px; }
 .dvsa-row { cursor: pointer; }

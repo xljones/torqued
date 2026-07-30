@@ -123,16 +123,18 @@ export default function VehicleForm({ mode }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Preview the DVSA record for the entered plate without persisting anything. In both modes the
-  // baseline is committed on Save (create stores it; edit re-fetches against the saved plate), so
-  // the preview reflects the plate currently typed — not whatever is still stored on the vehicle.
+  // Look up the DVSA record for the entered plate and show it as the baseline. In create mode
+  // the lookup is *persisted* (a standalone DVSA record) so it isn't lost if the vehicle is never
+  // saved — and it relinks automatically if the vehicle is added later. In edit mode it's a
+  // non-persisting preview against the plate currently typed (Save re-fetches to store).
   async function handleFetch(regArg) {
     const reg = (typeof regArg === 'string' ? regArg : form.registration).trim();
     if (!reg) { toast('Enter a registration plate first', 'error'); return; }
     setFetching(true);
     try {
-      setBaseline((await api.lookupMot(reg)).mot_baseline);
-      toast(isEdit ? 'Found a DVSA record — save to apply' : 'Found a DVSA record');
+      const res = isEdit ? await api.lookupMot(reg) : await api.lookupDvsaVehicle(reg);
+      setBaseline(res.mot_baseline);
+      toast(isEdit ? 'Found a DVSA record — save to apply' : 'Found and saved a DVSA record');
     } catch (err) {
       toast(err.message, 'error');
     } finally {

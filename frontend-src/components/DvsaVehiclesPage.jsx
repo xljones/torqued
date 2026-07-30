@@ -8,24 +8,24 @@ import { SkeletonRows } from './Skeleton.jsx';
 import { useToast } from './Toast.jsx';
 
 const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+// Normalise a plate the way the backend groups them (strip spaces, case-insensitive).
+const normReg = r => (r ?? '').replace(/\s+/g, '').toLowerCase();
 
 // One vehicle row: a summary line that expands to reveal every stored DVSA record —
 // each record being one entire lookup, newest first — browsable with the shared record
-// viewer. The records are fetched lazily on first expand.
-function DvsaRow({ v }) {
+// viewer. Records are fetched lazily whenever the row is open (click or auto-expanded
+// after a fresh lookup).
+function DvsaRow({ v, defaultOpen = false }) {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [records, setRecords] = useState(null);
 
-  function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && records === null) {
-      api.getDvsaVehicleRecords(v.id).then(setRecords);
-    }
-  }
+  useEffect(() => {
+    if (open && records === null) api.getDvsaVehicleRecords(v.id).then(setRecords);
+  }, [open, records, v.id]);
 
   const makeModel = [v.make, v.model].filter(Boolean).join(' ') || '—';
+  const toggle = () => setOpen(o => !o);
 
   function addToGarage(e) {
     e.stopPropagation();
@@ -103,6 +103,8 @@ export default function DvsaVehiclesPage() {
   const [motConfigured, setMotConfigured] = useState(false);
   const [lookupReg, setLookupReg] = useState('');
   const [looking, setLooking] = useState(false);
+  // Plate (normalised) of the most recent lookup, so its row auto-expands once reloaded.
+  const [expandReg, setExpandReg] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +126,7 @@ export default function DvsaVehiclesPage() {
       const v = await api.lookupDvsaVehicle(reg);
       toast?.(`Saved DVSA record for ${[v.make, v.model].filter(Boolean).join(' ') || reg}`);
       setLookupReg('');
+      setExpandReg(normReg(v.registration ?? reg));  // auto-expand the found row on reload
       setPage(1);
       setReloadKey(k => k + 1);
     } catch (err) {
@@ -188,7 +191,13 @@ export default function DvsaVehiclesPage() {
             <tbody>
               {data === null
                 ? <SkeletonRows cols={['40%', '110px', '110px']} />
-                : visible.map(v => <DvsaRow key={v.id} v={v} />)}
+                : visible.map(v => (
+                  <DvsaRow
+                    key={v.id}
+                    v={v}
+                    defaultOpen={!!expandReg && normReg(v.registration) === expandReg}
+                  />
+                ))}
               {data !== null && visible.length === 0 && (
                 <tr>
                   <td colSpan={3} className="empty">

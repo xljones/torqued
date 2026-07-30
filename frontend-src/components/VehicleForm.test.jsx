@@ -14,6 +14,7 @@ vi.mock('../api.js', () => ({
   api: {
     getMotStatus: vi.fn(),
     lookupMot: vi.fn(),
+    lookupDvsaVehicle: vi.fn(),
     getVehicle: vi.fn(),
     createVehicle: vi.fn(),
     refreshMot: vi.fn(),
@@ -59,9 +60,9 @@ describe('VehicleForm DVSA lookup', () => {
     expect(plate).toHaveClass('reg-plate-input');
   });
 
-  it('auto-fetches the DVSA baseline when arriving prefilled from "+ Add to garage"', async () => {
+  it('auto-fetches (and persists) the DVSA baseline when arriving prefilled from "+ Add to garage"', async () => {
     api.getMotStatus.mockResolvedValue({ configured: true });
-    api.lookupMot.mockResolvedValue({
+    api.lookupDvsaVehicle.mockResolvedValue({
       mot_baseline: { registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT', colour: 'BLUE' },
     });
     render(
@@ -78,9 +79,9 @@ describe('VehicleForm DVSA lookup', () => {
       </MemoryRouter>,
     );
 
-    // The plate is seeded and its DVSA baseline is fetched without a manual click.
+    // The plate is seeded and its DVSA baseline is fetched (and persisted) without a click.
     expect(screen.getByPlaceholderText('A1 XYZ')).toHaveValue('A1 XYZ');
-    await waitFor(() => expect(api.lookupMot).toHaveBeenCalledWith('A1 XYZ'));
+    await waitFor(() => expect(api.lookupDvsaVehicle).toHaveBeenCalledWith('A1 XYZ'));
     await waitFor(() => expect(screen.getByText(/Found via DVSA/)).toBeInTheDocument());
   });
 
@@ -93,8 +94,7 @@ describe('VehicleForm DVSA lookup', () => {
 
   it('fetches the DVSA baseline and shows each identity field as an editable / fixed-DVSA split', async () => {
     api.getMotStatus.mockResolvedValue({ configured: true });
-    api.lookupMot.mockResolvedValue({
-      configured: true,
+    api.lookupDvsaVehicle.mockResolvedValue({
       mot_baseline: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, colour: 'Blue', engine_size: '1896' },
     });
     const { container } = renderCreate();
@@ -102,7 +102,7 @@ describe('VehicleForm DVSA lookup', () => {
     await userEvent.type(plate, 'A1 XYZ');
     await userEvent.click(screen.getByText('Fetch from DVSA'));
     await waitFor(() => {
-      expect(api.lookupMot).toHaveBeenCalledWith('A1 XYZ');
+      expect(api.lookupDvsaVehicle).toHaveBeenCalledWith('A1 XYZ');
       expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument();
     });
     // Create mode now renders the same split as edit mode: a fixed DVSA value beside each input.
@@ -115,13 +115,13 @@ describe('VehicleForm DVSA lookup', () => {
 
   it('fetches from the DVSA when Enter is pressed in the registration field', async () => {
     api.getMotStatus.mockResolvedValue({ configured: true });
-    api.lookupMot.mockResolvedValue({ configured: true, mot_baseline: { make: 'VOLKSWAGEN' } });
+    api.lookupDvsaVehicle.mockResolvedValue({ mot_baseline: { make: 'VOLKSWAGEN' } });
     api.createVehicle.mockResolvedValue({ id: 1 });
     renderCreate();
     const plate = await screen.findByPlaceholderText('A1 XYZ');
     await userEvent.type(plate, 'A1 XYZ{Enter}');
     // Enter looks up the plate instead of submitting the half-filled form.
-    await waitFor(() => expect(api.lookupMot).toHaveBeenCalledWith('A1 XYZ'));
+    await waitFor(() => expect(api.lookupDvsaVehicle).toHaveBeenCalledWith('A1 XYZ'));
     expect(api.createVehicle).not.toHaveBeenCalled();
   });
 
