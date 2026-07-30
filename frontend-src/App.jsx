@@ -87,7 +87,7 @@ function Nav() {
       <NavLink to="/tyres">Tyre pressures</NavLink>
       <NavLink to="/services">Service log</NavLink>
       <NavLink to="/codes">Fault codes</NavLink>
-      {user?.is_admin && <NavLink to="/dvsa-vehicles">DVSA vehicles</NavLink>}
+      {user?.is_admin && <NavLink to="/dvsa-vehicles">DVSA Records</NavLink>}
       <div className="mt-auto">
         <div className="sidebar-user">
           <div className="sidebar-user-row">
@@ -125,7 +125,7 @@ function BottomNav() {
             <NavLink to="/tyres" className="sidebar-nav-btn" onClick={closeMore}>Tyre pressures</NavLink>
             <NavLink to="/codes" className="sidebar-nav-btn" onClick={closeMore}>Fault codes</NavLink>
             {user?.is_admin && (
-              <NavLink to="/dvsa-vehicles" className="sidebar-nav-btn" onClick={closeMore}>DVSA vehicles</NavLink>
+              <NavLink to="/dvsa-vehicles" className="sidebar-nav-btn" onClick={closeMore}>DVSA Records</NavLink>
             )}
             <div className="sidebar-user">
               <div className="sidebar-user-row">

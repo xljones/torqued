@@ -92,7 +92,7 @@ export default function DvsaRecord({ label, summary, raw, className = '' }) {
       </div>
 
       {open && (
-        <div className="dvsa-json-panel mt-3">
+        <div className="dvsa-json-panel mt-2">
           <div className="dvsa-json-toolbar">
             <button
               className={`btn btn-sm ${jsonFmt === 'formatted' ? 'btn-primary' : 'btn-secondary'}`}

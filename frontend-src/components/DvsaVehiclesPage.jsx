@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import RegPlate from './RegPlate.jsx';
 import RelativeTime from './RelativeTime.jsx';
@@ -15,10 +15,12 @@ const normReg = r => (r ?? '').replace(/\s+/g, '').toLowerCase();
 // each record being one entire lookup, newest first — browsable with the shared record
 // viewer. Records are fetched lazily whenever the row is open (click or auto-expanded
 // after a fresh lookup).
-function DvsaRow({ v, defaultOpen = false }) {
+function DvsaRow({ v, defaultOpen = false, onRefreshed }) {
   const navigate = useNavigate();
+  const toast = useToast();
   const [open, setOpen] = useState(defaultOpen);
   const [records, setRecords] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (open && records === null) api.getDvsaVehicleRecords(v.id).then(setRecords);
@@ -34,6 +36,30 @@ function DvsaRow({ v, defaultOpen = false }) {
     });
   }
 
+  function viewVehicle(e) {
+    e.stopPropagation();
+    navigate(`/vehicles/${v.vehicle_id}`);
+  }
+
+  // Pull the latest DVSA record for this plate, keeping the previous as history. A linked
+  // vehicle refreshes its live snapshot; a standalone record stores a fresh lookup.
+  async function refreshRow(e) {
+    e.stopPropagation();
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      if (v.vehicle_id != null) await api.refreshMot(v.vehicle_id);
+      else await api.lookupDvsaVehicle(v.registration);
+      const label = [v.year, v.make, v.model].filter(Boolean).join(' ') || v.registration;
+      toast?.(`Refreshed ${label}`);
+      onRefreshed?.(normReg(v.registration), { keepOrder: true });
+    } catch (err) {
+      toast?.(err.message ?? 'Refresh failed', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <>
       <tr
@@ -46,16 +72,12 @@ function DvsaRow({ v, defaultOpen = false }) {
       >
         <td>
           <span className="dvsa-record-caret">{open ? '▼' : '▶'}</span>{' '}
+          {v.year ? <span className="dvsa-year">{v.year} </span> : null}
           {makeModel}
-          {v.year ? <span className="dvsa-year"> {v.year}</span> : null}
           {v.vehicle_id != null ? (
-            <Link
-              className="dvsa-view-link"
-              to={`/vehicles/${v.vehicle_id}`}
-              onClick={e => e.stopPropagation()}
-            >
-              (View {v.vehicle_name}{v.garage_name ? ` in ${v.garage_name}` : ''})
-            </Link>
+            <button type="button" className="btn btn-success btn-sm dvsa-view-btn" onClick={viewVehicle}>
+              View {v.vehicle_name}{v.garage_name ? ` in ${v.garage_name}` : ''}
+            </button>
           ) : (
             <button type="button" className="btn btn-secondary btn-sm dvsa-add-btn" onClick={addToGarage}>
               + Add to garage
@@ -64,7 +86,19 @@ function DvsaRow({ v, defaultOpen = false }) {
           <span className="meta"> · {plural(v.record_count, 'record')}</span>
         </td>
         <td><RegPlate reg={v.registration} /></td>
-        <td className="meta"><RelativeTime value={v.fetched_at} /></td>
+        <td className="meta">
+          <RelativeTime value={v.fetched_at} />
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm dvsa-refresh-btn"
+            onClick={refreshRow}
+            disabled={refreshing}
+            title="Pull the latest DVSA record"
+            aria-label="Refresh from DVSA"
+          >
+            <span className={refreshing ? 'dvsa-refresh-spin' : ''} aria-hidden="true">↻</span>
+          </button>
+        </td>
       </tr>
       {open && (
         <tr className="dvsa-records-row">
@@ -106,17 +140,43 @@ export default function DvsaVehiclesPage() {
   const [looking, setLooking] = useState(false);
   // Plate (normalised) of the most recent lookup, so its row auto-expands once reloaded.
   const [expandReg, setExpandReg] = useState(null);
+  // When set, the next reload keeps this on-screen order (list of normalised plates) rather
+  // than the server's newest-first order — so refreshing a row updates it in place. Cleared
+  // after one reload, so a genuine page load re-sorts naturally.
+  const keepOrderRef = useRef(null);
 
   useEffect(() => {
     let active = true;
     setData(null);
-    api.getDvsaVehicles(page).then(d => { if (active) setData(d); });
+    api.getDvsaVehicles(page).then(d => {
+      if (!active) return;
+      const order = keepOrderRef.current;
+      keepOrderRef.current = null;
+      if (order) {
+        const rank = r => (order.indexOf(normReg(r)) + 1 || Infinity);
+        d = { ...d, items: [...d.items].sort((a, b) => rank(a.registration) - rank(b.registration)) };
+      }
+      setData(d);
+    });
     return () => { active = false; };
   }, [page, reloadKey]);
 
   useEffect(() => {
     api.getMotStatus().then(s => setMotConfigured(s.configured)).catch(() => {});
   }, []);
+
+  // Re-fetch the list and auto-expand the row for the given (normalised) plate. A standalone
+  // lookup jumps to page 1 and lets the found row sort to the top; a row refresh keeps the
+  // current order (keepOrder) so the row updates in place and only re-sorts on the next load.
+  function reloadExpanding(reg, { keepOrder = false } = {}) {
+    setExpandReg(reg);
+    if (keepOrder) {
+      if (data) keepOrderRef.current = data.items.map(i => normReg(i.registration));
+    } else {
+      setPage(1);
+    }
+    setReloadKey(k => k + 1);
+  }
 
   async function handleLookup(e) {
     e.preventDefault();
@@ -127,9 +187,7 @@ export default function DvsaVehiclesPage() {
       const v = await api.lookupDvsaVehicle(reg);
       toast?.(`Saved DVSA record for ${[v.make, v.model].filter(Boolean).join(' ') || reg}`);
       setLookupReg('');
-      setExpandReg(normReg(v.registration ?? reg));  // auto-expand the found row on reload
-      setPage(1);
-      setReloadKey(k => k + 1);
+      reloadExpanding(normReg(v.registration ?? reg));
     } catch (err) {
       toast?.(err.message ?? 'Lookup failed', 'error');
     } finally {
@@ -151,7 +209,7 @@ export default function DvsaVehiclesPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">DVSA vehicles</h1>
+        <h1 className="page-title">DVSA Records</h1>
         {data && (
           <span className="meta">
             {plural(data.total, 'vehicle')}, {plural(data.total_records, 'record')}
@@ -177,7 +235,7 @@ export default function DvsaVehiclesPage() {
               aria-label="Registration to look up"
             />
             <button className="btn btn-primary btn-sm" disabled={looking || !lookupReg.trim()}>
-              {looking ? 'Looking up…' : 'Look up & save'}
+              {looking ? 'Finding…' : 'Find'}
             </button>
           </form>
         )}
@@ -197,12 +255,13 @@ export default function DvsaVehiclesPage() {
                     key={v.id}
                     v={v}
                     defaultOpen={!!expandReg && normReg(v.registration) === expandReg}
+                    onRefreshed={reloadExpanding}
                   />
                 ))}
               {data !== null && visible.length === 0 && (
                 <tr>
                   <td colSpan={3} className="empty">
-                    {items.length === 0 ? 'No DVSA vehicles stored yet' : 'No matches on this page'}
+                    {items.length === 0 ? 'No DVSA records stored yet' : 'No matches on this page'}
                   </td>
                 </tr>
               )}

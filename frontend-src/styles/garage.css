@@ -278,8 +278,11 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
   padding: 7px 10px !important; width: 9em; box-sizing: border-box;
 }
 .dvsa-year { color: var(--text2); }
-.dvsa-view-link { margin-left: 6px; font-size: 0.85em; }
+.dvsa-view-btn { margin-left: 8px; }
 .dvsa-add-btn { margin-left: 8px; }
+.dvsa-refresh-btn { margin-left: 8px; padding: 2px 8px; line-height: 1; }
+.dvsa-refresh-btn .dvsa-refresh-spin { display: inline-block; animation: dvsa-spin 0.8s linear infinite; }
+@keyframes dvsa-spin { to { transform: rotate(360deg); } }
 .dvsa-row { cursor: pointer; }
 .dvsa-row:hover { background: var(--surface2); }
 .dvsa-records-row > td { background: var(--surface2); }

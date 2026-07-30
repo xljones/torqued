@@ -17,6 +17,7 @@ vi.mock('../api.js', () => ({
     getDvsaVehicleRecords: vi.fn(),
     getMotStatus: vi.fn(),
     lookupDvsaVehicle: vi.fn(),
+    refreshMot: vi.fn(),
   },
 }));
 vi.mock('./Toast.jsx', () => ({ useToast: () => vi.fn() }));
@@ -55,10 +56,10 @@ describe('DvsaVehiclesPage', () => {
     expect(screen.getByText('2003')).toBeInTheDocument();  // year shown alongside make/model
     expect(screen.getByText('1 vehicle, 3 records')).toBeInTheDocument();
     expect(screen.getByText('· 3 records')).toBeInTheDocument();
-    // Make/model is plain text; the vehicle link is a separate "(View … in …)" affordance.
+    // Make/model is plain text; the vehicle link is a separate green "View … in …" button.
     expect(screen.getByText('VOLKSWAGEN PASSAT').tagName).not.toBe('A');
-    const link = screen.getByRole('link', { name: '(View Daily in Home Garage)' });
-    expect(link).toHaveAttribute('href', '/vehicles/7');
+    const btn = screen.getByRole('button', { name: 'View Daily in Home Garage' });
+    expect(btn).toHaveClass('btn-success');
   });
 
   it('expands a row to browse each lookup record, newest first, with the shared viewer', async () => {
@@ -101,7 +102,7 @@ describe('DvsaVehiclesPage', () => {
     expect(screen.getByText('motTests')).toBeInTheDocument();
   });
 
-  it('does not toggle the row when the vehicle link is clicked', async () => {
+  it('does not toggle the row when the view button is clicked', async () => {
     api.getDvsaVehicles.mockResolvedValue({
       items: [{
         id: 1, vehicle_id: 7, vehicle_name: 'Daily', garage_name: 'Home Garage',
@@ -114,7 +115,7 @@ describe('DvsaVehiclesPage', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
-    await userEvent.click(screen.getByRole('link', { name: '(View Daily in Home Garage)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View Daily in Home Garage' }));
     expect(api.getDvsaVehicleRecords).not.toHaveBeenCalled();
   });
 
@@ -195,13 +196,73 @@ describe('DvsaVehiclesPage', () => {
 
     const box = await screen.findByLabelText('Registration to look up');
     await userEvent.type(box, 'a1 xyz');
-    await userEvent.click(screen.getByRole('button', { name: /Look up & save/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Find$/ }));
 
     await waitFor(() => expect(api.lookupDvsaVehicle).toHaveBeenCalledWith('a1 xyz'));
     // The list is re-fetched (initial load + reload) and the found row auto-expands.
     await waitFor(() => expect(api.getDvsaVehicles).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(api.getDvsaVehicleRecords).toHaveBeenCalledWith(9));
     expect(await screen.findByText('DVSA record')).toBeInTheDocument();
+  });
+
+  it('refreshes a linked row: pulls the latest via the vehicle, reloads, and re-expands', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    // Before refresh: 1 record; after refresh (reload): 2 records for the same plate.
+    api.getDvsaVehicles
+      .mockResolvedValueOnce({
+        items: [{
+          id: 3, vehicle_id: 7, vehicle_name: 'Daily', garage_name: 'Home Garage',
+          registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003,
+          fetched_at: '2024-01-01 00:00:00', record_count: 1,
+        }],
+        total: 1, total_records: 1, page: 1, per_page: 25, pages: 1,
+      })
+      .mockResolvedValue({
+        items: [{
+          id: 4, vehicle_id: 7, vehicle_name: 'Daily', garage_name: 'Home Garage',
+          registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003,
+          fetched_at: '2024-06-01 00:00:00', record_count: 2,
+        }],
+        total: 1, total_records: 2, page: 1, per_page: 25, pages: 1,
+      });
+    api.refreshMot.mockResolvedValue({});
+    api.getDvsaVehicleRecords.mockResolvedValue({
+      registration: 'A1XYZ',
+      records: [{ id: 4, vehicle_id: 7, make: 'VOLKSWAGEN', model: 'PASSAT',
+        fetched_at: '2024-06-01 00:00:00', raw: { registration: 'A1XYZ' } }],
+    });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('· 1 record')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh from DVSA' }));
+
+    // A linked row refreshes via its vehicle, not a standalone lookup.
+    await waitFor(() => expect(api.refreshMot).toHaveBeenCalledWith(7));
+    // The counter updates and the (now top) row auto-expands.
+    await waitFor(() => expect(screen.getByText('· 2 records')).toBeInTheDocument());
+    await waitFor(() => expect(api.getDvsaVehicleRecords).toHaveBeenCalledWith(4));
+    expect(await screen.findByText('DVSA record')).toBeInTheDocument();
+  });
+
+  it('refreshes a standalone row via a fresh lookup', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.getDvsaVehicles.mockResolvedValue({
+      items: [{
+        id: 8, vehicle_id: null, vehicle_name: null, garage_name: null,
+        registration: 'OLD123', make: 'FORD', model: 'FOCUS',
+        fetched_at: '2024-01-01 00:00:00', record_count: 1,
+      }],
+      total: 1, total_records: 1, page: 1, per_page: 25, pages: 1,
+    });
+    api.lookupDvsaVehicle.mockResolvedValue({ registration: 'OLD123', make: 'FORD', model: 'FOCUS' });
+    api.getDvsaVehicleRecords.mockResolvedValue({ registration: 'OLD123', records: [] });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('FORD FOCUS')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh from DVSA' }));
+
+    await waitFor(() => expect(api.lookupDvsaVehicle).toHaveBeenCalledWith('OLD123'));
+    expect(api.refreshMot).not.toHaveBeenCalled();
   });
 
   it('hides the lookup form when the DVSA API is not configured', async () => {
@@ -211,7 +272,7 @@ describe('DvsaVehiclesPage', () => {
     });
     renderPage();
 
-    await waitFor(() => expect(screen.getByText(/No DVSA vehicles stored yet/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No DVSA records stored yet/)).toBeInTheDocument());
     expect(screen.queryByLabelText('Registration to look up')).not.toBeInTheDocument();
   });
 
@@ -271,6 +332,6 @@ describe('DvsaVehiclesPage', () => {
       items: [], total: 0, total_records: 0, page: 1, per_page: 25, pages: 0,
     });
     renderPage();
-    await waitFor(() => expect(screen.getByText(/No DVSA vehicles stored yet/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No DVSA records stored yet/)).toBeInTheDocument());
   });
 });
