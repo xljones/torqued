@@ -39,10 +39,12 @@ def create_dvsa_lookup() -> ResponseReturnValue:
         return jsonify(error=str(e)), e.status
     with get_db() as db:
         MotRepository(db).store_detached_lookup(payload)
+    # Return the baseline too so the vehicle form can persist a lookup and prefill in one call.
     return jsonify(
         registration=payload.get("registration"),
         make=payload.get("make"),
         model=payload.get("model"),
+        mot_baseline=mot.to_baseline(payload),
     ), 201
 
 
