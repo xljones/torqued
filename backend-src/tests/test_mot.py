@@ -563,6 +563,79 @@ def test_dvsa_vehicles_group_lookups_of_one_plate(
     assert item["vehicle_id"] is not None  # links to the most recent live vehicle
 
 
+def test_dvsa_vehicles_include_vehicle_and_garage_name(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    _seed_dvsa(garage["id"], 1)
+    item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
+    assert item["vehicle_name"] == "Car 0"
+    assert item["garage_name"] == "Test Garage"
+
+
+def test_create_dvsa_lookup_requires_auth(client: FlaskClient) -> None:
+    assert client.post("/api/dvsa-vehicles", json={"registration": "A1XYZ"}).status_code == 401
+
+
+def test_create_dvsa_lookup_requires_admin(auth_client: FlaskClient) -> None:
+    assert auth_client.post("/api/dvsa-vehicles", json={"registration": "A1XYZ"}).status_code == 403
+
+
+def test_create_dvsa_lookup_requires_registration(admin_client: FlaskClient) -> None:
+    assert admin_client.post("/api/dvsa-vehicles", json={}).status_code == 400
+
+
+def test_create_dvsa_lookup_unconfigured(
+    admin_client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(mot, "is_configured", lambda: False)
+    r = admin_client.post("/api/dvsa-vehicles", json={"registration": "A1XYZ"})
+    assert r.status_code == 503
+
+
+def test_create_dvsa_lookup_relays_dvsa_error(
+    admin_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    def boom(reg: str) -> dict[str, Any]:
+        raise mot.MotError("No MOT record found", 404)
+
+    monkeypatch.setattr(mot, "fetch_vehicle", boom)
+    r = admin_client.post("/api/dvsa-vehicles", json={"registration": "A1XYZ"})
+    assert r.status_code == 404
+    assert "No MOT record" in r.json["error"]
+
+
+def test_create_dvsa_lookup_persists_detached(
+    admin_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    r = admin_client.post("/api/dvsa-vehicles", json={"registration": "A1 XYZ"})
+    assert r.status_code == 201
+    assert r.json["make"] == "VOLKSWAGEN"
+
+    items = admin_client.get("/api/dvsa-vehicles").json["items"]
+    item = next(i for i in items if (i["registration"] or "").replace(" ", "").upper() == "A1XYZ")
+    assert item["vehicle_id"] is None  # not assigned to any garage vehicle
+    assert item["record_count"] == 1
+
+
+def test_standalone_lookup_links_when_vehicle_added_later(
+    auth_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+
+    # A standalone (unassigned) lookup persisted earlier via the admin page.
+    with get_db() as db:
+        MotRepository(db).store_detached_lookup({**SAMPLE, "registration": "A1XYZ"})
+
+    # Adding a vehicle on that plate ties the old record to it, rebuilding its tests.
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    mot_data = auth_client.get(f"/api/vehicles/{v['id']}/mot").json["mot"]
+    assert mot_data is not None
+    assert mot_data["registration"] == "A1XYZ"
+    assert [t["mot_test_number"] for t in mot_data["tests"]] == ["1234", "1233", "1232"]
+
+
 def test_dvsa_vehicles_link_falls_back_to_older_live_vehicle(
     admin_client: FlaskClient, garage: dict[str, Any]
 ) -> None:

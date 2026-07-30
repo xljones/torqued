@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 
 from torqued import mot
-from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
+from torqued.models import DvsaVehicle, Garage, MotTest, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
@@ -59,10 +59,11 @@ class MotRepository(BaseRepository):
         registration into vehicles, so a plate looked up more than once — each refresh
         keeps the previous lookup as a detached record (see ``replace_for_vehicle``) —
         appears once with a ``record_count`` of all its lookups. Each item is
-        represented by its newest lookup: ``vehicle_id`` is the most recent live one
-        (NULL only when every lookup is detached, shown as a deleted vehicle), and
-        ``id`` points at the newest row so the records endpoint can rebuild the group.
-        ``total`` counts vehicles; ``total_records`` counts lookups.
+        represented by its newest lookup: ``vehicle_id`` (plus ``vehicle_name`` and
+        ``garage_name``) is the most recent live one — NULL when every lookup is
+        detached (a standalone lookup or a deleted vehicle) — and ``id`` points at the
+        newest row so the records endpoint can rebuild the group. ``total`` counts
+        vehicles; ``total_records`` counts lookups.
         """
         rows = (
             self.session.execute(
@@ -73,7 +74,11 @@ class MotRepository(BaseRepository):
                     DvsaVehicle.make,
                     DvsaVehicle.model,
                     DvsaVehicle.fetched_at,
+                    Vehicle.name.label("vehicle_name"),
+                    Garage.name.label("garage_name"),
                 )
+                .outerjoin(Vehicle, Vehicle.id == DvsaVehicle.vehicle_id)
+                .outerjoin(Garage, Garage.id == Vehicle.garage_id)
                 .order_by(DvsaVehicle.fetched_at.desc(), DvsaVehicle.id.desc())
             )
             .mappings()
@@ -88,6 +93,8 @@ class MotRepository(BaseRepository):
                 groups[key] = {
                     "id": r["id"],
                     "vehicle_id": r["vehicle_id"],
+                    "vehicle_name": r["vehicle_name"],
+                    "garage_name": r["garage_name"],
                     "registration": r["registration"],
                     "make": r["make"],
                     "model": r["model"],
@@ -96,9 +103,11 @@ class MotRepository(BaseRepository):
                 }
             else:
                 group["record_count"] += 1
-                # Link to the most recent live vehicle among the grouped lookups.
+                # Link to (and name) the most recent live vehicle among the lookups.
                 if group["vehicle_id"] is None and r["vehicle_id"] is not None:
                     group["vehicle_id"] = r["vehicle_id"]
+                    group["vehicle_name"] = r["vehicle_name"]
+                    group["garage_name"] = r["garage_name"]
 
         items = list(groups.values())
         total = len(items)
@@ -252,25 +261,39 @@ class MotRepository(BaseRepository):
             .values(vehicle_id=None)
         )
         self.session.execute(delete(MotTest).where(MotTest.vehicle_id == vehicle_id))
-        self.session.add(
-            DvsaVehicle(
-                vehicle_id=vehicle_id,
-                registration=payload.get("registration"),
-                make=payload.get("make"),
-                model=payload.get("model"),
-                first_used_date=payload.get("firstUsedDate"),
-                fuel_type=payload.get("fuelType"),
-                primary_colour=payload.get("primaryColour"),
-                registration_date=payload.get("registrationDate"),
-                manufacture_date=payload.get("manufactureDate"),
-                manufacture_year=payload.get("manufactureYear"),
-                engine_size=payload.get("engineSize"),
-                has_outstanding_recall=payload.get("hasOutstandingRecall"),
-                mot_test_due_date=payload.get("motTestDueDate"),
-                raw_json=json.dumps(payload),
-            )
-        )
+        self.session.add(self._snapshot(vehicle_id, payload))
         self._add_tests(vehicle_id, payload)
+
+    def store_detached_lookup(self, payload: dict[str, Any]) -> None:
+        """Persist a DVSA lookup not tied to any vehicle (``vehicle_id`` NULL).
+
+        Used by the admin DVSA page to look up any registration and keep the result
+        without assigning it to a garage vehicle. If a vehicle on this plate is later
+        added, ``relink_detached`` ties this record to it. No ``mot_tests`` rows are
+        created (they require a ``vehicle_id``) — the whole lookup lives in ``raw_json``,
+        which is what the records view reads.
+        """
+        self.session.add(self._snapshot(None, payload))
+
+    @staticmethod
+    def _snapshot(vehicle_id: int | None, payload: dict[str, Any]) -> DvsaVehicle:
+        """Build a DvsaVehicle row from a DVSA payload (verbatim in ``raw_json``)."""
+        return DvsaVehicle(
+            vehicle_id=vehicle_id,
+            registration=payload.get("registration"),
+            make=payload.get("make"),
+            model=payload.get("model"),
+            first_used_date=payload.get("firstUsedDate"),
+            fuel_type=payload.get("fuelType"),
+            primary_colour=payload.get("primaryColour"),
+            registration_date=payload.get("registrationDate"),
+            manufacture_date=payload.get("manufactureDate"),
+            manufacture_year=payload.get("manufactureYear"),
+            engine_size=payload.get("engineSize"),
+            has_outstanding_recall=payload.get("hasOutstandingRecall"),
+            mot_test_due_date=payload.get("motTestDueDate"),
+            raw_json=json.dumps(payload),
+        )
 
     def _add_tests(self, vehicle_id: int, payload: dict[str, Any]) -> None:
         """Insert MotTest rows for a vehicle from a DVSA payload's motTests array."""
