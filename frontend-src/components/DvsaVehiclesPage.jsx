@@ -8,8 +8,8 @@ import { SkeletonRows } from './Skeleton.jsx';
 
 const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
-// One vehicle row: a summary line that expands to reveal every stored DVSA record for
-// the vehicle (the snapshot plus each MOT test), each browsable with the shared record
+// One vehicle row: a summary line that expands to reveal every stored DVSA record —
+// each record being one entire lookup, newest first — browsable with the shared record
 // viewer. The records are fetched lazily on first expand.
 function DvsaRow({ v }) {
   const [open, setOpen] = useState(false);
@@ -36,7 +36,7 @@ function DvsaRow({ v }) {
         onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle())}
       >
         <td>
-          <span className="dvsa-record-caret">{open ? '▲' : '▼'}</span>{' '}
+          <span className="dvsa-record-caret">{open ? '▼' : '▶'}</span>{' '}
           {v.vehicle_id != null
             ? <Link to={`/vehicles/${v.vehicle_id}`} onClick={e => e.stopPropagation()}>{makeModel}</Link>
             : (
@@ -57,20 +57,16 @@ function DvsaRow({ v }) {
               ? <p className="meta">Loading records…</p>
               : (
                 <div className="dvsa-records">
-                  <DvsaRecord
-                    label="Vehicle"
-                    raw={records.vehicle}
-                    summary={
-                      [records.vehicle.make, records.vehicle.model].filter(Boolean).join(' ') || '—'
-                    }
-                  />
-                  {records.tests.map((t, i) => (
+                  {records.records.map(r => (
                     <DvsaRecord
-                      key={t.motTestNumber ?? i}
-                      label="MOT test"
-                      raw={t}
+                      key={r.id}
+                      label="DVSA record"
+                      raw={r.raw}
                       summary={
-                        [t.completedDate?.slice(0, 10), t.testResult].filter(Boolean).join(' · ') || '—'
+                        <>
+                          {[r.make, r.model].filter(Boolean).join(' ') || '—'}
+                          {' · looked up '}<RelativeTime value={r.fetched_at} />
+                        </>
                       }
                     />
                   ))}

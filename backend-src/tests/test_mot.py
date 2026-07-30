@@ -509,12 +509,64 @@ def test_dvsa_record_retained_after_vehicle_delete(
 def test_dvsa_vehicles_report_record_counts(
     admin_client: FlaskClient, garage: dict[str, Any]
 ) -> None:
-    # SAMPLE carries 3 MOT tests, so each vehicle holds 1 snapshot + 3 test records.
+    # Each vehicle is looked up once, so one record per vehicle.
     _seed_dvsa(garage["id"], 2)
     body = admin_client.get("/api/dvsa-vehicles").json
     assert body["total"] == 2
-    assert body["total_records"] == 8
-    assert all(i["record_count"] == 4 for i in body["items"])
+    assert body["total_records"] == 2
+    assert all(i["record_count"] == 1 for i in body["items"])
+
+
+def _lookup_twice(garage_id: int, registration: str) -> None:
+    """Store two DVSA lookups sharing one plate (as a delete/recreate leaves behind)."""
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        v = VehicleRepository(db).create(garage_id, {"name": "Old"})
+        MotRepository(db).replace_for_vehicle(v["id"], {**SAMPLE, "registration": registration})
+    with get_db() as db:
+        VehicleRepository(db).delete(v["id"])  # detaches the first lookup
+    with get_db() as db:
+        v2 = VehicleRepository(db).create(garage_id, {"name": "New"})
+        # Bypass relink so the second lookup is stored as its own record.
+        MotRepository(db).replace_for_vehicle(v2["id"], {**SAMPLE, "registration": registration})
+
+
+def test_dvsa_vehicles_group_lookups_of_one_plate(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    _lookup_twice(garage["id"], "A1XYZ")
+    body = admin_client.get("/api/dvsa-vehicles").json
+    assert body["total"] == 1  # one vehicle
+    assert body["total_records"] == 2  # two lookups
+    item = body["items"][0]
+    assert item["record_count"] == 2
+    assert item["vehicle_id"] is not None  # links to the most recent live vehicle
+
+
+def test_dvsa_vehicles_link_falls_back_to_older_live_vehicle(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    # Two live lookups of one plate, then delete the newer vehicle so the group's
+    # newest row is detached and the link must fall back to the older live vehicle.
+    with get_db() as db:
+        v1 = VehicleRepository(db).create(garage["id"], {"name": "First"})
+        MotRepository(db).replace_for_vehicle(v1["id"], {**SAMPLE, "registration": "A1XYZ"})
+    with get_db() as db:
+        v2 = VehicleRepository(db).create(garage["id"], {"name": "Second"})
+        MotRepository(db).replace_for_vehicle(v2["id"], {**SAMPLE, "registration": "A1XYZ"})
+    with get_db() as db:
+        VehicleRepository(db).delete(v2["id"])  # newest lookup detaches
+
+    item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
+    assert item["record_count"] == 2
+    assert item["vehicle_id"] == v1["id"]
 
 
 def test_dvsa_vehicle_records_requires_auth(client: FlaskClient) -> None:
@@ -529,18 +581,42 @@ def test_dvsa_vehicle_records_unknown_id(admin_client: FlaskClient) -> None:
     assert admin_client.get("/api/dvsa-vehicles/999/records").status_code == 404
 
 
-def test_dvsa_vehicle_records_decomposes_snapshot(
+def test_dvsa_vehicle_records_returns_whole_lookups_newest_first(
     admin_client: FlaskClient, garage: dict[str, Any]
 ) -> None:
-    _seed_dvsa(garage["id"], 1)
+    _lookup_twice(garage["id"], "A1XYZ")
     dvsa_id = admin_client.get("/api/dvsa-vehicles").json["items"][0]["id"]
 
     body = admin_client.get(f"/api/dvsa-vehicles/{dvsa_id}/records").json
-    assert body["registration"] == "REG000"
-    # The vehicle record is the payload with its motTests array split into `tests`.
-    assert body["vehicle"]["make"] == "VOLKSWAGEN"
-    assert "motTests" not in body["vehicle"]
-    assert [t["motTestNumber"] for t in body["tests"]] == ["1234", "1233", "1232"]
+    assert body["registration"] == "A1XYZ"
+    assert len(body["records"]) == 2
+    # Each record is one entire lookup — the whole raw payload, motTests included.
+    first = body["records"][0]
+    assert first["raw"]["make"] == "VOLKSWAGEN"
+    assert len(first["raw"]["motTests"]) == 3
+    # Newest lookup (the live one) first; the older detached lookup second.
+    assert first["vehicle_id"] is not None
+    assert body["records"][1]["vehicle_id"] is None
+
+
+def test_dvsa_vehicle_records_without_registration_returns_self(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    # A DVSA payload lacking a registration stores a row that can't be grouped by plate.
+    with get_db() as db:
+        v = VehicleRepository(db).create(garage["id"], {"name": "NoReg"})
+        payload = {k: val for k, val in SAMPLE.items() if k != "registration"}
+        MotRepository(db).replace_for_vehicle(v["id"], payload)
+
+    dvsa_id = admin_client.get("/api/dvsa-vehicles").json["items"][0]["id"]
+    body = admin_client.get(f"/api/dvsa-vehicles/{dvsa_id}/records").json
+    assert body["registration"] is None
+    assert len(body["records"]) == 1
+    assert body["records"][0]["raw"]["make"] == "VOLKSWAGEN"
 
 
 def test_dvsa_vehicle_records_for_detached_snapshot(
@@ -558,10 +634,11 @@ def test_dvsa_vehicle_records_for_detached_snapshot(
 
     item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
     assert item["vehicle_id"] is None
-    assert item["record_count"] == 4  # tests still counted from raw_json
+    assert item["record_count"] == 1
     body = admin_client.get(f"/api/dvsa-vehicles/{item['id']}/records").json
-    assert body["vehicle_id"] is None
-    assert len(body["tests"]) == 3
+    assert len(body["records"]) == 1
+    assert body["records"][0]["vehicle_id"] is None
+    assert len(body["records"][0]["raw"]["motTests"]) == 3
 
 
 # ── DVSA relink on create / edit ────────────────────────────────────────────────

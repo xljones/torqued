@@ -41,36 +41,44 @@ describe('DvsaVehiclesPage', () => {
       .toHaveAttribute('href', '/vehicles/7');
   });
 
-  it('expands a row to browse each stored record with the shared viewer', async () => {
+  it('expands a row to browse each lookup record, newest first, with the shared viewer', async () => {
     api.getDvsaVehicles.mockResolvedValue({
       items: [{
-        id: 1, vehicle_id: 7, registration: 'A1XYZ',
-        make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-01-01 00:00:00',
+        id: 2, vehicle_id: 7, registration: 'A1XYZ',
+        make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-06-01 00:00:00',
         record_count: 2,
       }],
       total: 1, total_records: 2, page: 1, per_page: 25, pages: 1,
     });
     api.getDvsaVehicleRecords.mockResolvedValue({
-      id: 1, vehicle_id: 7, registration: 'A1XYZ',
-      vehicle: { make: 'VOLKSWAGEN', model: 'PASSAT', registration: 'A1XYZ' },
-      tests: [{ completedDate: '2024-03-04T10:00:00', testResult: 'PASSED', odometerValue: '42000' }],
+      registration: 'A1XYZ',
+      records: [
+        {
+          id: 2, vehicle_id: 7, registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT',
+          fetched_at: '2024-06-01 00:00:00',
+          raw: { registration: 'A1XYZ', make: 'VOLKSWAGEN', motTests: [{ testResult: 'PASSED' }] },
+        },
+        {
+          id: 1, vehicle_id: null, registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT',
+          fetched_at: '2023-01-01 00:00:00',
+          raw: { registration: 'A1XYZ', make: 'VOLKSWAGEN', motTests: [] },
+        },
+      ],
     });
     renderPage();
 
     await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
 
-    // Records load lazily on first expand.
+    // Records load lazily on first expand; one viewer per whole lookup.
     expect(api.getDvsaVehicleRecords).not.toHaveBeenCalled();
     await userEvent.click(screen.getByText('VOLKSWAGEN PASSAT').closest('tr'));
 
-    await waitFor(() => expect(screen.getByText('Vehicle')).toBeInTheDocument());
-    expect(api.getDvsaVehicleRecords).toHaveBeenCalledWith(1);
-    expect(screen.getByText('MOT test')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('DVSA record')).toHaveLength(2));
+    expect(api.getDvsaVehicleRecords).toHaveBeenCalledWith(2);
 
-    // The shared viewer expands a record into its raw fields.
-    await userEvent.click(screen.getByText('MOT test'));
-    expect(screen.getByText('testResult')).toBeInTheDocument();
-    expect(screen.getByText('PASSED')).toBeInTheDocument();
+    // The shared viewer expands a lookup into its raw fields (the whole payload).
+    await userEvent.click(screen.getAllByText('DVSA record')[0]);
+    expect(screen.getByText('motTests')).toBeInTheDocument();
   });
 
   it('does not toggle the row when the vehicle link is clicked', async () => {
