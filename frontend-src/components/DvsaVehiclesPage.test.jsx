@@ -42,7 +42,7 @@ describe('DvsaVehiclesPage', () => {
       items: [{
         id: 1, vehicle_id: 7, vehicle_name: 'Daily', garage_name: 'Home Garage',
         registration: 'a1xyz',
-        make: 'VOLKSWAGEN', model: 'PASSAT', fetched_at: '2024-01-01 00:00:00',
+        make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003, fetched_at: '2024-01-01 00:00:00',
         record_count: 3,
       }],
       total: 1, total_records: 3, page: 1, per_page: 25, pages: 1,
@@ -52,6 +52,7 @@ describe('DvsaVehiclesPage', () => {
     await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
     expect(api.getDvsaVehicles).toHaveBeenCalledWith(1);
     expect(screen.getByText('A1XYZ')).toBeInTheDocument();  // RegPlate forces uppercase
+    expect(screen.getByText('2003')).toBeInTheDocument();  // year shown alongside make/model
     expect(screen.getByText('1 vehicle, 3 records')).toBeInTheDocument();
     expect(screen.getByText('· 3 records')).toBeInTheDocument();
     // Make/model is plain text; the vehicle link is a separate "(View … in …)" affordance.

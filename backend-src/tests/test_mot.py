@@ -570,6 +570,29 @@ def test_dvsa_vehicles_include_vehicle_and_garage_name(
     item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
     assert item["vehicle_name"] == "Car 0"
     assert item["garage_name"] == "Test Garage"
+    # SAMPLE has no manufactureYear, so the year derives from its manufactureDate.
+    assert item["year"] == 2003
+
+
+def test_dvsa_vehicles_year_derivation(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+
+    with get_db() as db:
+        repo = MotRepository(db)
+        repo.store_detached_lookup({"registration": "YEAR111", "manufactureYear": 2024})
+        repo.store_detached_lookup({"registration": "DATE222", "firstUsedDate": "2015-06-01"})
+        repo.store_detached_lookup({"registration": "NONE333"})  # no year source at all
+
+    years = {
+        i["registration"]: i["year"]
+        for i in admin_client.get("/api/dvsa-vehicles").json["items"]
+    }
+    assert years["YEAR111"] == 2024  # explicit manufacture year
+    assert years["DATE222"] == 2015  # derived from a date
+    assert years["NONE333"] is None  # nothing to derive
 
 
 def test_create_dvsa_lookup_requires_auth(client: FlaskClient) -> None:

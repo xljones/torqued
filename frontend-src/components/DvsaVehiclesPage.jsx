@@ -47,6 +47,7 @@ function DvsaRow({ v, defaultOpen = false }) {
         <td>
           <span className="dvsa-record-caret">{open ? '▼' : '▶'}</span>{' '}
           {makeModel}
+          {v.year ? <span className="dvsa-year"> {v.year}</span> : null}
           {v.vehicle_id != null ? (
             <Link
               className="dvsa-view-link"
@@ -186,7 +187,7 @@ export default function DvsaVehiclesPage() {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Make / Model</th><th>Registration</th><th>Pulled from DVSA</th></tr>
+              <tr><th>Make / Model</th><th>Registration</th><th>Last updated</th></tr>
             </thead>
             <tbody>
               {data === null

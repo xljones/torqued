@@ -16,6 +16,20 @@ _UNIT_MAP = {"MI": "mi", "KM": "km"}
 MOT_DUE_SOON_DAYS = 60
 
 
+def _year(row: Any) -> int | None:
+    """Derive a model year from a DVSA row: explicit manufacture year, else a date's year.
+
+    Mirrors ``mot.to_baseline`` so the admin list and the vehicle baseline agree.
+    """
+    if row["manufacture_year"] is not None:
+        return int(row["manufacture_year"])
+    for key in ("manufacture_date", "first_used_date", "registration_date"):
+        value = row[key]
+        if value and str(value)[:4].isdigit():
+            return int(str(value)[:4])
+    return None
+
+
 def _group_key(registration: str | None, row_id: int) -> str:
     """The key that folds DVSA rows into one vehicle: the normalised registration.
 
@@ -73,6 +87,10 @@ class MotRepository(BaseRepository):
                     DvsaVehicle.registration,
                     DvsaVehicle.make,
                     DvsaVehicle.model,
+                    DvsaVehicle.manufacture_year,
+                    DvsaVehicle.manufacture_date,
+                    DvsaVehicle.first_used_date,
+                    DvsaVehicle.registration_date,
                     DvsaVehicle.fetched_at,
                     Vehicle.name.label("vehicle_name"),
                     Garage.name.label("garage_name"),
@@ -98,6 +116,7 @@ class MotRepository(BaseRepository):
                     "registration": r["registration"],
                     "make": r["make"],
                     "model": r["model"],
+                    "year": _year(r),
                     "fetched_at": r["fetched_at"],
                     "record_count": 1,
                 }
