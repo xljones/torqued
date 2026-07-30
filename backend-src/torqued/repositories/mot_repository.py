@@ -2,7 +2,7 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from torqued import mot
 from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
@@ -56,8 +56,8 @@ class MotRepository(BaseRepository):
         """Return a page of stored DVSA vehicles, newest lookup first.
 
         A "record" is one entire DVSA lookup (a stored snapshot). Rows are grouped by
-        registration into vehicles, so a plate looked up more than once — e.g. across
-        a delete/recreate, whose old snapshot survives detached (migration 0002) —
+        registration into vehicles, so a plate looked up more than once — each refresh
+        keeps the previous lookup as a detached record (see ``replace_for_vehicle``) —
         appears once with a ``record_count`` of all its lookups. Each item is
         represented by its newest lookup: ``vehicle_id`` is the most recent live one
         (NULL only when every lookup is detached, shown as a deleted vehicle), and
@@ -225,17 +225,33 @@ class MotRepository(BaseRepository):
         return reminders
 
     def clear_for_vehicle(self, vehicle_id: int) -> None:
-        """Remove the stored DVSA snapshot and tests for a vehicle.
+        """Hard-delete the stored DVSA snapshot and tests for a vehicle.
 
-        Used when the registration changes so the data no longer applies, and as the
-        first step of a replace.
+        Used when the registration changes so the data no longer applies (the vehicle
+        disconnect flow). A plain refresh does not delete — see replace_for_vehicle.
         """
         self.session.execute(delete(DvsaVehicle).where(DvsaVehicle.vehicle_id == vehicle_id))
         self.session.execute(delete(MotTest).where(MotTest.vehicle_id == vehicle_id))
 
     def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
-        """Store a fresh DVSA response, replacing any previous snapshot and tests."""
-        self.clear_for_vehicle(vehicle_id)
+        """Store a fresh DVSA lookup, keeping any previous lookup as history.
+
+        Each refresh is one lookup and becomes its own record. Rather than deleting the
+        previous snapshot, we drop its link (``vehicle_id`` -> NULL) so it survives as a
+        dated historical record, still tied to the vehicle by its normalised
+        registration (see ``list_all``'s grouping). The vehicle's normalised
+        ``mot_tests`` are rebuilt for the new row while the detached row keeps the whole
+        lookup in ``raw_json``; old records can be pruned later by ``fetched_at``.
+
+        Detach-then-insert keeps the ``vehicle_id`` UNIQUE constraint satisfied: at most
+        one live row per vehicle, any number of detached (NULL) ones.
+        """
+        self.session.execute(
+            update(DvsaVehicle)
+            .where(DvsaVehicle.vehicle_id == vehicle_id)
+            .values(vehicle_id=None)
+        )
+        self.session.execute(delete(MotTest).where(MotTest.vehicle_id == vehicle_id))
         self.session.add(
             DvsaVehicle(
                 vehicle_id=vehicle_id,
@@ -277,13 +293,16 @@ class MotRepository(BaseRepository):
             )
 
     def relink_detached(self, vehicle_id: int, registration: str) -> bool:
-        """Re-attach the newest detached DVSA record matching a plate to a vehicle.
+        """Retie a plate's historic DVSA records to a newly added vehicle.
 
-        A deleted vehicle's DVSA snapshot survives with ``vehicle_id`` NULL
-        (migration 0002). When a vehicle later takes that plate, relink the record
-        and rebuild its cascade-deleted ``mot_tests`` from ``raw_json``. Only
-        detached rows are considered, so a live record on another vehicle that
-        shares the plate is never touched. Returns True if a record was relinked.
+        Detached records (``vehicle_id`` NULL) accumulate for a plate from earlier
+        refreshes and from a deleted vehicle (migration 0002). When a vehicle takes
+        that plate, make the **newest** historic lookup its live snapshot — rebuilding
+        that record's ``mot_tests`` from ``raw_json`` — since the ``vehicle_id`` FK is
+        1:1. The older lookups stay detached but remain tied to the vehicle for display
+        by their shared normalised registration (``list_all`` groups by plate). Only
+        detached rows are considered, so a live record on another vehicle sharing the
+        plate is never touched. Returns True if a record was relinked.
         """
         norm = mot.normalise_registration(registration)
         if not norm:

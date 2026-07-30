@@ -517,21 +517,38 @@ def test_dvsa_vehicles_report_record_counts(
     assert all(i["record_count"] == 1 for i in body["items"])
 
 
-def _lookup_twice(garage_id: int, registration: str) -> None:
-    """Store two DVSA lookups sharing one plate (as a delete/recreate leaves behind)."""
+def _lookup_twice(garage_id: int, registration: str) -> int:
+    """Refresh one vehicle twice → two dated lookup records for one plate."""
     from torqued.db import get_db
     from torqued.repositories.mot_repository import MotRepository
     from torqued.repositories.vehicle_repository import VehicleRepository
 
     with get_db() as db:
-        v = VehicleRepository(db).create(garage_id, {"name": "Old"})
+        v = VehicleRepository(db).create(garage_id, {"name": "Car"})
         MotRepository(db).replace_for_vehicle(v["id"], {**SAMPLE, "registration": registration})
     with get_db() as db:
-        VehicleRepository(db).delete(v["id"])  # detaches the first lookup
+        MotRepository(db).replace_for_vehicle(v["id"], {**SAMPLE, "registration": registration})
+    return int(v["id"])
+
+
+def test_refresh_keeps_previous_lookup_as_history(
+    garage: dict[str, Any]
+) -> None:
+    """A refresh retains the prior lookup (detached), not deletes it."""
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+
+    from sqlalchemy import select
+
+    from torqued.models import DvsaVehicle
+
+    vehicle_id = _lookup_twice(garage["id"], "A1XYZ")
     with get_db() as db:
-        v2 = VehicleRepository(db).create(garage_id, {"name": "New"})
-        # Bypass relink so the second lookup is stored as its own record.
-        MotRepository(db).replace_for_vehicle(v2["id"], {**SAMPLE, "registration": registration})
+        rows = db.scalars(select(DvsaVehicle).order_by(DvsaVehicle.id)).all()
+        assert len(rows) == 2  # both lookups kept
+        assert [r.vehicle_id for r in rows] == [None, vehicle_id]  # older detached, newer live
+        # The vehicle still resolves to exactly its current (live) snapshot.
+        assert MotRepository(db).get_for_vehicle(vehicle_id) is not None
 
 
 def test_dvsa_vehicles_group_lookups_of_one_plate(
@@ -670,6 +687,34 @@ def test_create_relinks_detached_dvsa_record(
             select(DvsaVehicle.vehicle_id).where(DvsaVehicle.registration == "A1XYZ")
         ).all()
     assert linked == [new["id"]]
+
+
+def test_create_reties_all_historic_records(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_repository import MotRepository
+
+    # A vehicle refreshed twice keeps both lookups; deleting it detaches them.
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    old = mk_vehicle(auth_client, registration="A1 XYZ")
+    auth_client.post(f"/api/vehicles/{old['id']}/mot/refresh")
+    auth_client.post(f"/api/vehicles/{old['id']}/mot/refresh")
+    auth_client.delete(f"/api/vehicles/{old['id']}")
+
+    # Adding a new vehicle on that plate reties the history: the newest lookup becomes
+    # the live snapshot and every historic lookup groups under the new vehicle.
+    new = mk_vehicle(auth_client, registration="A1 XYZ")
+    assert auth_client.get(f"/api/vehicles/{new['id']}/mot").json["mot"] is not None
+
+    with get_db() as db:
+        item = next(
+            i
+            for i in MotRepository(db).list_all()["items"]
+            if (i["registration"] or "").replace(" ", "").upper() == "A1XYZ"
+        )
+    assert item["record_count"] == 2
+    assert item["vehicle_id"] == new["id"]
 
 
 def test_relink_normalises_registration(
