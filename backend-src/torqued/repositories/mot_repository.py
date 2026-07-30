@@ -16,6 +16,12 @@ _UNIT_MAP = {"MI": "mi", "KM": "km"}
 MOT_DUE_SOON_DAYS = 60
 
 
+def _record_count(raw_json: str) -> int:
+    """Count the raw DVSA records in a stored snapshot: the vehicle itself + each MOT test."""
+    payload = json.loads(raw_json)
+    return 1 + len(payload.get("motTests") or [])
+
+
 class MotRepository(BaseRepository):
     def get_for_vehicle(self, vehicle_id: int) -> dict[str, Any] | None:
         """Return the stored DVSA snapshot for a vehicle (parsed defects), or None."""
@@ -48,8 +54,17 @@ class MotRepository(BaseRepository):
         ``vehicle_id`` is included verbatim: NULL marks a record whose vehicle has
         since been deleted (see migration 0002), which the admin view shows as a
         detached record rather than a link.
+
+        Each item carries a ``record_count`` — the number of raw DVSA records we hold
+        for that vehicle: the snapshot itself plus one per stored MOT test (both
+        derived from ``raw_json`` so attached and detached rows count the same way).
+        ``total_records`` sums that across every stored vehicle.
         """
         total = self.session.scalar(select(func.count()).select_from(DvsaVehicle)) or 0
+        total_records = sum(
+            _record_count(raw)
+            for raw in self.session.scalars(select(DvsaVehicle.raw_json)).all()
+        )
         rows = (
             self.session.execute(
                 select(
@@ -59,6 +74,7 @@ class MotRepository(BaseRepository):
                     DvsaVehicle.make,
                     DvsaVehicle.model,
                     DvsaVehicle.fetched_at,
+                    DvsaVehicle.raw_json,
                 )
                 .order_by(DvsaVehicle.fetched_at.desc(), DvsaVehicle.id.desc())
                 .limit(per_page)
@@ -67,12 +83,43 @@ class MotRepository(BaseRepository):
             .mappings()
             .all()
         )
+        items = []
+        for r in rows:
+            item = dict(r)
+            item["record_count"] = _record_count(item.pop("raw_json"))
+            items.append(item)
         return {
-            "items": [dict(r) for r in rows],
+            "items": items,
             "total": total,
+            "total_records": total_records,
             "page": page,
             "per_page": per_page,
             "pages": (total + per_page - 1) // per_page,
+        }
+
+    def get_records_by_id(self, dvsa_id: int) -> dict[str, Any] | None:
+        """Return every stored DVSA record for one snapshot, keyed by its surrogate id.
+
+        The vehicle snapshot and its MOT tests are decomposed from the stored
+        ``raw_json`` (the complete DVSA payload) so this works identically for a live
+        record and a detached one whose normalized ``mot_tests`` rows have cascaded
+        away. ``vehicle`` is the payload with its ``motTests`` array split out into
+        ``tests`` so each record is shown once, without duplication.
+        """
+        dvsa = self.session.get(DvsaVehicle, dvsa_id)
+        if dvsa is None:
+            return None
+        raw = json.loads(dvsa.raw_json)
+        tests = raw.pop("motTests", None) or []
+        return {
+            "id": dvsa.id,
+            "vehicle_id": dvsa.vehicle_id,
+            "registration": dvsa.registration,
+            "make": dvsa.make,
+            "model": dvsa.model,
+            "fetched_at": dvsa.fetched_at,
+            "vehicle": raw,
+            "tests": tests,
         }
 
     def reminders(

@@ -20,6 +20,17 @@ def dvsa_vehicles() -> ResponseReturnValue:
         return jsonify(MotRepository(db).list_all(page)), 200
 
 
+@bp.get("/api/dvsa-vehicles/<int:dvsa_id>/records")
+@admin_required
+def dvsa_vehicle_records(dvsa_id: int) -> ResponseReturnValue:
+    """Return every raw DVSA record for one stored snapshot (site-admin only)."""
+    with get_db() as db:
+        records = MotRepository(db).get_records_by_id(dvsa_id)
+    if records is None:
+        return jsonify(error="Not found"), 404
+    return jsonify(records), 200
+
+
 @bp.get("/api/mot/status")
 @login_required
 def mot_status() -> ResponseReturnValue:
