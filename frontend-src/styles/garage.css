@@ -267,6 +267,11 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .dvsa-record-tile--open { background: var(--surface2); }
 .dvsa-record-caret { font-size: 10px; opacity: 0.6; margin-left: 4px; }
 /* DVSA vehicles admin table: rows expand to reveal their stored records. */
+.dvsa-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dvsa-toolbar .search-input { flex: 1 1 auto; min-width: 180px; }
+.dvsa-lookup { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.dvsa-view-link { margin-left: 6px; font-size: 0.85em; }
+.dvsa-add-btn { margin-left: 8px; }
 .dvsa-row { cursor: pointer; }
 .dvsa-row:hover { background: var(--surface2); }
 .dvsa-records-row > td { background: var(--surface2); }

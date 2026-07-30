@@ -59,6 +59,31 @@ describe('VehicleForm DVSA lookup', () => {
     expect(plate).toHaveClass('reg-plate-input');
   });
 
+  it('auto-fetches the DVSA baseline when arriving prefilled from "+ Add to garage"', async () => {
+    api.getMotStatus.mockResolvedValue({ configured: true });
+    api.lookupMot.mockResolvedValue({
+      mot_baseline: { registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT', colour: 'BLUE' },
+    });
+    render(
+      <MemoryRouter
+        initialEntries={[{
+          pathname: '/vehicles/new',
+          state: { prefill: { registration: 'A1 XYZ', name: 'VOLKSWAGEN PASSAT' } },
+        }]}
+        future={routerFuture}
+      >
+        <Routes>
+          <Route path="/vehicles/new" element={<VehicleForm mode={FormMode.CREATE} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // The plate is seeded and its DVSA baseline is fetched without a manual click.
+    expect(screen.getByPlaceholderText('A1 XYZ')).toHaveValue('A1 XYZ');
+    await waitFor(() => expect(api.lookupMot).toHaveBeenCalledWith('A1 XYZ'));
+    await waitFor(() => expect(screen.getByText(/Found via DVSA/)).toBeInTheDocument());
+  });
+
   it('hides the fetch button when DVSA is not configured', async () => {
     api.getMotStatus.mockResolvedValue({ configured: false });
     renderCreate();

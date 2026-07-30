@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import RegPlate from './RegPlate.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import DvsaRecord from './DvsaRecord.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
+import { useToast } from './Toast.jsx';
 
 const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
@@ -12,6 +13,7 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // each record being one entire lookup, newest first — browsable with the shared record
 // viewer. The records are fetched lazily on first expand.
 function DvsaRow({ v }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [records, setRecords] = useState(null);
 
@@ -25,6 +27,13 @@ function DvsaRow({ v }) {
 
   const makeModel = [v.make, v.model].filter(Boolean).join(' ') || '—';
 
+  function addToGarage(e) {
+    e.stopPropagation();
+    navigate('/vehicles/new', {
+      state: { prefill: { registration: v.registration, name: [v.make, v.model].filter(Boolean).join(' ') } },
+    });
+  }
+
   return (
     <>
       <tr
@@ -37,14 +46,20 @@ function DvsaRow({ v }) {
       >
         <td>
           <span className="dvsa-record-caret">{open ? '▼' : '▶'}</span>{' '}
-          {v.vehicle_id != null
-            ? <Link to={`/vehicles/${v.vehicle_id}`} onClick={e => e.stopPropagation()}>{makeModel}</Link>
-            : (
-              <>
-                {makeModel}
-                <span className="user-badge user-badge-readonly">vehicle deleted</span>
-              </>
-            )}
+          {makeModel}
+          {v.vehicle_id != null ? (
+            <Link
+              className="dvsa-view-link"
+              to={`/vehicles/${v.vehicle_id}`}
+              onClick={e => e.stopPropagation()}
+            >
+              (View {v.vehicle_name}{v.garage_name ? ` in ${v.garage_name}` : ''})
+            </Link>
+          ) : (
+            <button type="button" className="btn btn-secondary btn-sm dvsa-add-btn" onClick={addToGarage}>
+              + Add to garage
+            </button>
+          )}
           <span className="meta"> · {plural(v.record_count, 'record')}</span>
         </td>
         <td><RegPlate reg={v.registration} /></td>
@@ -80,16 +95,43 @@ function DvsaRow({ v }) {
 }
 
 export default function DvsaVehiclesPage() {
+  const toast = useToast();
   const [page, setPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState('');
+  const [motConfigured, setMotConfigured] = useState(false);
+  const [lookupReg, setLookupReg] = useState('');
+  const [looking, setLooking] = useState(false);
 
   useEffect(() => {
     let active = true;
     setData(null);
     api.getDvsaVehicles(page).then(d => { if (active) setData(d); });
     return () => { active = false; };
-  }, [page]);
+  }, [page, reloadKey]);
+
+  useEffect(() => {
+    api.getMotStatus().then(s => setMotConfigured(s.configured)).catch(() => {});
+  }, []);
+
+  async function handleLookup(e) {
+    e.preventDefault();
+    const reg = lookupReg.trim();
+    if (!reg || looking) return;
+    setLooking(true);
+    try {
+      const v = await api.lookupDvsaVehicle(reg);
+      toast?.(`Saved DVSA record for ${[v.make, v.model].filter(Boolean).join(' ') || reg}`);
+      setLookupReg('');
+      setPage(1);
+      setReloadKey(k => k + 1);
+    } catch (err) {
+      toast?.(err.message ?? 'Lookup failed', 'error');
+    } finally {
+      setLooking(false);
+    }
+  }
 
   const items = data?.items ?? [];
   const pages = data?.pages ?? 0;
@@ -113,7 +155,7 @@ export default function DvsaVehiclesPage() {
         )}
       </div>
 
-      <div className="mb-4 inline-form-sm">
+      <div className="dvsa-toolbar mb-4">
         <input
           type="search"
           value={filter}
@@ -121,6 +163,20 @@ export default function DvsaVehiclesPage() {
           placeholder="Filter by make, model or registration…"
           className="search-input"
         />
+        {motConfigured && (
+          <form className="dvsa-lookup" onSubmit={handleLookup}>
+            <input
+              className="reg-plate-input"
+              value={lookupReg}
+              onChange={e => setLookupReg(e.target.value)}
+              placeholder="A1 XYZ"
+              aria-label="Registration to look up"
+            />
+            <button className="btn btn-primary btn-sm" disabled={looking || !lookupReg.trim()}>
+              {looking ? 'Looking up…' : 'Look up & save'}
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="card">
