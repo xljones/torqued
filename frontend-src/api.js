@@ -118,6 +118,8 @@ export const api = {
   getPythonAnywhereStats: () => req('GET', '/admin/pythonanywhere'),
   getDeploymentInfo:      () => req('GET', '/admin/deployment'),
   getDvsaVehicles:        (page = 1) => req('GET', `/dvsa-vehicles?page=${page}`),
+  getDvsaVehicleRecords:  (id)       => req('GET', `/dvsa-vehicles/${id}/records`),
+  lookupDvsaVehicle:      (registration) => req('POST', '/dvsa-vehicles', { registration }),
 
   // Users
   getUsers:          ()             => req('GET',    '/users'),

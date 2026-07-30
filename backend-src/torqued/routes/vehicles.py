@@ -116,7 +116,9 @@ def create_vehicle() -> ResponseReturnValue:
         if not can_write(role):
             return jsonify(error="Read-only access to this garage"), 403
         vehicle = VehicleRepository(db).create(garage_id, data, changed_by=current_user.id)
-        # Re-attach a DVSA snapshot left behind by a deleted vehicle on the same plate.
+        # Retie any historic DVSA records we already hold for this plate (from earlier
+        # refreshes or a deleted vehicle): the newest becomes the live snapshot, the
+        # rest stay grouped under the vehicle by registration.
         if (vehicle.get("registration") or "").strip():
             MotRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
     analytics.capture(

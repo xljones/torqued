@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
+import DvsaRecord from './DvsaRecord.jsx';
 import { fmtDistanceBoth, toKm } from '../units.js';
 import { isPast, taxTone, motTone } from '../status.js';
 
@@ -78,78 +79,12 @@ function TestRow({ test, unit }) {
   );
 }
 
-function JsonLeaf({ value }) {
-  if (value === null) return <span className="json-val json-val--null">null</span>;
-  if (typeof value === 'boolean') return <span className="json-val json-val--bool">{String(value)}</span>;
-  if (typeof value === 'number') return <span className="json-val json-val--num">{String(value)}</span>;
-  if (typeof value === 'string') return <span className="json-val json-val--str">{value === '' ? '—' : value}</span>;
-  return <span className="json-val">{String(value)}</span>;
-}
-
-function JsonNode({ name, value, depth }) {
-  const [open, setOpen] = useState(depth === 0);
-  const isBranch = value !== null && typeof value === 'object';
-
-  if (!isBranch) {
-    return (
-      <div className="json-row json-row--leaf">
-        <span className="json-caret" aria-hidden="true" />
-        {name != null && <span className="json-key">{name}</span>}
-        <JsonLeaf value={value} />
-      </div>
-    );
-  }
-
-  const isArray = Array.isArray(value);
-  const entries = isArray ? value.map((v, i) => [i, v]) : Object.entries(value);
-  const noun = isArray ? 'item' : 'key';
-  const summary = `${entries.length} ${noun}${entries.length === 1 ? '' : 's'}`;
-  const toggle = () => setOpen(v => !v);
-
-  return (
-    <div className="json-node">
-      <div
-        className="json-row json-row--branch"
-        role="button"
-        tabIndex={0}
-        onClick={toggle}
-        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle())}
-      >
-        <span className={`json-caret${open ? ' json-caret--open' : ''}`} aria-hidden="true">▶</span>
-        {name != null && <span className="json-key">{name}</span>}
-        <span className={`json-summary json-summary--${isArray ? 'array' : 'object'}`}>{summary}</span>
-      </div>
-      {open && (
-        <div className="json-children">
-          {entries.map(([k, v]) => (
-            <JsonNode key={k} name={k} value={v} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function JsonTree({ data }) {
-  const isContainer = data !== null && typeof data === 'object';
-  const entries = Array.isArray(data) ? data.map((v, i) => [i, v]) : Object.entries(data ?? {});
-  return (
-    <div className="json-tree mt-2">
-      {isContainer
-        ? entries.map(([k, v]) => <JsonNode key={k} name={k} value={v} depth={1} />)
-        : <JsonNode name={null} value={data} depth={1} />}
-    </div>
-  );
-}
-
 export default function MotCard({ vehicle, ro, onSynced }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [tax, setTax] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const [showJson, setShowJson] = useState(false);
-  const [jsonFmt, setJsonFmt] = useState('formatted');
 
   const load = useCallback(() => {
     api.getMot(vehicle.id).then(setData);
@@ -294,45 +229,20 @@ export default function MotCard({ vehicle, ro, onSynced }) {
           )}
 
           {/* DVSA record: the full official record, full row width, expandable */}
-          <div
-            className={`pressure-tile dvsa-record-tile mt-3${showJson ? ' dvsa-record-tile--open' : ''}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => setShowJson(v => !v)}
-            onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowJson(v => !v)}
-          >
-            <div className="pressure-label">
-              DVSA record <span className="dvsa-record-caret">{showJson ? '▲' : '▼'}</span>
-            </div>
-            {/* The DVSA record shows the official data verbatim (all-caps as DVSA
-                returns it) — never tidied — so it matches the raw JSON panel below. */}
-            <div className="pressure-size">
-              {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
-              {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
-              {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
-              {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
-              {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
-            </div>
-          </div>
-
-          {showJson && (
-            <div className="dvsa-json-panel mt-3">
-              <div className="dvsa-json-toolbar">
-                <button
-                  className={`btn btn-sm ${jsonFmt === 'formatted' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setJsonFmt('formatted')}
-                >Formatted</button>
-                <button
-                  className={`btn btn-sm ${jsonFmt === 'raw' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setJsonFmt('raw')}
-                >Raw</button>
-              </div>
-              {jsonFmt === 'formatted'
-                ? <JsonTree data={mot.raw} />
-                : <pre className="dvsa-raw-json mt-2">{JSON.stringify(mot.raw, null, 2)}</pre>
-              }
-            </div>
-          )}
+          <DvsaRecord
+            label="DVSA record"
+            className="mt-3"
+            raw={mot.raw}
+            summary={
+              <>
+                {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}
+                {mot.primary_colour ? ` · ${mot.primary_colour}` : ''}
+                {mot.engine_size ? ` · ${mot.engine_size} cc` : ''}
+                {mot.fuel_type ? ` · ${mot.fuel_type}` : ''}
+                {mot.first_used_date ? ` · first used ${mot.first_used_date}` : ''}
+              </>
+            }
+          />
 
           {tests.length > 0 && (
             <div className="mt-3">

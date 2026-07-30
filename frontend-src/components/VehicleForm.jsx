@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
@@ -22,12 +22,21 @@ const EMPTY = {
 
 export default function VehicleForm({ mode }) {
   const { id } = useParams();
+  const location = useLocation();
   const { currentGarage } = useAuth();
   const { formatName } = useDisplayPrefs();
   const navigate = useNavigate();
   const toast = useToast();
   const isEdit = mode === FormMode.EDIT;
-  const [form, setForm] = useState(EMPTY);
+  // "+ Add to garage" from the DVSA vehicles page hands us a registration (and a suggested
+  // name) to seed a create; the DVSA baseline is then fetched to auto-populate the fields.
+  const prefill = !isEdit ? location.state?.prefill : null;
+  const [form, setForm] = useState(
+    prefill
+      ? { ...EMPTY, name: prefill.name ?? '', registration: prefill.registration ?? '' }
+      : EMPTY,
+  );
+  const [prefillFetched, setPrefillFetched] = useState(false);
   const [baseline, setBaseline] = useState(null);
   // Registration the stored DVSA record is for (edit mode). Unlike `baseline`, which a preview
   // overwrites, this stays fixed to what's persisted so Save can tell a preview from the
@@ -46,6 +55,15 @@ export default function VehicleForm({ mode }) {
   useEffect(() => {
     api.getMotStatus().then(s => setMotConfigured(s.configured)).catch(() => {});
   }, []);
+
+  // With a prefilled plate (from "+ Add to garage"), fetch its DVSA baseline once the API
+  // is known to be configured, so the identity fields populate without a manual fetch.
+  useEffect(() => {
+    if (isEdit || prefillFetched || !prefill?.registration || !motConfigured) return;
+    setPrefillFetched(true);
+    handleFetch(prefill.registration);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, prefill, motConfigured, prefillFetched]);
 
   useEffect(() => {
     if (!isEdit || !id) return;
@@ -105,16 +123,18 @@ export default function VehicleForm({ mode }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Preview the DVSA record for the entered plate without persisting anything. In both modes the
-  // baseline is committed on Save (create stores it; edit re-fetches against the saved plate), so
-  // the preview reflects the plate currently typed — not whatever is still stored on the vehicle.
-  async function handleFetch() {
-    const reg = form.registration.trim();
+  // Look up the DVSA record for the entered plate and show it as the baseline. In create mode
+  // the lookup is *persisted* (a standalone DVSA record) so it isn't lost if the vehicle is never
+  // saved — and it relinks automatically if the vehicle is added later. In edit mode it's a
+  // non-persisting preview against the plate currently typed (Save re-fetches to store).
+  async function handleFetch(regArg) {
+    const reg = (typeof regArg === 'string' ? regArg : form.registration).trim();
     if (!reg) { toast('Enter a registration plate first', 'error'); return; }
     setFetching(true);
     try {
-      setBaseline((await api.lookupMot(reg)).mot_baseline);
-      toast(isEdit ? 'Found a DVSA record — save to apply' : 'Found a DVSA record');
+      const res = isEdit ? await api.lookupMot(reg) : await api.lookupDvsaVehicle(reg);
+      setBaseline(res.mot_baseline);
+      toast(isEdit ? 'Found a DVSA record — save to apply' : 'Found and saved a DVSA record');
     } catch (err) {
       toast(err.message, 'error');
     } finally {

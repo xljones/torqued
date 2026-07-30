@@ -20,6 +20,45 @@ def dvsa_vehicles() -> ResponseReturnValue:
         return jsonify(MotRepository(db).list_all(page)), 200
 
 
+@bp.post("/api/dvsa-vehicles")
+@admin_required
+def create_dvsa_lookup() -> ResponseReturnValue:
+    """Look up any registration at the DVSA and persist it, unassigned (site-admin).
+
+    The record is stored detached (no vehicle); adding a garage vehicle on this plate
+    later relinks it. Unconfigured → 503; unknown plate → 404 relayed from DVSA.
+    """
+    registration = ((request.json or {}).get("registration") or "").strip()
+    if not registration:
+        return jsonify(error="registration is required"), 400
+    if not mot.is_configured():
+        return jsonify(error="DVSA MOT API credentials are not configured"), 503
+    try:
+        payload = mot.fetch_vehicle(registration)
+    except mot.MotError as e:
+        return jsonify(error=str(e)), e.status
+    with get_db() as db:
+        MotRepository(db).store_detached_lookup(payload)
+    # Return the baseline too so the vehicle form can persist a lookup and prefill in one call.
+    return jsonify(
+        registration=payload.get("registration"),
+        make=payload.get("make"),
+        model=payload.get("model"),
+        mot_baseline=mot.to_baseline(payload),
+    ), 201
+
+
+@bp.get("/api/dvsa-vehicles/<int:dvsa_id>/records")
+@admin_required
+def dvsa_vehicle_records(dvsa_id: int) -> ResponseReturnValue:
+    """Return every raw DVSA record for one stored snapshot (site-admin only)."""
+    with get_db() as db:
+        records = MotRepository(db).get_records_by_id(dvsa_id)
+    if records is None:
+        return jsonify(error="Not found"), 404
+    return jsonify(records), 200
+
+
 @bp.get("/api/mot/status")
 @login_required
 def mot_status() -> ResponseReturnValue:
