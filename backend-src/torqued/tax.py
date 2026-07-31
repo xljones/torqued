@@ -185,11 +185,21 @@ def _request(
 
 
 def fetch_tax(registration: str) -> dict[str, Any]:
-    """Fetch tax status, SORN, and tax due date for a registration.
+    """Fetch tax + MOT status for a registration from the VES "taxed & MOT" service.
+
+    One lookup returns both slices the result page carries: tax (`tax_status`,
+    `tax_due_date`) and MOT (`mot_status`, `mot_expiry_date`). The MOT fields are
+    best-effort — a vehicle with no MOT record simply has none — so they never raise;
+    only an unreadable *tax* status is fatal (a valid result page always has one).
 
     Returns a dict with `registration`, `tax_status` ('Taxed'/'SORN'/'Untaxed'/…),
-    `tax_due_date` (ISO string or None), and best-effort `make`/`colour`. Raises
-    TaxError(404) for an unknown plate and TaxError(502) for any other failure.
+    `tax_due_date` (ISO string or None), `mot_status` (the panel's status sentence, or
+    None), `mot_expiry_date` (ISO string or None), and best-effort `make`/`colour`.
+    Raises TaxError(404) for an unknown plate and TaxError(502) for any other failure.
+
+    These flat `tax_*`/`mot_*` keys are the swap seam for the real DVLA VES API (they map
+    1:1 to its `taxStatus`/`taxDueDate`/`motStatus`/`motExpiryDate`): when we get an API
+    key, only this function's internals change, not its callers.
     """
     reg = normalise_registration(registration)
     opener = urllib.request.build_opener(
@@ -222,6 +232,11 @@ def fetch_tax(registration: str) -> dict[str, Any]:
         "registration": reg,
         "tax_status": status,
         "tax_due_date": _parse_due_date(_field(found_html, "tax-status-panel")),
+        # MOT is on the same result page: `mot_hidden_details` holds the status sentence
+        # ("Vehicle … has a valid MOT certificate") and `mot-status-panel` the "Expires:
+        # <date>". Both absent for a vehicle with no MOT — left as None, never fatal.
+        "mot_status": _field(found_html, "mot_hidden_details"),
+        "mot_expiry_date": _parse_due_date(_field(found_html, "mot-status-panel")),
         "make": _field(found_html, "make", value_tag="dd"),
         "colour": _field(found_html, "colour", value_tag="dd"),
     }

@@ -284,3 +284,20 @@ class VehicleTax(Base):
     tax_due_date: Mapped[str | None] = mapped_column(Text)
     raw_json: Mapped[str] = mapped_column(Text)
     fetched_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
+
+
+class VehicleMotStatus(Base):
+    __tablename__ = "vehicle_mot_status"
+
+    # The DVLA VES "current MOT status" record — distinct from the DVSA MOT *history*
+    # (`mot_tests`). Same detached-record shape as `vehicle_tax` (migration 0007 mirrors
+    # 0006): surrogate `id` PK and a nullable `vehicle_id` FK (ON DELETE SET NULL), so a
+    # lookup survives its vehicle's deletion and refreshes retain history. Scraped from the
+    # same VES page as the tax record, stored separately.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vehicle_id: Mapped[int | None] = mapped_column(Integer)
+    registration: Mapped[str | None] = mapped_column(Text)
+    mot_status: Mapped[str | None] = mapped_column(Text)
+    mot_expiry_date: Mapped[str | None] = mapped_column(Text)
+    raw_json: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())

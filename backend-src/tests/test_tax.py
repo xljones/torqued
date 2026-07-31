@@ -34,16 +34,26 @@ CONFIRM_HTML = """
 
 
 def found_html(status: str = "Taxed", due: str = "Tax due: 1 December 2026",
-               make: str = "FORD", colour: str = "Blue") -> str:
+               make: str = "FORD", colour: str = "Blue",
+               mot: str | None = "has a valid MOT certificate",
+               mot_expiry: str | None = "Expires: 11 June 2027") -> str:
     # Mirrors the real gov.uk result page: each field is a summary row keyed by id that
-    # wraps both a <dt> label and the <dd> value.
+    # wraps both a <dt> label and the <dd> value. The MOT panel carries a visually-hidden
+    # status sentence (id=mot_hidden_details) and the expiry; pass mot=None to model a
+    # vehicle with no MOT record (panel absent).
+    mot_panel = "" if mot is None else f"""
+      <div id="mot-status-panel">
+        <h2><span aria-hidden="true">MOT</span>
+          <span class="govuk-visually-hidden" id="mot_hidden_details">Vehicle {mot}</span></h2>
+        <p>{mot_expiry or ''}</p>
+      </div>"""
     return f"""
     <html><body>
       <div id="tax-status-panel">
         <h2><span aria-hidden="true">{status}</span></h2>
         <p>{due}<br>keep it insured</p>
       </div>
-      <div id="mot-status-panel"><h2>MOT</h2><p>Expires: 11 June 2027</p></div>
+      {mot_panel}
       <dl class="govuk-summary-list">
         <div class="govuk-summary-list__row" id="vehicleStatus"><dt>Vehicle status</dt><dd>{status}</dd></div>
         <div class="govuk-summary-list__row" id="make"><dt>Vehicle make</dt><dd>{make}</dd></div>
@@ -174,6 +184,8 @@ def test_fetch_tax_taxed(monkeypatch: pytest.MonkeyPatch) -> None:
         "registration": "A1XYZ",
         "tax_status": "Taxed",
         "tax_due_date": "2026-12-01",
+        "mot_status": "Vehicle has a valid MOT certificate",
+        "mot_expiry_date": "2027-06-11",
         "make": "FORD",
         "colour": "Blue",
     }
@@ -184,6 +196,22 @@ def test_fetch_tax_sorn_has_no_due_date(monkeypatch: pytest.MonkeyPatch) -> None
     result = tax.fetch_tax("A1XYZ")
     assert result["tax_status"] == "SORN"
     assert result["tax_due_date"] is None
+
+
+def test_fetch_tax_captures_mot_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tax, "_request", make_fake_request())
+    result = tax.fetch_tax("A1XYZ")
+    assert result["mot_status"] == "Vehicle has a valid MOT certificate"
+    assert result["mot_expiry_date"] == "2027-06-11"
+
+
+def test_fetch_tax_no_mot_panel_is_not_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A vehicle with no MOT record has no panel — the tax lookup still succeeds.
+    monkeypatch.setattr(tax, "_request", make_fake_request(found=found_html(mot=None)))
+    result = tax.fetch_tax("A1XYZ")
+    assert result["tax_status"] == "Taxed"
+    assert result["mot_status"] is None
+    assert result["mot_expiry_date"] is None
 
 
 def test_fetch_tax_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,6 +320,9 @@ def test_refresh_tax_stores_and_gets(
     assert r.json["tax"]["tax_status"] == "Taxed"
     assert r.json["tax"]["tax_due_date"] == "2026-12-01"
     assert r.json["tax"]["raw"]["make"] == "FORD"
+    # The tax record's raw is the tax facet only — MOT fields live on the separate
+    # vehicle_mot_status record, so the two records aren't identical.
+    assert "mot_status" not in r.json["tax"]["raw"]
 
     g = auth_client.get(f"/api/vehicles/{v['id']}/tax")
     assert g.json["tax"]["registration"] == "A1XYZ"

@@ -55,15 +55,20 @@ class TaxRepository(BaseRepository):
         """
         self.session.add(self._snapshot(None, payload))
 
-    @staticmethod
-    def _snapshot(vehicle_id: int | None, payload: dict[str, Any]) -> VehicleTax:
-        """Build a VehicleTax row from a tax payload (verbatim in ``raw_json``)."""
+    # The fields of the VES payload that belong to the *tax* record. The one VES fetch also
+    # carries MOT fields (stored separately in vehicle_mot_status), so raw_json keeps only
+    # this record's own facet — otherwise the tax and MOT records would look identical.
+    _RAW_KEYS = ("registration", "tax_status", "tax_due_date", "make", "colour")
+
+    @classmethod
+    def _snapshot(cls, vehicle_id: int | None, payload: dict[str, Any]) -> VehicleTax:
+        """Build a VehicleTax row from a VES payload (its tax facet kept in ``raw_json``)."""
         return VehicleTax(
             vehicle_id=vehicle_id,
             registration=payload.get("registration"),
             tax_status=payload.get("tax_status"),
             tax_due_date=payload.get("tax_due_date"),
-            raw_json=json.dumps(payload),
+            raw_json=json.dumps({k: payload.get(k) for k in cls._RAW_KEYS}),
         )
 
     def relink_detached(self, vehicle_id: int, registration: str) -> bool:
