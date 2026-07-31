@@ -4,12 +4,12 @@ from typing import Any
 from sqlalchemy import func, select
 
 from torqued import mot
-from torqued.models import DvsaVehicle, Garage, Vehicle, VehicleTax
+from torqued.models import DvsaVehicle, Garage, Vehicle, VehicleMotStatus, VehicleTax
 from torqued.repositories.base import BaseRepository
 
-# The two kinds of DVLA/DVSA record this page unifies. Each row in the corresponding
-# table (dvsa_vehicles / vehicle_tax) is one whole lookup — a "record".
-SOURCES = ("dvsa", "tax")
+# The kinds of DVLA/DVSA record this page unifies. Each row in the corresponding table
+# (dvsa_vehicles / vehicle_tax / vehicle_mot_status) is one whole lookup — a "record".
+SOURCES = ("dvsa", "tax", "motstatus")
 
 
 def _year(row: Any) -> int | None:
@@ -86,6 +86,24 @@ class RecordsRepository(BaseRepository):
             .mappings()
             .all()
         )
+        motstatus = (
+            self.session.execute(
+                select(
+                    VehicleMotStatus.id,
+                    VehicleMotStatus.vehicle_id,
+                    VehicleMotStatus.registration,
+                    VehicleMotStatus.mot_status,
+                    VehicleMotStatus.mot_expiry_date,
+                    VehicleMotStatus.fetched_at,
+                    Vehicle.name.label("vehicle_name"),
+                    Garage.name.label("garage_name"),
+                )
+                .outerjoin(Vehicle, Vehicle.id == VehicleMotStatus.vehicle_id)
+                .outerjoin(Garage, Garage.id == Vehicle.garage_id)
+            )
+            .mappings()
+            .all()
+        )
         rows: list[dict[str, Any]] = []
         for r in dvsa:
             rows.append(
@@ -101,6 +119,8 @@ class RecordsRepository(BaseRepository):
                     "year": _year(r),
                     "tax_status": None,
                     "tax_due_date": None,
+                    "mot_status": None,
+                    "mot_expiry_date": None,
                     "fetched_at": r["fetched_at"],
                 }
             )
@@ -118,6 +138,27 @@ class RecordsRepository(BaseRepository):
                     "year": None,
                     "tax_status": r["tax_status"],
                     "tax_due_date": r["tax_due_date"],
+                    "mot_status": None,
+                    "mot_expiry_date": None,
+                    "fetched_at": r["fetched_at"],
+                }
+            )
+        for r in motstatus:
+            rows.append(
+                {
+                    "source": "motstatus",
+                    "id": r["id"],
+                    "vehicle_id": r["vehicle_id"],
+                    "vehicle_name": r["vehicle_name"],
+                    "garage_name": r["garage_name"],
+                    "registration": r["registration"],
+                    "make": None,
+                    "model": None,
+                    "year": None,
+                    "tax_status": None,
+                    "tax_due_date": None,
+                    "mot_status": r["mot_status"],
+                    "mot_expiry_date": r["mot_expiry_date"],
                     "fetched_at": r["fetched_at"],
                 }
             )
@@ -153,24 +194,31 @@ class RecordsRepository(BaseRepository):
                     "year": None,
                     "tax_status": None,
                     "tax_due_date": None,
+                    "mot_status": None,
+                    "mot_expiry_date": None,
                     "fetched_at": r["fetched_at"],
                     "record_count": 0,
                     "dvsa_count": 0,
                     "tax_count": 0,
+                    "motstatus_count": 0,
                 }
             group["record_count"] += 1
-            group["dvsa_count" if r["source"] == "dvsa" else "tax_count"] += 1
+            group[f"{r['source']}_count"] += 1
             # Link to (and name) the most recent live vehicle among the lookups.
             if group["vehicle_id"] is None and r["vehicle_id"] is not None:
                 group["vehicle_id"] = r["vehicle_id"]
                 group["vehicle_name"] = r["vehicle_name"]
                 group["garage_name"] = r["garage_name"]
-            # Identity from the newest DVSA lookup; tax status from the newest tax lookup.
+            # Identity from the newest DVSA lookup; tax status from the newest tax lookup;
+            # MOT status from the newest MOT-status lookup.
             if r["source"] == "dvsa" and group["make"] is None and group["model"] is None:
                 group["make"], group["model"], group["year"] = r["make"], r["model"], r["year"]
             if r["source"] == "tax" and group["tax_status"] is None:
                 group["tax_status"] = r["tax_status"]
                 group["tax_due_date"] = r["tax_due_date"]
+            if r["source"] == "motstatus" and group["mot_status"] is None:
+                group["mot_status"] = r["mot_status"]
+                group["mot_expiry_date"] = r["mot_expiry_date"]
 
         items = list(groups.values())
         total = len(items)
@@ -180,6 +228,7 @@ class RecordsRepository(BaseRepository):
             "total_records": len(rows),
             "total_dvsa": sum(1 for r in rows if r["source"] == "dvsa"),
             "total_tax": sum(1 for r in rows if r["source"] == "tax"),
+            "total_motstatus": sum(1 for r in rows if r["source"] == "motstatus"),
             "page": page,
             "per_page": per_page,
             "pages": (total + per_page - 1) // per_page,
@@ -195,7 +244,8 @@ class RecordsRepository(BaseRepository):
         """
         dvsa_row = self.session.get(DvsaVehicle, row_id) if source == "dvsa" else None
         tax_row = self.session.get(VehicleTax, row_id) if source == "tax" else None
-        row: DvsaVehicle | VehicleTax | None = dvsa_row or tax_row
+        mot_row = self.session.get(VehicleMotStatus, row_id) if source == "motstatus" else None
+        row: DvsaVehicle | VehicleTax | VehicleMotStatus | None = dvsa_row or tax_row or mot_row
         if row is None:
             return None
         registration = row.registration
@@ -204,13 +254,16 @@ class RecordsRepository(BaseRepository):
         if norm:
             dvsa_rows = list(self.session.scalars(self._by_plate(DvsaVehicle, norm)).all())
             tax_rows = list(self.session.scalars(self._by_plate(VehicleTax, norm)).all())
+            mot_rows = list(self.session.scalars(self._by_plate(VehicleMotStatus, norm)).all())
         else:
             # No registration to group on — return only the single row that was asked for.
             dvsa_rows = [dvsa_row] if dvsa_row is not None else []
             tax_rows = [tax_row] if tax_row is not None else []
+            mot_rows = [mot_row] if mot_row is not None else []
 
         records = [self._dvsa_record(r) for r in dvsa_rows]
         records += [self._tax_record(r) for r in tax_rows]
+        records += [self._motstatus_record(r) for r in mot_rows]
         records.sort(key=lambda r: (r["fetched_at"] or "", r["source"], r["id"]), reverse=True)
         return {"registration": registration, "records": records}
 
@@ -231,6 +284,8 @@ class RecordsRepository(BaseRepository):
             "model": r.model,
             "tax_status": None,
             "tax_due_date": None,
+            "mot_status": None,
+            "mot_expiry_date": None,
             "fetched_at": r.fetched_at,
             "raw": json.loads(r.raw_json),
         }
@@ -246,6 +301,25 @@ class RecordsRepository(BaseRepository):
             "model": None,
             "tax_status": r.tax_status,
             "tax_due_date": r.tax_due_date,
+            "mot_status": None,
+            "mot_expiry_date": None,
+            "fetched_at": r.fetched_at,
+            "raw": json.loads(r.raw_json),
+        }
+
+    @staticmethod
+    def _motstatus_record(r: VehicleMotStatus) -> dict[str, Any]:
+        return {
+            "source": "motstatus",
+            "id": r.id,
+            "vehicle_id": r.vehicle_id,
+            "registration": r.registration,
+            "make": None,
+            "model": None,
+            "tax_status": None,
+            "tax_due_date": None,
+            "mot_status": r.mot_status,
+            "mot_expiry_date": r.mot_expiry_date,
             "fetched_at": r.fetched_at,
             "raw": json.loads(r.raw_json),
         }

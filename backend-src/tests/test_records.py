@@ -12,7 +12,13 @@ from flask.testing import FlaskClient
 from tests.test_mot import SAMPLE
 from torqued import mot, tax
 
-TAX_PAYLOAD = {"registration": "A1XYZ", "tax_status": "Taxed", "tax_due_date": "2026-12-01"}
+TAX_PAYLOAD = {
+    "registration": "A1XYZ",
+    "tax_status": "Taxed",
+    "tax_due_date": "2026-12-01",
+    "mot_status": "Vehicle A1XYZ has a valid MOT certificate",
+    "mot_expiry_date": "2027-06-11",
+}
 
 
 def _store_dvsa(garage_id: int, registration: str, name: str = "Car") -> int:
@@ -61,7 +67,7 @@ def test_records_empty(admin_client: FlaskClient) -> None:
     body = admin_client.get("/api/vehicle-records").json
     assert body == {
         "items": [], "total": 0, "total_records": 0, "total_dvsa": 0, "total_tax": 0,
-        "page": 1, "per_page": 25, "pages": 0,
+        "total_motstatus": 0, "page": 1, "per_page": 25, "pages": 0,
     }
 
 
@@ -208,6 +214,23 @@ def test_records_for_returns_both_sources_newest_first(
     assert len(dvsa_rec["raw"]["motTests"]) == 3
 
 
+def test_records_for_includes_motstatus_source(
+    admin_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.mot_status_repository import MotStatusRepository
+
+    vid = _store_dvsa(garage["id"], "A1XYZ")
+    with get_db() as db:
+        MotStatusRepository(db).replace_for_vehicle(vid, TAX_PAYLOAD)
+
+    ref = admin_client.get("/api/vehicle-records").json["items"][0]["ref"]
+    body = admin_client.get(f"/api/vehicle-records/{ref['source']}/{ref['id']}/records").json
+    mot_rec = next(r for r in body["records"] if r["source"] == "motstatus")
+    assert mot_rec["mot_expiry_date"] == "2027-06-11"
+    assert mot_rec["raw"]["mot_status"] == "Vehicle A1XYZ has a valid MOT certificate"
+
+
 def test_records_for_without_registration_returns_self(
     admin_client: FlaskClient
 ) -> None:
@@ -257,10 +280,17 @@ def test_create_lookup_saves_both(
     assert r.json["make"] == "VOLKSWAGEN"
     assert r.json["saved"]["dvsa"]["make"] == "VOLKSWAGEN"
     assert r.json["saved"]["tax"]["tax_status"] == "Taxed"
+    assert r.json["saved"]["motstatus"]["mot_status"] == "Vehicle A1XYZ has a valid MOT certificate"
     assert r.json["errors"] == []
 
-    item = admin_client.get("/api/vehicle-records").json["items"][0]
-    assert item["record_count"] == 2  # both persisted, grouped by plate
+    body = admin_client.get("/api/vehicle-records").json
+    assert body["total_motstatus"] == 1
+    item = body["items"][0]
+    # One VES fetch persists a tax record and a MOT-status record; plus the DVSA lookup.
+    assert item["record_count"] == 3  # dvsa + tax + motstatus, grouped by plate
+    assert item["dvsa_count"] == 1
+    assert item["tax_count"] == 1
+    assert item["motstatus_count"] == 1
     assert item["vehicle_id"] is None  # standalone
 
 

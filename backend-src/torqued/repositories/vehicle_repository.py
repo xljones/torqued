@@ -15,6 +15,7 @@ from torqued.models import (
     User,
     Vehicle,
     VehicleHistory,
+    VehicleMotStatus,
     VehicleSpec,
     VehicleTax,
     to_dict,
@@ -201,9 +202,12 @@ class VehicleRepository(BaseRepository):
     def mot_summaries(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:
         """Compact per-vehicle MOT status for the list view: ``{expiry, failed}``.
 
-        ``expiry`` is the latest test's expiry, falling back to the DVSA vehicle-level due
-        date; ``failed`` marks a latest test that didn't pass. Only vehicles with a stored
-        snapshot are included — the same colour/text the detail card derives, minus the tests.
+        ``expiry`` is the **later** of the latest DVSA test's expiry (falling back to the
+        DVSA vehicle-level due date) and the DVLA VES current-status expiry — so the list
+        pill consolidates both sources exactly like the detail card, and a fresh VES status
+        overrides a stale DVSA history. ``failed`` marks a latest DVSA test that didn't pass,
+        unless the VES expiry governs (a newer pass exists per the DVLA). A vehicle is
+        included if it has either source stored.
         """
         if not vehicle_ids:
             return {}
@@ -226,13 +230,27 @@ class VehicleRepository(BaseRepository):
         ).all()
         for vid, expiry, result in rows:
             latest.setdefault(vid, (expiry, result))
+        ves: dict[int, str | None] = {
+            vid: expiry
+            for vid, expiry in self.session.execute(
+                select(VehicleMotStatus.vehicle_id, VehicleMotStatus.mot_expiry_date).where(
+                    VehicleMotStatus.vehicle_id.in_(vehicle_ids)
+                )
+            ).all()
+            if vid is not None
+        }
         summaries: dict[int, dict[str, Any]] = {}
-        for vid, due_date in due.items():
-            expiry, result = latest.get(vid, (None, None))
-            summaries[vid] = {
-                "expiry": expiry or due_date,
-                "failed": result is not None and (result or "").upper() != "PASSED",
-            }
+        for vid in due.keys() | ves.keys():
+            dvsa_expiry, result = latest.get(vid, (None, None))
+            dvsa_expiry = dvsa_expiry or due.get(vid)
+            ves_expiry = ves.get(vid)
+            # ISO YYYY-MM-DD strings sort chronologically, so max() is the later date.
+            expiry = max((d for d in (dvsa_expiry, ves_expiry) if d), default=None)
+            ves_governs = bool(ves_expiry) and (not dvsa_expiry or ves_expiry >= dvsa_expiry)
+            failed = (
+                result is not None and (result or "").upper() != "PASSED" and not ves_governs
+            )
+            summaries[vid] = {"expiry": expiry, "failed": failed}
         return summaries
 
     def tax_summaries(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:

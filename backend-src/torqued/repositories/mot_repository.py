@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 
 from torqued import mot
-from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
+from torqued.models import DvsaVehicle, MotTest, Vehicle, VehicleMotStatus, to_dict
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
@@ -52,10 +52,12 @@ class MotRepository(BaseRepository):
 
         A vehicle with a stored DVSA snapshot yields a reminder when its MOT has
         lapsed ('overdue') or falls due within MOT_DUE_SOON_DAYS ('due_soon');
-        MOTs further out produce nothing. The due date is the most recent test's
-        expiry, falling back to the DVSA vehicle-level next-due date — the same
-        value the MOT card shows. Shaped (and tagged type='mot') to merge with
-        the service-log reminders.
+        MOTs further out produce nothing. The due date is the **later** of the most
+        recent DVSA test's expiry and the DVLA VES current-MOT-status expiry (the DVSA
+        history feed lags for e.g. SORN vehicles, so a fresh VES expiry corrects a stale
+        DVSA one and prevents a false 'overdue'), falling back to the DVSA vehicle-level
+        next-due date — the same value the MOT card shows. Shaped (and tagged type='mot')
+        to merge with the service-log reminders.
         """
         today = today or date.today()
         if not garage_ids:
@@ -77,8 +79,10 @@ class MotRepository(BaseRepository):
                 Vehicle.odometer_unit.label("vehicle_odometer_unit"),
                 DvsaVehicle.mot_test_due_date,
                 latest_expiry.label("latest_expiry"),
+                VehicleMotStatus.mot_expiry_date.label("ves_expiry"),
             )
             .join(DvsaVehicle, DvsaVehicle.vehicle_id == Vehicle.id)
+            .outerjoin(VehicleMotStatus, VehicleMotStatus.vehicle_id == Vehicle.id)
             .where(Vehicle.archived == 0, Vehicle.garage_id.in_(garage_ids))
         )
         if vehicle_id is not None:
@@ -88,7 +92,12 @@ class MotRepository(BaseRepository):
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
         for r in rows:
-            due = r["latest_expiry"] or r["mot_test_due_date"]
+            # The later of the DVSA test expiry and the VES expiry (ISO YYYY-MM-DD strings
+            # sort chronologically), so a fresh VES status overrides stale DVSA history.
+            expiry = max(
+                (d for d in (r["latest_expiry"], r["ves_expiry"]) if d), default=None
+            )
+            due = expiry or r["mot_test_due_date"]
             if not due:
                 continue
             if due < today_iso:
