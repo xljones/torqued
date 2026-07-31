@@ -18,6 +18,14 @@ describe('RegPlate', () => {
     expect(screen.getByText('AB12 CDE')).toBeInTheDocument();
   });
 
+  it('exposes the shared data-tooltip with the raw stored value and detected era', () => {
+    render(<RegPlate reg="ab12 cde" />);
+    expect(screen.getByText('AB12 CDE')).toHaveAttribute(
+      'data-tooltip',
+      'Stored as ab12 cde · Current style (2001–present)',
+    );
+  });
+
   it('renders nothing when empty', () => {
     const { container } = render(<RegPlate reg="" />);
     expect(container).toBeEmptyDOMElement();
