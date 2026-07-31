@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   toKm, fromKm, psiToBar, barToPsi,
   fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval,
-  fmtPressure, fmtPressurePsiBar, fmtCost, titleCase, formatReg,
+  fmtPressure, fmtPressurePsiBar, fmtCost, titleCase, formatReg, regPlateType,
 } from './units.js';
 
 describe('units', () => {
@@ -107,5 +107,20 @@ describe('units', () => {
     expect(formatReg('')).toBe('');
     expect(formatReg(null)).toBe('');
     expect(formatReg(undefined)).toBe('');
+  });
+
+  it('classifies plates by era, tolerant of input case/spacing', () => {
+    expect(regPlateType('ab12 cde')).toBe('Current style (2001–present)');
+    expect(regPlateType('v292ktx')).toBe('Prefix (1983–2001)');
+    expect(regPlateType('abc123a')).toBe('Suffix (1963–1983)');
+    expect(regPlateType('aaz1234')).toBe('Dateless (pre-1963)'); // NI, I/Z allowed
+    expect(regPlateType('1abc')).toBe('Dateless (pre-1963)'); // reversed
+    expect(regPlateType('qwerty')).toBe('Personalised / unrecognised');
+  });
+
+  it('returns null plate type for nullish/empty plates', () => {
+    expect(regPlateType('')).toBeNull();
+    expect(regPlateType(null)).toBeNull();
+    expect(regPlateType(undefined)).toBeNull();
   });
 });
