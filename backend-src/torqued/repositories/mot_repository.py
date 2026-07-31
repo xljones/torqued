@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 
 from torqued import mot
-from torqued.models import DvsaVehicle, MotTest, Vehicle, VehicleMotStatus, to_dict
+from torqued.models import DvsaVehicle, MotTest, Vehicle, VehicleVes, to_dict
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
@@ -79,10 +79,10 @@ class MotRepository(BaseRepository):
                 Vehicle.odometer_unit.label("vehicle_odometer_unit"),
                 DvsaVehicle.mot_test_due_date,
                 latest_expiry.label("latest_expiry"),
-                VehicleMotStatus.mot_expiry_date.label("ves_expiry"),
+                VehicleVes.mot_expiry_date.label("ves_expiry"),
             )
             .join(DvsaVehicle, DvsaVehicle.vehicle_id == Vehicle.id)
-            .outerjoin(VehicleMotStatus, VehicleMotStatus.vehicle_id == Vehicle.id)
+            .outerjoin(VehicleVes, VehicleVes.vehicle_id == Vehicle.id)
             .where(Vehicle.archived == 0, Vehicle.garage_id.in_(garage_ids))
         )
         if vehicle_id is not None:

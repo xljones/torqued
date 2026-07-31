@@ -1,13 +1,12 @@
 from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
 
-from torqued import mot, tax
+from torqued import mot, ves
 from torqued.access import admin_required
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
-from torqued.repositories.mot_status_repository import MotStatusRepository
 from torqued.repositories.records_repository import SOURCES, RecordsRepository
-from torqued.repositories.tax_repository import TaxRepository
+from torqued.repositories.ves_repository import VesRepository
 
 bp = Blueprint("records", __name__)
 
@@ -47,10 +46,10 @@ def create_lookup() -> ResponseReturnValue:
     registration = ((request.json or {}).get("registration") or "").strip()
     if not registration:
         return jsonify(error="registration is required"), 400
-    if not mot.is_configured() and not tax.is_configured():
+    if not mot.is_configured() and not ves.is_configured():
         return jsonify(error="DVSA and DVLA lookups are not configured"), 503
 
-    saved: dict[str, dict[str, object] | None] = {"dvsa": None, "tax": None, "motstatus": None}
+    saved: dict[str, dict[str, object] | None] = {"dvsa": None, "ves": None}
     errors: list[str] = []
     dvsa_payload = None
     if mot.is_configured():
@@ -58,14 +57,14 @@ def create_lookup() -> ResponseReturnValue:
             dvsa_payload = mot.fetch_vehicle(registration)
         except mot.MotError as e:
             errors.append(f"DVSA: {e}")
-    tax_payload = None
-    if tax.is_configured():
+    ves_payload = None
+    if ves.is_configured():
         try:
-            tax_payload = tax.fetch_tax(registration)
-        except tax.TaxError as e:
+            ves_payload = ves.fetch_ves(registration)
+        except ves.VesError as e:
             errors.append(f"DVLA: {e}")
 
-    if dvsa_payload is None and tax_payload is None:
+    if dvsa_payload is None and ves_payload is None:
         # Both configured sources failed (e.g. unknown plate) — relay the errors.
         return jsonify(error="; ".join(errors) or "Lookup failed"), 404
 
@@ -76,14 +75,14 @@ def create_lookup() -> ResponseReturnValue:
                 "make": dvsa_payload.get("make"),
                 "model": dvsa_payload.get("model"),
             }
-        if tax_payload is not None:
-            # One VES fetch → two detached records (tax + MOT status).
-            TaxRepository(db).store_detached_lookup(tax_payload)
-            MotStatusRepository(db).store_detached_lookup(tax_payload)
-            saved["tax"] = {"tax_status": tax_payload.get("tax_status")}
-            saved["motstatus"] = {"mot_status": tax_payload.get("mot_status")}
+        if ves_payload is not None:
+            VesRepository(db).store_detached_lookup(ves_payload)
+            saved["ves"] = {
+                "tax_status": ves_payload.get("tax_status"),
+                "mot_status": ves_payload.get("mot_status"),
+            }
 
-    payload = dvsa_payload or tax_payload or {}
+    payload = dvsa_payload or ves_payload or {}
     return jsonify(
         registration=payload.get("registration") or registration,
         make=(dvsa_payload or {}).get("make"),

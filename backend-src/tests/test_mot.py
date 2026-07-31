@@ -724,12 +724,12 @@ def test_mot_reminder_overdue(
 
 
 def _store_ves_mot(vehicle_id: int, expiry: str | None) -> None:
-    """Persist a DVLA VES current-MOT-status record against a vehicle."""
+    """Persist a DVLA VES record (with a MOT expiry) against a vehicle."""
     from torqued.db import get_db
-    from torqued.repositories.mot_status_repository import MotStatusRepository
+    from torqued.repositories.ves_repository import VesRepository
 
     with get_db() as db:
-        MotStatusRepository(db).replace_for_vehicle(
+        VesRepository(db).replace_for_vehicle(
             vehicle_id,
             {"registration": "A1XYZ", "mot_status": "valid MOT", "mot_expiry_date": expiry},
         )

@@ -15,9 +15,8 @@ from torqued.models import (
     User,
     Vehicle,
     VehicleHistory,
-    VehicleMotStatus,
     VehicleSpec,
-    VehicleTax,
+    VehicleVes,
     to_dict,
 )
 from torqued.repositories.base import BaseRepository
@@ -233,8 +232,8 @@ class VehicleRepository(BaseRepository):
         ves: dict[int, str | None] = {
             vid: expiry
             for vid, expiry in self.session.execute(
-                select(VehicleMotStatus.vehicle_id, VehicleMotStatus.mot_expiry_date).where(
-                    VehicleMotStatus.vehicle_id.in_(vehicle_ids)
+                select(VehicleVes.vehicle_id, VehicleVes.mot_expiry_date).where(
+                    VehicleVes.vehicle_id.in_(vehicle_ids)
                 )
             ).all()
             if vid is not None
@@ -261,8 +260,8 @@ class VehicleRepository(BaseRepository):
             return {}
         rows = self.session.execute(
             select(
-                VehicleTax.vehicle_id, VehicleTax.tax_status, VehicleTax.tax_due_date
-            ).where(VehicleTax.vehicle_id.in_(vehicle_ids))
+                VehicleVes.vehicle_id, VehicleVes.tax_status, VehicleVes.tax_due_date
+            ).where(VehicleVes.vehicle_id.in_(vehicle_ids))
         ).all()
         return {
             vid: {"tax_status": status, "tax_due_date": due}
