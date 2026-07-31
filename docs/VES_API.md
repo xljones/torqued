@@ -86,6 +86,33 @@ The VES record is also browsable on the admin
 [records page](../frontend-src/components/VehicleRecordsPage.jsx) (source `ves`, labelled
 "DVLA record (VES)"), alongside the DVSA record.
 
+### Vehicle-detail fields: DVSA + DVLA, normalised and tagged
+
+The DVSA MOT record and this DVLA VES snapshot describe the same vehicle, so many detail
+fields appear in **both** — but formatted differently. The vehicle-detail card consolidates
+them: [`ves.to_baseline`](../backend-src/torqued/ves.py) maps the VES snapshot onto the same
+detail-field keys DVSA uses, and [`ves.field_sources`](../backend-src/torqued/ves.py) reports,
+per field, which sources supplied it. `GET /api/vehicles/<id>` returns both as
+`ves_baseline` and `field_sources` (next to the existing DVSA `mot_baseline`), and
+[`MotField.jsx`](../frontend-src/components/MotField.jsx) badges each field **DVSA**, **DVLA**,
+or **both** (a user override, when set, still wins and shows no badge).
+
+Normalisation folds away formatting so equal data compares equal:
+
+| Detail field | DVSA | DVLA VES | Comparison key |
+|---|---|---|---|
+| make / colour / fuel | `VOLKSWAGEN` / `Blue` / `Petrol` | same, any case | case-folded |
+| year | `2003` (int) | `"2003"` | integer |
+| engine size | `"1170"` | `"1170 cc"` | digits only |
+| registration | `A1 XYZ` | `A1XYZ` | spaces stripped, upper-cased |
+| first registered | ISO `2003-10-16` | `"October 2003"` | `YYYY-MM` (DVLA gives only the month) |
+
+Both sources are tagged only when they agree once normalised; on a genuine conflict the DVSA
+value is displayed and only DVSA is tagged. Fields unique to one source carry a single tag:
+**DVSA-only** — model, first used; **DVLA-only** — CO₂ emissions, Euro status, real driving
+emissions, export marker, type approval, wheelplan, revenue weight, last V5C (these render as
+extra rows on the detail card, tagged DVLA; `"Not available"` rows are dropped).
+
 ## Endpoints
 
 Routes → [`torqued/routes/ves.py`](../backend-src/torqued/routes/ves.py), gated exactly like MOT.
