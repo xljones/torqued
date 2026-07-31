@@ -1,0 +1,14 @@
+# Cloudflare Worker: Torqued DVLA VES relay.
+#
+# Performs the gov.uk vehicle-enquiry scrape from Cloudflare (which has no egress
+# whitelist) so a whitelist-restricted host (e.g. a free PythonAnywhere account, whose
+# egress whitelist allows *.workers.dev but not vehicleenquiry.service.gov.uk) can reach
+# the full VES snapshot by calling this Worker instead. See ../../docs/VES_API.md →
+# "Production relay".
+#
+# Deploy:  npx wrangler secret put RELAY_TOKEN   # shared secret, must match VES_RELAY_TOKEN
+#          npx wrangler deploy
+
+name = "torqued-ves"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
