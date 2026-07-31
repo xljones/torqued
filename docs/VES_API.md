@@ -42,6 +42,36 @@ refreshes** (never bulk). A browser-like `User-Agent` is sent so the WAF doesn't
 | Env | Meaning |
 |---|---|
 | `VES_SCRAPE_ENABLED` | `1` (default) enables lookups; `0` disables them (`is_configured()` → False, so the UI hides the refresh and `refresh` returns 503). |
+| `VES_RELAY_URL` | Optional. When set, `fetch_ves` proxies through a relay instead of scraping gov.uk directly (see below). |
+| `VES_RELAY_TOKEN` | Optional shared secret sent as `Authorization: Bearer …` to the relay; must match the relay's `RELAY_TOKEN`. |
+
+## Production relay (PythonAnywhere free tier)
+
+Torqued's production deploy is a **free PythonAnywhere** account, where all outbound
+traffic is forced through a whitelist proxy — only hosts on
+[PythonAnywhere's allowlist](https://www.pythonanywhere.com/whitelist/) are reachable, and
+a non-whitelisted HTTPS host is refused at the `CONNECT` with
+`<urlopen error Tunnel connection failed: 403 Forbidden>`. `history.mot.api.gov.uk` and
+`login.microsoftonline.com` are whitelisted (so the **DVSA MOT** API works), but
+`vehicleenquiry.service.gov.uk` is **not** — so a direct VES scrape fails in prod while
+working locally (no proxy locally).
+
+`*.workers.dev` **is** whitelisted, so the fix is a small **Cloudflare Worker**
+([`relay/ves-worker/`](../relay/ves-worker/)) that runs this same scrape from Cloudflare
+(no egress whitelist there) and returns the same snapshot JSON. Set `VES_RELAY_URL` (and
+`VES_RELAY_TOKEN`) on the app host and `fetch_ves` calls the Worker instead of gov.uk —
+covering both `/ves/refresh` and the admin records lookup, since both go through `fetch_ves`:
+
+```
+VES_RELAY_URL=https://torqued-ves.<subdomain>.workers.dev
+VES_RELAY_TOKEN=<long random string>   # = the Worker's RELAY_TOKEN secret
+```
+
+`ves.py` stays the **reference implementation** — local dev, the test suite, and the debug
+recipe below all still exercise it; the Worker mirrors its selectors (`_field` /
+`_PROFILE_FIELDS` / the MOT + tax panels). When gov.uk drifts, fix `ves.py` first, then
+mirror the change into the Worker. Deploy steps:
+[`relay/ves-worker/README.md`](../relay/ves-worker/README.md).
 
 ## What Torqued stores
 
@@ -207,6 +237,7 @@ MOT record has no panel, and `fetch_ves` leaves them `None` rather than failing:
 | values carry a label prefix (e.g. `"Vehicle make VOLKSWAGEN"`) | the `id` moved onto the `<dd>`, or the value tag isn't `<dd>` anymore | the `value_tag` args in `fetch_ves` / `_FieldParser` |
 | `tax_due_date` always `null` for a taxed vehicle | date text moved out of `#tax-status-panel`, or the format isn't `DD Month YYYY` | `_parse_due_date` (regex + `_MONTHS`) and which element it reads |
 | `mot_status` / `mot_expiry_date` always `null` (MOT tile falls back to DVSA-only) | MOT panel restructured / renamed | `_field(found_html, "mot_hidden_details")` and `_parse_due_date(_field(found_html, "mot-status-panel"))` — are those ids still present? (never fatal: MOT is best-effort) |
+| `502 Could not reach the vehicle enquiry service: <urlopen error Tunnel connection failed: 403 Forbidden>` in prod but fine locally | prod host's **outbound whitelist** blocks `vehicleenquiry.service.gov.uk` (the `403` is the proxy's, not gov.uk's) — see "Production relay" above | set `VES_RELAY_URL` to the Cloudflare Worker (`relay/ves-worker/`) |
 | everything `502`, or works locally but not in prod | WAF blocking (UA rejected, rate-limited, IP blocked) or the site is down | `_UA`; reduce request volume; confirm the page loads in a normal browser first |
 
 Note `_request` maps **any** HTTP error or network exception to `VesError(502)` — so a `502`
