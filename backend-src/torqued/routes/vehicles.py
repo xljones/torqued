@@ -116,11 +116,12 @@ def create_vehicle() -> ResponseReturnValue:
         if not can_write(role):
             return jsonify(error="Read-only access to this garage"), 403
         vehicle = VehicleRepository(db).create(garage_id, data, changed_by=current_user.id)
-        # Retie any historic DVSA records we already hold for this plate (from earlier
-        # refreshes or a deleted vehicle): the newest becomes the live snapshot, the
-        # rest stay grouped under the vehicle by registration.
+        # Retie any historic DVSA/tax records we already hold for this plate (from earlier
+        # refreshes, standalone lookups, or a deleted vehicle): the newest of each becomes
+        # the live snapshot, the rest stay grouped under the vehicle by registration.
         if (vehicle.get("registration") or "").strip():
             MotRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
+            TaxRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
     analytics.capture(
         current_user.id,
         "vehicle.created",
@@ -157,21 +158,24 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         old = VehicleRepository(db).get_by_id(vehicle_id)
         result = VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id)
         mot_repo = MotRepository(db)
+        tax_repo = TaxRepository(db)
         # Drop any attached DVSA/MOT and tax data when the registration change means it no
         # longer applies (the form prompts the user before sending this flag).
         if (request.json or {}).get("disconnect_mot"):
             mot_repo.clear_for_vehicle(vehicle_id)
-            TaxRepository(db).clear_for_vehicle(vehicle_id)
-        # If the plate changed and nothing is attached, re-link a detached DVSA snapshot
-        # left behind by a deleted vehicle on the new plate.
+            tax_repo.clear_for_vehicle(vehicle_id)
+        # If the plate changed and nothing is attached, re-link a detached DVSA / tax record
+        # left behind by a deleted vehicle (or standalone lookup) on the new plate.
         new_reg = (result.get("registration") or "") if result else ""
         old_reg = (old or {}).get("registration") or ""
         if (
             new_reg.strip()
             and mot.normalise_registration(new_reg) != mot.normalise_registration(old_reg)
-            and mot_repo.get_for_vehicle(vehicle_id) is None
         ):
-            mot_repo.relink_detached(vehicle_id, new_reg)
+            if mot_repo.get_for_vehicle(vehicle_id) is None:
+                mot_repo.relink_detached(vehicle_id, new_reg)
+            if tax_repo.get_for_vehicle(vehicle_id) is None:
+                tax_repo.relink_detached(vehicle_id, new_reg)
         return jsonify(result)
 
 

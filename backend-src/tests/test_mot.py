@@ -417,105 +417,9 @@ def test_vehicle_list_includes_mot_baseline(
     assert row["mot_baseline"]["make"] == "VOLKSWAGEN"
 
 
-# ── admin DVSA vehicles list ────────────────────────────────────────────────────
-
-def _seed_dvsa(garage_id: int, count: int) -> list[int]:
-    """Create `count` vehicles each with a stored DVSA snapshot; return vehicle ids."""
-    from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
-    from torqued.repositories.vehicle_repository import VehicleRepository
-
-    ids: list[int] = []
-    with get_db() as db:
-        vehicles = VehicleRepository(db)
-        snapshots = MotRepository(db)
-        for i in range(count):
-            v = vehicles.create(garage_id, {"name": f"Car {i}"})
-            snapshots.replace_for_vehicle(v["id"], {**SAMPLE, "registration": f"REG{i:03d}"})
-            ids.append(v["id"])
-    return ids
-
-
-def test_dvsa_vehicles_requires_auth(client: FlaskClient) -> None:
-    assert client.get("/api/dvsa-vehicles").status_code == 401
-
-
-def test_dvsa_vehicles_requires_admin(auth_client: FlaskClient) -> None:
-    assert auth_client.get("/api/dvsa-vehicles").status_code == 403
-
-
-def test_dvsa_vehicles_ordered_by_fetched_at(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    from torqued.db import execute_sql, get_db
-
-    ids = _seed_dvsa(garage["id"], 3)
-    with get_db() as db:
-        for vid, ts in zip(
-            ids, ["2024-01-01 00:00:00", "2024-03-01 00:00:00", "2024-02-01 00:00:00"]
-        ):
-            execute_sql(db, "UPDATE dvsa_vehicles SET fetched_at=? WHERE vehicle_id=?", (ts, vid))
-
-    body = admin_client.get("/api/dvsa-vehicles").json
-    assert body["total"] == 3
-    assert body["pages"] == 1
-    assert [i["fetched_at"] for i in body["items"]] == [
-        "2024-03-01 00:00:00",
-        "2024-02-01 00:00:00",
-        "2024-01-01 00:00:00",
-    ]
-    assert body["items"][0]["make"] == "VOLKSWAGEN"
-    assert body["items"][0]["vehicle_id"] is not None
-
-
-def test_dvsa_vehicles_pagination(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    _seed_dvsa(garage["id"], 26)
-
-    page1 = admin_client.get("/api/dvsa-vehicles").json
-    assert page1["total"] == 26
-    assert page1["page"] == 1
-    assert page1["per_page"] == 25
-    assert page1["pages"] == 2
-    assert len(page1["items"]) == 25
-
-    page2 = admin_client.get("/api/dvsa-vehicles?page=2").json
-    assert page2["page"] == 2
-    assert len(page2["items"]) == 1
-
-
-def test_dvsa_record_retained_after_vehicle_delete(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
-    from torqued.repositories.vehicle_repository import VehicleRepository
-
-    with get_db() as db:
-        v = VehicleRepository(db).create(garage["id"], {"name": "Doomed"})
-        MotRepository(db).replace_for_vehicle(v["id"], {**SAMPLE, "registration": "OLD123"})
-
-    # Deleting the vehicle detaches (does not delete) its DVSA record.
-    with get_db() as db:
-        assert VehicleRepository(db).delete(v["id"]) is True
-
-    items = admin_client.get("/api/dvsa-vehicles").json["items"]
-    detached = [i for i in items if i["registration"] == "OLD123"]
-    assert len(detached) == 1
-    assert detached[0]["vehicle_id"] is None
-
-
-def test_dvsa_vehicles_report_record_counts(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    # Each vehicle is looked up once, so one record per vehicle.
-    _seed_dvsa(garage["id"], 2)
-    body = admin_client.get("/api/dvsa-vehicles").json
-    assert body["total"] == 2
-    assert body["total_records"] == 2
-    assert all(i["record_count"] == 1 for i in body["items"])
-
+# ── DVSA record retention & standalone lookups ──────────────────────────────────
+# (The admin records *list* / *records* endpoints — now unified with tax — live in
+# test_records.py; these cover DVSA-specific storage the MotRepository owns.)
 
 def _lookup_twice(garage_id: int, registration: str) -> int:
     """Refresh one vehicle twice → two dated lookup records for one plate."""
@@ -549,50 +453,6 @@ def test_refresh_keeps_previous_lookup_as_history(
         assert [r.vehicle_id for r in rows] == [None, vehicle_id]  # older detached, newer live
         # The vehicle still resolves to exactly its current (live) snapshot.
         assert MotRepository(db).get_for_vehicle(vehicle_id) is not None
-
-
-def test_dvsa_vehicles_group_lookups_of_one_plate(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    _lookup_twice(garage["id"], "A1XYZ")
-    body = admin_client.get("/api/dvsa-vehicles").json
-    assert body["total"] == 1  # one vehicle
-    assert body["total_records"] == 2  # two lookups
-    item = body["items"][0]
-    assert item["record_count"] == 2
-    assert item["vehicle_id"] is not None  # links to the most recent live vehicle
-
-
-def test_dvsa_vehicles_include_vehicle_and_garage_name(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    _seed_dvsa(garage["id"], 1)
-    item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
-    assert item["vehicle_name"] == "Car 0"
-    assert item["garage_name"] == "Test Garage"
-    # SAMPLE has no manufactureYear, so the year derives from its manufactureDate.
-    assert item["year"] == 2003
-
-
-def test_dvsa_vehicles_year_derivation(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
-
-    with get_db() as db:
-        repo = MotRepository(db)
-        repo.store_detached_lookup({"registration": "YEAR111", "manufactureYear": 2024})
-        repo.store_detached_lookup({"registration": "DATE222", "firstUsedDate": "2015-06-01"})
-        repo.store_detached_lookup({"registration": "NONE333"})  # no year source at all
-
-    years = {
-        i["registration"]: i["year"]
-        for i in admin_client.get("/api/dvsa-vehicles").json["items"]
-    }
-    assert years["YEAR111"] == 2024  # explicit manufacture year
-    assert years["DATE222"] == 2015  # derived from a date
-    assert years["NONE333"] is None  # nothing to derive
 
 
 def test_create_dvsa_lookup_requires_auth(client: FlaskClient) -> None:
@@ -635,7 +495,7 @@ def test_create_dvsa_lookup_persists_detached(
     assert r.status_code == 201
     assert r.json["make"] == "VOLKSWAGEN"
 
-    items = admin_client.get("/api/dvsa-vehicles").json["items"]
+    items = admin_client.get("/api/vehicle-records").json["items"]
     item = next(i for i in items if (i["registration"] or "").replace(" ", "").upper() == "A1XYZ")
     assert item["vehicle_id"] is None  # not assigned to any garage vehicle
     assert item["record_count"] == 1
@@ -657,101 +517,6 @@ def test_standalone_lookup_links_when_vehicle_added_later(
     assert mot_data is not None
     assert mot_data["registration"] == "A1XYZ"
     assert [t["mot_test_number"] for t in mot_data["tests"]] == ["1234", "1233", "1232"]
-
-
-def test_dvsa_vehicles_link_falls_back_to_older_live_vehicle(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
-    from torqued.repositories.vehicle_repository import VehicleRepository
-
-    # Two live lookups of one plate, then delete the newer vehicle so the group's
-    # newest row is detached and the link must fall back to the older live vehicle.
-    with get_db() as db:
-        v1 = VehicleRepository(db).create(garage["id"], {"name": "First"})
-        MotRepository(db).replace_for_vehicle(v1["id"], {**SAMPLE, "registration": "A1XYZ"})
-    with get_db() as db:
-        v2 = VehicleRepository(db).create(garage["id"], {"name": "Second"})
-        MotRepository(db).replace_for_vehicle(v2["id"], {**SAMPLE, "registration": "A1XYZ"})
-    with get_db() as db:
-        VehicleRepository(db).delete(v2["id"])  # newest lookup detaches
-
-    item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
-    assert item["record_count"] == 2
-    assert item["vehicle_id"] == v1["id"]
-
-
-def test_dvsa_vehicle_records_requires_auth(client: FlaskClient) -> None:
-    assert client.get("/api/dvsa-vehicles/1/records").status_code == 401
-
-
-def test_dvsa_vehicle_records_requires_admin(auth_client: FlaskClient) -> None:
-    assert auth_client.get("/api/dvsa-vehicles/1/records").status_code == 403
-
-
-def test_dvsa_vehicle_records_unknown_id(admin_client: FlaskClient) -> None:
-    assert admin_client.get("/api/dvsa-vehicles/999/records").status_code == 404
-
-
-def test_dvsa_vehicle_records_returns_whole_lookups_newest_first(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    _lookup_twice(garage["id"], "A1XYZ")
-    dvsa_id = admin_client.get("/api/dvsa-vehicles").json["items"][0]["id"]
-
-    body = admin_client.get(f"/api/dvsa-vehicles/{dvsa_id}/records").json
-    assert body["registration"] == "A1XYZ"
-    assert len(body["records"]) == 2
-    # Each record is one entire lookup — the whole raw payload, motTests included.
-    first = body["records"][0]
-    assert first["raw"]["make"] == "VOLKSWAGEN"
-    assert len(first["raw"]["motTests"]) == 3
-    # Newest lookup (the live one) first; the older detached lookup second.
-    assert first["vehicle_id"] is not None
-    assert body["records"][1]["vehicle_id"] is None
-
-
-def test_dvsa_vehicle_records_without_registration_returns_self(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
-    from torqued.repositories.vehicle_repository import VehicleRepository
-
-    # A DVSA payload lacking a registration stores a row that can't be grouped by plate.
-    with get_db() as db:
-        v = VehicleRepository(db).create(garage["id"], {"name": "NoReg"})
-        payload = {k: val for k, val in SAMPLE.items() if k != "registration"}
-        MotRepository(db).replace_for_vehicle(v["id"], payload)
-
-    dvsa_id = admin_client.get("/api/dvsa-vehicles").json["items"][0]["id"]
-    body = admin_client.get(f"/api/dvsa-vehicles/{dvsa_id}/records").json
-    assert body["registration"] is None
-    assert len(body["records"]) == 1
-    assert body["records"][0]["raw"]["make"] == "VOLKSWAGEN"
-
-
-def test_dvsa_vehicle_records_for_detached_snapshot(
-    admin_client: FlaskClient, garage: dict[str, Any]
-) -> None:
-    from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
-    from torqued.repositories.vehicle_repository import VehicleRepository
-
-    with get_db() as db:
-        v = VehicleRepository(db).create(garage["id"], {"name": "Doomed"})
-        MotRepository(db).replace_for_vehicle(v["id"], {**SAMPLE, "registration": "OLD123"})
-    with get_db() as db:
-        VehicleRepository(db).delete(v["id"])  # detaches the DVSA record
-
-    item = admin_client.get("/api/dvsa-vehicles").json["items"][0]
-    assert item["vehicle_id"] is None
-    assert item["record_count"] == 1
-    body = admin_client.get(f"/api/dvsa-vehicles/{item['id']}/records").json
-    assert len(body["records"]) == 1
-    assert body["records"][0]["vehicle_id"] is None
-    assert len(body["records"][0]["raw"]["motTests"]) == 3
 
 
 # ── DVSA relink on create / edit ────────────────────────────────────────────────
@@ -789,7 +554,7 @@ def test_create_reties_all_historic_records(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
     from torqued.db import get_db
-    from torqued.repositories.mot_repository import MotRepository
+    from torqued.repositories.records_repository import RecordsRepository
 
     # A vehicle refreshed twice keeps both lookups; deleting it detaches them.
     monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
@@ -806,7 +571,7 @@ def test_create_reties_all_historic_records(
     with get_db() as db:
         item = next(
             i
-            for i in MotRepository(db).list_all()["items"]
+            for i in RecordsRepository(db).list_all()["items"]
             if (i["registration"] or "").replace(" ", "").upper() == "A1XYZ"
         )
     assert item["record_count"] == 2

@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 
 from torqued import mot
-from torqued.models import DvsaVehicle, Garage, MotTest, Vehicle, to_dict
+from torqued.models import DvsaVehicle, MotTest, Vehicle, to_dict
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
@@ -14,30 +14,6 @@ _UNIT_MAP = {"MI": "mi", "KM": "km"}
 # An MOT surfaces as a maintenance reminder once its expiry is within this window
 # (~2 months) or already lapsed.
 MOT_DUE_SOON_DAYS = 60
-
-
-def _year(row: Any) -> int | None:
-    """Derive a model year from a DVSA row: explicit manufacture year, else a date's year.
-
-    Mirrors ``mot.to_baseline`` so the admin list and the vehicle baseline agree.
-    """
-    if row["manufacture_year"] is not None:
-        return int(row["manufacture_year"])
-    for key in ("manufacture_date", "first_used_date", "registration_date"):
-        value = row[key]
-        if value and str(value)[:4].isdigit():
-            return int(str(value)[:4])
-    return None
-
-
-def _group_key(registration: str | None, row_id: int) -> str:
-    """The key that folds DVSA rows into one vehicle: the normalised registration.
-
-    A record with no registration can't be grouped by plate, so it stands alone
-    (keyed by its own id) rather than colliding with every other blank-plate row.
-    """
-    norm = mot.normalise_registration(registration or "")
-    return norm or f"\x00{row_id}"
 
 
 class MotRepository(BaseRepository):
@@ -65,117 +41,6 @@ class MotRepository(BaseRepository):
             parsed.append(t)
         snapshot["tests"] = parsed
         return snapshot
-
-    def list_all(self, page: int = 1, per_page: int = 25) -> dict[str, Any]:
-        """Return a page of stored DVSA vehicles, newest lookup first.
-
-        A "record" is one entire DVSA lookup (a stored snapshot). Rows are grouped by
-        registration into vehicles, so a plate looked up more than once — each refresh
-        keeps the previous lookup as a detached record (see ``replace_for_vehicle``) —
-        appears once with a ``record_count`` of all its lookups. Each item is
-        represented by its newest lookup: ``vehicle_id`` (plus ``vehicle_name`` and
-        ``garage_name``) is the most recent live one — NULL when every lookup is
-        detached (a standalone lookup or a deleted vehicle) — and ``id`` points at the
-        newest row so the records endpoint can rebuild the group. ``total`` counts
-        vehicles; ``total_records`` counts lookups.
-        """
-        rows = (
-            self.session.execute(
-                select(
-                    DvsaVehicle.id,
-                    DvsaVehicle.vehicle_id,
-                    DvsaVehicle.registration,
-                    DvsaVehicle.make,
-                    DvsaVehicle.model,
-                    DvsaVehicle.manufacture_year,
-                    DvsaVehicle.manufacture_date,
-                    DvsaVehicle.first_used_date,
-                    DvsaVehicle.registration_date,
-                    DvsaVehicle.fetched_at,
-                    Vehicle.name.label("vehicle_name"),
-                    Garage.name.label("garage_name"),
-                )
-                .outerjoin(Vehicle, Vehicle.id == DvsaVehicle.vehicle_id)
-                .outerjoin(Garage, Garage.id == Vehicle.garage_id)
-                .order_by(DvsaVehicle.fetched_at.desc(), DvsaVehicle.id.desc())
-            )
-            .mappings()
-            .all()
-        )
-        groups: dict[str, dict[str, Any]] = {}
-        for r in rows:
-            key = _group_key(r["registration"], r["id"])
-            group = groups.get(key)
-            if group is None:
-                # First (newest) row for this plate represents the vehicle.
-                groups[key] = {
-                    "id": r["id"],
-                    "vehicle_id": r["vehicle_id"],
-                    "vehicle_name": r["vehicle_name"],
-                    "garage_name": r["garage_name"],
-                    "registration": r["registration"],
-                    "make": r["make"],
-                    "model": r["model"],
-                    "year": _year(r),
-                    "fetched_at": r["fetched_at"],
-                    "record_count": 1,
-                }
-            else:
-                group["record_count"] += 1
-                # Link to (and name) the most recent live vehicle among the lookups.
-                if group["vehicle_id"] is None and r["vehicle_id"] is not None:
-                    group["vehicle_id"] = r["vehicle_id"]
-                    group["vehicle_name"] = r["vehicle_name"]
-                    group["garage_name"] = r["garage_name"]
-
-        items = list(groups.values())
-        total = len(items)
-        return {
-            "items": items[(page - 1) * per_page : page * per_page],
-            "total": total,
-            "total_records": len(rows),
-            "page": page,
-            "per_page": per_page,
-            "pages": (total + per_page - 1) // per_page,
-        }
-
-    def get_records_by_id(self, dvsa_id: int) -> dict[str, Any] | None:
-        """Return every stored DVSA lookup (whole raw payload) for one vehicle.
-
-        ``dvsa_id`` is any row in the group (the list endpoint hands back the newest);
-        its registration selects every lookup we hold for that plate, newest first, so
-        each record is one complete DVSA response. A row with no registration can't be
-        grouped, so it returns just itself. Returns None if the id is unknown.
-        """
-        dvsa = self.session.get(DvsaVehicle, dvsa_id)
-        if dvsa is None:
-            return None
-        norm = mot.normalise_registration(dvsa.registration or "")
-        if not norm:
-            group = [dvsa]
-        else:
-            group = list(
-                self.session.scalars(
-                    select(DvsaVehicle)
-                    .where(func.upper(func.replace(DvsaVehicle.registration, " ", "")) == norm)
-                    .order_by(DvsaVehicle.fetched_at.desc(), DvsaVehicle.id.desc())
-                ).all()
-            )
-        return {
-            "registration": dvsa.registration,
-            "records": [
-                {
-                    "id": r.id,
-                    "vehicle_id": r.vehicle_id,
-                    "registration": r.registration,
-                    "make": r.make,
-                    "model": r.model,
-                    "fetched_at": r.fetched_at,
-                    "raw": json.loads(r.raw_json),
-                }
-                for r in group
-            ],
-        }
 
     def reminders(
         self,
