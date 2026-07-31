@@ -112,6 +112,7 @@ export const api = {
   updatePhoto:  (id, caption) => req('PUT',    `/photos/${id}`, { caption }),
   deletePhoto:  (id)          => req('DELETE', `/photos/${id}`),
   setCover:     (id)          => req('PUT',    `/photos/${id}/cover`),
+  updateCoverFrame: (id, frame) => req('PUT', `/photos/${id}/cover-frame`, frame),
   photoUrl:     (id)          => `${BASE}/photos/${id}/file`,
 
   // Admin
