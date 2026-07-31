@@ -76,3 +76,31 @@ export function titleCase(str) {
     .toLowerCase()
     .replace(/(^|[\s\-/])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
 }
+
+/**
+ * Format a UK registration for display: uppercase, strip any existing spaces, then
+ * re-insert the canonical single space per the plate's era/format (checked most
+ * specific first). If it matches no known UK pattern, return it uppercased with no
+ * inserted space — today's behaviour — so personalised/foreign plates render as-is.
+ * Display-only: the stored value is never touched.
+ */
+export function formatReg(reg) {
+  if (!reg) return '';
+  const s = String(reg).toUpperCase().replace(/\s+/g, '');
+  // Current (Sep 2001+):  AA00 AAA
+  if (/^[A-Z]{2}[0-9]{2}[A-Z]{3}$/.test(s)) return `${s.slice(0, 4)} ${s.slice(4)}`;
+  // Prefix (1983-2001):   A000 AAA   (letter + 1-3 digits, then 3 letters)
+  let m = s.match(/^([A-Z][0-9]{1,3})([A-Z]{3})$/);
+  if (m) return `${m[1]} ${m[2]}`;
+  // Suffix (1963-1983):   AAA 000A   (3 letters, then 1-3 digits + letter)
+  m = s.match(/^([A-Z]{3})([0-9]{1,3}[A-Z])$/);
+  if (m) return `${m[1]} ${m[2]}`;
+  // Dateless / NI:        AAA 0000   (1-3 letters, then 1-4 digits) — NI allows I/Z
+  m = s.match(/^([A-Z]{1,3})([0-9]{1,4})$/);
+  if (m) return `${m[1]} ${m[2]}`;
+  // Reverse dateless:     0000 AAA   (1-4 digits, then 1-3 letters)
+  m = s.match(/^([0-9]{1,4})([A-Z]{1,3})$/);
+  if (m) return `${m[1]} ${m[2]}`;
+  // Unknown format — uppercase, no inserted space (today's fallback).
+  return s;
+}
