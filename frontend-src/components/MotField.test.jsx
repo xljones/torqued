@@ -45,6 +45,15 @@ describe('MotField', () => {
     expect(screen.getByText('DVSA')).toBeInTheDocument();
   });
 
+  it('quotes the verbatim record value in the badge tooltip despite a format', () => {
+    render(<MotField {...props({ make: null }, { make: 'VOLKSWAGEN' }, { format: titleCase })} />);
+    // Displayed value is tidied, but the tooltip reveals the record's true value.
+    expect(screen.getByText('Volkswagen')).toBeInTheDocument();
+    expect(screen.getByText('DVSA')).toHaveAttribute(
+      'title', '"VOLKSWAGEN" from the DVSA record',
+    );
+  });
+
   it('never applies the format prop to a user override', () => {
     render(<MotField {...props({ make: 'McLaren' }, { make: 'MCLAREN' }, { format: titleCase })} />);
     expect(screen.getByText('McLaren')).toBeInTheDocument();
