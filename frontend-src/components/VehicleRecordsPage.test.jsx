@@ -32,9 +32,9 @@ function item(overrides = {}) {
     ref: { source: 'dvsa', id: 1 },
     vehicle_id: null, vehicle_name: null, garage_name: null,
     registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003,
-    tax_status: null, tax_due_date: null,
+    tax_status: null, tax_due_date: null, mot_status: null, mot_expiry_date: null,
     fetched_at: '2024-01-01 00:00:00',
-    record_count: 1, dvsa_count: 1, tax_count: 0,
+    record_count: 1, dvsa_count: 1, tax_count: 0, motstatus_count: 0,
     ...overrides,
   };
 }
@@ -46,6 +46,7 @@ function page(items, extra = {}) {
     total_records: items.reduce((n, i) => n + i.record_count, 0),
     total_dvsa: items.reduce((n, i) => n + i.dvsa_count, 0),
     total_tax: items.reduce((n, i) => n + i.tax_count, 0),
+    total_motstatus: items.reduce((n, i) => n + (i.motstatus_count || 0), 0),
     page: 1, per_page: 25, pages: 1,
     ...extra,
   };
@@ -77,7 +78,7 @@ describe('VehicleRecordsPage', () => {
     expect(api.getVehicleRecords).toHaveBeenCalledWith(1);
     expect(screen.getByText('A1XYZ')).toBeInTheDocument();  // RegPlate forces uppercase
     expect(screen.getByText('2003')).toBeInTheDocument();
-    expect(screen.getByText('1 vehicle, 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
+    expect(screen.getByText('1 vehicle, 2 records (1 DVSA, 1 tax, 0 MOT)')).toBeInTheDocument();
     expect(screen.getByText('· 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
     const btn = screen.getByRole('button', { name: 'View in garage' });
     expect(btn).toHaveClass('btn-secondary');
@@ -86,13 +87,16 @@ describe('VehicleRecordsPage', () => {
   it('expands a row to browse DVSA and tax records together, newest first', async () => {
     api.getVehicleRecords.mockResolvedValue(page([item({
       ref: { source: 'tax', id: 5 }, vehicle_id: 7, tax_status: 'Taxed',
-      record_count: 2, dvsa_count: 1, tax_count: 1,
+      record_count: 3, dvsa_count: 1, tax_count: 1, motstatus_count: 1,
     })]));
     api.getRecordsForPlate.mockResolvedValue({
       registration: 'A1XYZ',
       records: [
         { source: 'tax', id: 5, vehicle_id: 7, registration: 'A1XYZ', tax_status: 'Taxed',
           fetched_at: '2024-06-01 00:00:00', raw: { tax_status: 'Taxed', tax_due_date: '2026-12-01' } },
+        { source: 'motstatus', id: 8, vehicle_id: 7, registration: 'A1XYZ',
+          mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29',
+          fetched_at: '2024-06-01 00:00:00', raw: { mot_status: 'valid MOT certificate' } },
         { source: 'dvsa', id: 2, vehicle_id: 7, registration: 'A1XYZ', make: 'VOLKSWAGEN',
           fetched_at: '2024-01-01 00:00:00', raw: { registration: 'A1XYZ', motTests: [] } },
       ],
@@ -107,6 +111,9 @@ describe('VehicleRecordsPage', () => {
     await waitFor(() => expect(screen.getByText('DVLA tax record')).toBeInTheDocument());
     expect(api.getRecordsForPlate).toHaveBeenCalledWith('tax', 5);
     expect(screen.getByText('DVSA record')).toBeInTheDocument();
+    // The DVLA MOT-status record shows with its label and "MOT until <expiry>" summary.
+    expect(screen.getByText('DVLA MOT status')).toBeInTheDocument();
+    expect(screen.getByText(/MOT until 2027-07-29/)).toBeInTheDocument();
 
     // The shared viewer expands a lookup into its raw fields.
     await userEvent.click(screen.getByText('DVLA tax record'));

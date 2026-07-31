@@ -11,22 +11,35 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // Normalise a plate the way the backend groups them (strip spaces, case-insensitive).
 const normReg = r => (r ?? '').replace(/\s+/g, '').toLowerCase();
 
-const SOURCE_LABEL = { dvsa: 'DVSA record', tax: 'DVLA tax record' };
+const SOURCE_LABEL = {
+  dvsa: 'DVSA record',
+  tax: 'DVLA tax record',
+  motstatus: 'DVLA MOT status',
+};
 
-// One record's summary line in the expanded view — make/model for DVSA, tax status for tax.
+// One record's summary line in the expanded view — make/model for DVSA, tax status for tax,
+// MOT status/expiry for the DVLA MOT-status record.
 function recordSummary(r) {
-  const head = r.source === 'tax'
-    ? (r.tax_status || 'Tax')
-    : ([r.make, r.model].filter(Boolean).join(' ') || '—');
+  let head;
+  if (r.source === 'tax') {
+    head = r.tax_status || 'Tax';
+  } else if (r.source === 'motstatus') {
+    head = r.mot_expiry_date ? `MOT until ${r.mot_expiry_date}` : (r.mot_status || 'MOT status');
+  } else {
+    head = [r.make, r.model].filter(Boolean).join(' ') || '—';
+  }
   return <>{head}{' · looked up '}<RelativeTime value={r.fetched_at} /></>;
 }
 
-// "N records" with a per-source split when the vehicle has both kinds.
+// "N records" with a per-source split when the vehicle has more than one kind.
 function recordCountLabel(v) {
-  if (v.dvsa_count && v.tax_count) {
-    return `${plural(v.record_count, 'record')} (${v.dvsa_count} DVSA, ${v.tax_count} tax)`;
-  }
-  return plural(v.record_count, 'record');
+  const parts = [
+    [v.dvsa_count, 'DVSA'],
+    [v.tax_count, 'tax'],
+    [v.motstatus_count, 'MOT'],
+  ].filter(([n]) => n);
+  const split = parts.length > 1 ? ` (${parts.map(([n, label]) => `${n} ${label}`).join(', ')})` : '';
+  return `${plural(v.record_count, 'record')}${split}`;
 }
 
 // One vehicle row: a summary line that expands to reveal every stored DVLA + DVSA record
@@ -236,7 +249,7 @@ export default function VehicleRecordsPage() {
         {data && (
           <span className="meta">
             {plural(data.total, 'vehicle')}, {plural(data.total_records, 'record')}
-            {' '}({data.total_dvsa} DVSA, {data.total_tax} tax)
+            {' '}({data.total_dvsa} DVSA, {data.total_tax} tax, {data.total_motstatus} MOT)
           </span>
         )}
       </div>

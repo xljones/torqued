@@ -13,6 +13,7 @@ vi.mock('../api.js', () => ({
     refreshMot: vi.fn(),
     getTax: vi.fn(),
     refreshTax: vi.fn(),
+    getVehicleMotStatus: vi.fn(),
   },
 }));
 
@@ -52,9 +53,10 @@ const tax = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: tax enabled but nothing stored, so the MOT-only tests are unaffected.
+  // Default: tax + MOT-status enabled but nothing stored, so the MOT-only tests are unaffected.
   api.getTax.mockResolvedValue({ configured: true, tax: null });
-  api.refreshTax.mockResolvedValue({ configured: true, tax: null });
+  api.refreshTax.mockResolvedValue({ configured: true, tax: null, mot_status: null });
+  api.getVehicleMotStatus.mockResolvedValue({ configured: true, mot_status: null });
 });
 
 describe('MotCard', () => {
@@ -104,7 +106,6 @@ describe('MotCard', () => {
       expect(screen.getByText('MOT')).toBeInTheDocument();
       expect(screen.getByText('Pass')).toBeInTheDocument();
       expect(screen.getByText('Fail')).toBeInTheDocument();
-      expect(screen.getByText(/VOLKSWAGEN PASSAT/)).toBeInTheDocument();
     });
     // The fixture's latest test passed but its certificate has since lapsed → "Expired",
     // with the expiry date on the bottom line.
@@ -126,6 +127,9 @@ describe('MotCard', () => {
         <MotCard vehicle={vehicle} ro={false} />
       </DisplayPrefsProvider>,
     );
+    // Expand the MOT records from the tile, then the DVSA record shows make/model verbatim.
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
     await waitFor(() => expect(screen.getByText(/VOLKSWAGEN PASSAT/)).toBeInTheDocument());
     // Not tidied to 'Volkswagen Passat'
     expect(screen.queryByText(/Volkswagen Passat/)).not.toBeInTheDocument();
@@ -170,10 +174,41 @@ describe('MotCard', () => {
       .toHaveClass('pressure-tile--danger');
   });
 
+  it('shows a fresh DVLA VES expiry over a stale DVSA one (the YT12OPZ case)', async () => {
+    // DVSA's newest test lapsed long ago, but the DVLA VES status shows a valid future MOT.
+    const stale = { ...mot, tests: [{ ...mot.tests[0], expiry_date: '2023-07-15' }] };
+    api.getMot.mockResolvedValue({ configured: true, mot: stale });
+    api.getVehicleMotStatus.mockResolvedValue({
+      configured: true,
+      mot_status: { mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
+    });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
+
+    const tile = screen.getByText('MOT').closest('.pressure-tile');
+    expect(tile).not.toHaveClass('pressure-tile--danger'); // not shown as expired
+    expect(tile.textContent).toMatch(/2027-07-29/);
+    // The two sources disagree (DVSA 2023 vs DVLA 2027) → the tile says so, and notes we
+    // show the latest.
+    expect(tile.textContent).toMatch(/DVSA & DVLA differ/);
+  });
+
+  it('notes when the DVSA and DVLA MOT dates agree', async () => {
+    const agreeing = { ...mot, tests: [{ ...mot.tests[0], expiry_date: '2027-07-29' }] };
+    api.getMot.mockResolvedValue({ configured: true, mot: agreeing });
+    api.getVehicleMotStatus.mockResolvedValue({
+      configured: true,
+      mot_status: { mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
+    });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
+    expect(screen.getByText('MOT').closest('.pressure-tile').textContent).toMatch(/DVSA & DVLA agree/);
+  });
+
   it('refreshes both MOT and tax and reports synced readings', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     api.refreshMot.mockResolvedValue({ configured: true, mot });
-    api.refreshTax.mockResolvedValue({ configured: true, tax });
+    api.refreshTax.mockResolvedValue({ configured: true, tax, mot_status: null });
     const onSynced = vi.fn();
     render(<MotCard vehicle={vehicle} ro={false} onSynced={onSynced} />);
     await waitFor(() => expect(screen.getByText('Refresh from DVSA & DVLA')).toBeInTheDocument());
@@ -217,10 +252,11 @@ describe('MotCard', () => {
   it('browses the raw DVSA record as an expandable tree, with nested arrays collapsed', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('DVSA record')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
 
-    // Open the JSON panel (defaults to the Formatted tree)
-    await userEvent.click(screen.getByText('DVSA record'));
+    // Clicking the MOT tile expands its records (JSON panel defaults to the Formatted tree)
+    await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
+    expect(screen.getByText(/DVSA record/)).toBeInTheDocument();
 
     // Top-level keys are visible; nested array starts collapsed
     expect(screen.getByText('motTests')).toBeInTheDocument();
@@ -237,20 +273,56 @@ describe('MotCard', () => {
     expect(screen.getByText('completedDate')).toBeInTheDocument();
   });
 
-  it('shows a DVLA tax record viewer, open one-at-a-time with the DVSA record', async () => {
+  it('expands each record from its status tile, one at a time', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     api.getTax.mockResolvedValue({ configured: true, tax });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('DVLA tax record')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Taxed')).toBeInTheDocument());
 
-    // Opening the tax record reveals its raw fields.
-    await userEvent.click(screen.getByText('DVLA tax record'));
+    // Clicking the tax tile reveals the DVLA tax record's raw fields.
+    await userEvent.click(screen.getByText('Taxed').closest('.pressure-tile'));
     expect(screen.getByText('tax_status')).toBeInTheDocument();
 
-    // Opening the DVSA record closes the tax record (tax OR MOT, never both).
-    await userEvent.click(screen.getByText('DVSA record'));
+    // Clicking the MOT tile shows the DVSA record and closes the tax record (one at a time).
+    await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
     expect(screen.getByText('motTests')).toBeInTheDocument();
     expect(screen.queryByText('tax_status')).not.toBeInTheDocument();
+  });
+
+  it('expanding the MOT tile shows both the DVSA record and the DVLA MOT status', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    api.getVehicleMotStatus.mockResolvedValue({
+      configured: true,
+      mot_status: {
+        mot_status: 'valid MOT certificate',
+        mot_expiry_date: '2027-07-29',
+        raw: { registration: 'A1XYZ', mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
+      },
+    });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
+    // Both record sources are shown together under the one tile.
+    expect(screen.getByText(/DVSA record/)).toBeInTheDocument();
+    expect(screen.getByText('DVLA MOT status')).toBeInTheDocument();
+    expect(screen.getByText('motTests')).toBeInTheDocument();       // DVSA raw
+    expect(screen.getAllByText('mot_expiry_date').length).toBeGreaterThan(0); // VES raw
+  });
+
+  it('shows up to 10 MOT tests before the "show all" button appears', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: 100 + i, completed_date: `20${10 + i}-01-01T00:00:00.000Z`, test_result: 'PASSED',
+      expiry_date: null, odometer_value: null, odometer_unit: null, defects: [],
+    }));
+    api.getMot.mockResolvedValue({ configured: true, mot: { ...mot, tests: many } });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
+
+    expect(screen.getAllByText('Pass')).toHaveLength(10);        // 10 shown by default
+    expect(screen.getByText('Show all 12 tests')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Show all 12 tests'));
+    expect(screen.getAllByText('Pass')).toHaveLength(12);
   });
 
   it('hides the refresh button for readonly members', async () => {
