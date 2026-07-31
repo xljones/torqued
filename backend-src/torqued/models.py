@@ -273,9 +273,12 @@ class MotTest(Base):
 class VehicleTax(Base):
     __tablename__ = "vehicle_tax"
 
-    # One current road-tax snapshot per vehicle (migration 0004). Unlike dvsa_vehicles
-    # this cascades away with the vehicle — there is no detached-retention need for it.
-    vehicle_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    # Migration 0006 mirrored dvsa_vehicles: `id` is the surrogate primary key and
+    # `vehicle_id` a nullable FK (ON DELETE SET NULL), so a tax lookup is a record that
+    # survives its vehicle's deletion as a detached row (vehicle_id IS NULL) and refreshes
+    # retain history.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vehicle_id: Mapped[int | None] = mapped_column(Integer)
     registration: Mapped[str | None] = mapped_column(Text)
     tax_status: Mapped[str | None] = mapped_column(Text)
     tax_due_date: Mapped[str | None] = mapped_column(Text)

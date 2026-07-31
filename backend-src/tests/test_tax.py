@@ -311,6 +311,83 @@ def test_disconnect_clears_tax(
     assert auth_client.get(f"/api/vehicles/{v['id']}/tax").json["tax"] is None
 
 
+# ── tax record retention & relink (parity with DVSA, migration 0006) ─────────────
+
+TAX_PAYLOAD = {"registration": "A1XYZ", "tax_status": "Taxed", "tax_due_date": "2026-12-01"}
+
+
+def test_tax_refresh_keeps_previous_lookup_as_history(garage: dict[str, Any]) -> None:
+    """A tax refresh retains the prior lookup (detached), not deletes it."""
+    from sqlalchemy import select
+
+    from torqued.db import get_db
+    from torqued.models import VehicleTax
+    from torqued.repositories.tax_repository import TaxRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        v = VehicleRepository(db).create(garage["id"], {"name": "Car"})
+        TaxRepository(db).replace_for_vehicle(v["id"], TAX_PAYLOAD)
+    with get_db() as db:
+        TaxRepository(db).replace_for_vehicle(v["id"], TAX_PAYLOAD)
+
+    with get_db() as db:
+        rows = db.scalars(select(VehicleTax).order_by(VehicleTax.id)).all()
+        assert len(rows) == 2  # both lookups kept
+        assert [r.vehicle_id for r in rows] == [None, v["id"]]  # older detached, newer live
+        assert TaxRepository(db).get_for_vehicle(v["id"]) is not None
+
+
+def test_tax_record_retained_after_vehicle_delete(garage: dict[str, Any]) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.tax_repository import TaxRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        v = VehicleRepository(db).create(garage["id"], {"name": "Doomed"})
+        TaxRepository(db).replace_for_vehicle(v["id"], {**TAX_PAYLOAD, "registration": "OLD123"})
+    with get_db() as db:
+        assert VehicleRepository(db).delete(v["id"]) is True
+        # The tax record survives detached (vehicle_id NULL), not cascaded away.
+        assert TaxRepository(db).get_for_vehicle(v["id"]) is None
+        from sqlalchemy import select
+
+        from torqued.models import VehicleTax
+
+        row = db.scalars(select(VehicleTax)).one()
+        assert row.vehicle_id is None
+        assert row.registration == "OLD123"
+
+
+def test_standalone_tax_lookup_links_when_vehicle_added_later(
+    auth_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.tax_repository import TaxRepository
+
+    with get_db() as db:
+        TaxRepository(db).store_detached_lookup(TAX_PAYLOAD)
+
+    # Adding a vehicle on that plate ties the standalone tax record to it.
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    with get_db() as db:
+        linked = TaxRepository(db).get_for_vehicle(v["id"])
+    assert linked is not None
+    assert linked["tax_status"] == "Taxed"
+
+
+def test_tax_relink_noop_without_registration(
+    auth_client: FlaskClient, garage: dict[str, Any]
+) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.tax_repository import TaxRepository
+
+    v = mk_vehicle(auth_client, registration="ZZ99 ZZZ")
+    with get_db() as db:
+        assert TaxRepository(db).relink_detached(v["id"], "   ") is False
+        assert TaxRepository(db).get_for_vehicle(v["id"]) is None
+
+
 # ── tax reminders ───────────────────────────────────────────────────────────────
 
 def _store_tax(

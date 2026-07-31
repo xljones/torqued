@@ -85,6 +85,9 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   const [tax, setTax] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  // Only one raw record panel is open at a time — the DVSA record or the DVLA tax record.
+  const [openRecord, setOpenRecord] = useState(null);  // 'dvsa' | 'tax' | null
+  const toggleRecord = which => setOpenRecord(cur => (cur === which ? null : which));
 
   const load = useCallback(() => {
     api.getMot(vehicle.id).then(setData);
@@ -205,6 +208,24 @@ export default function MotCard({ vehicle, ro, onSynced }) {
         </div>
       )}
 
+      {/* DVLA tax record: the full official tax lookup, under the tax box, expandable.
+          Mutually exclusive with the DVSA record below (tax OR MOT open, never both). */}
+      {taxInfo && (
+        <DvsaRecord
+          label="DVLA tax record"
+          className="mt-3"
+          raw={taxInfo.raw}
+          open={openRecord === 'tax'}
+          onToggle={() => toggleRecord('tax')}
+          summary={
+            <>
+              {taxInfo.tax_status || '—'}
+              {taxInfo.tax_due_date ? ` · due ${taxInfo.tax_due_date}` : ''}
+            </>
+          }
+        />
+      )}
+
       {!mot && motConfigured && vehicle.registration && (
         <p className="text-muted text-sm">
           No MOT data yet — fetch the official test history for {vehicle.registration} from the DVSA.
@@ -228,11 +249,14 @@ export default function MotCard({ vehicle, ro, onSynced }) {
             </div>
           )}
 
-          {/* DVSA record: the full official record, full row width, expandable */}
+          {/* DVSA record: the full official record, full row width, expandable.
+              Mutually exclusive with the DVLA tax record above. */}
           <DvsaRecord
             label="DVSA record"
             className="mt-3"
             raw={mot.raw}
+            open={openRecord === 'dvsa'}
+            onToggle={() => toggleRecord('dvsa')}
             summary={
               <>
                 {[mot.make, mot.model].filter(Boolean).join(' ') || '—'}

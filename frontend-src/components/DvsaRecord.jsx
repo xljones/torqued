@@ -69,10 +69,14 @@ export function JsonTree({ data }) {
   );
 }
 
-export default function DvsaRecord({ label, summary, raw, className = '' }) {
-  const [open, setOpen] = useState(false);
+// `open`/`onToggle` are optional: pass both to control the panel from a parent (e.g. to keep
+// only one of several records open at once); omit them for self-managed open state.
+export default function DvsaRecord({ label, summary, raw, className = '', open: openProp, onToggle }) {
+  const [openState, setOpenState] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
   const [jsonFmt, setJsonFmt] = useState('formatted');
-  const toggle = () => setOpen(v => !v);
+  const toggle = () => (controlled ? onToggle?.() : setOpenState(v => !v));
 
   return (
     <>

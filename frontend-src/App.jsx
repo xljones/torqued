@@ -16,7 +16,7 @@ import ServiceDetail from './components/ServiceDetail.jsx';
 import ServiceForm from './components/ServiceForm.jsx';
 import CodeLookup from './components/CodeLookup.jsx';
 import AdminPage from './components/AdminPage.jsx';
-import DvsaVehiclesPage from './components/DvsaVehiclesPage.jsx';
+import VehicleRecordsPage from './components/VehicleRecordsPage.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
 import { FormMode, ROLE_LABELS } from './constants.js';
 
@@ -87,7 +87,7 @@ function Nav() {
       <NavLink to="/tyres">Tyre pressures</NavLink>
       <NavLink to="/services">Service log</NavLink>
       <NavLink to="/codes">Fault codes</NavLink>
-      {user?.is_admin && <NavLink to="/dvsa-vehicles">DVSA Records</NavLink>}
+      {user?.is_admin && <NavLink to="/records">DVLA &amp; DVSA Records</NavLink>}
       <div className="mt-auto">
         <div className="sidebar-user">
           <div className="sidebar-user-row">
@@ -125,7 +125,7 @@ function BottomNav() {
             <NavLink to="/tyres" className="sidebar-nav-btn" onClick={closeMore}>Tyre pressures</NavLink>
             <NavLink to="/codes" className="sidebar-nav-btn" onClick={closeMore}>Fault codes</NavLink>
             {user?.is_admin && (
-              <NavLink to="/dvsa-vehicles" className="sidebar-nav-btn" onClick={closeMore}>DVSA Records</NavLink>
+              <NavLink to="/records" className="sidebar-nav-btn" onClick={closeMore}>DVLA &amp; DVSA Records</NavLink>
             )}
             <div className="sidebar-user">
               <div className="sidebar-user-row">
@@ -211,7 +211,7 @@ function AppShell() {
           <Route path="/services/:id/edit" element={<ServiceForm mode={FormMode.EDIT} />} />
           <Route path="/codes" element={<CodeLookup />} />
           {user.is_admin && <Route path="/admin" element={<AdminPage />} />}
-          {user.is_admin && <Route path="/dvsa-vehicles" element={<DvsaVehiclesPage />} />}
+          {user.is_admin && <Route path="/records" element={<VehicleRecordsPage />} />}
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>

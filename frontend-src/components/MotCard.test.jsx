@@ -237,6 +237,22 @@ describe('MotCard', () => {
     expect(screen.getByText('completedDate')).toBeInTheDocument();
   });
 
+  it('shows a DVLA tax record viewer, open one-at-a-time with the DVSA record', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    api.getTax.mockResolvedValue({ configured: true, tax });
+    render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('DVLA tax record')).toBeInTheDocument());
+
+    // Opening the tax record reveals its raw fields.
+    await userEvent.click(screen.getByText('DVLA tax record'));
+    expect(screen.getByText('tax_status')).toBeInTheDocument();
+
+    // Opening the DVSA record closes the tax record (tax OR MOT, never both).
+    await userEvent.click(screen.getByText('DVSA record'));
+    expect(screen.getByText('motTests')).toBeInTheDocument();
+    expect(screen.queryByText('tax_status')).not.toBeInTheDocument();
+  });
+
   it('hides the refresh button for readonly members', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     render(<MotCard vehicle={vehicle} ro={true} />);
@@ -265,8 +281,9 @@ describe('MotCard', () => {
       configured: true, tax: { ...tax, tax_status: 'SORN', tax_due_date: null },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('SORN')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
     const taxTile = screen.getByText('Tax status').closest('.pressure-tile');
+    expect(taxTile).toHaveTextContent('SORN');
     expect(taxTile).toHaveClass('pressure-tile--warn');
     // No due date → the third line falls back to an em dash.
     expect(taxTile).toHaveTextContent('—');
@@ -278,7 +295,7 @@ describe('MotCard', () => {
       configured: true, tax: { ...tax, tax_status: 'Untaxed', tax_due_date: null },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('Untaxed')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
     expect(screen.getByText('Tax status').closest('.pressure-tile'))
       .toHaveClass('pressure-tile--danger');
   });
@@ -290,7 +307,7 @@ describe('MotCard', () => {
       configured: true, tax: { ...tax, tax_status: 'Untaxed', tax_due_date: '2024-03-01' },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
-    await waitFor(() => expect(screen.getByText('Untaxed')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
     expect(screen.getByText('Tax status').closest('.pressure-tile'))
       .toHaveTextContent('Expired 2024-03-01');
   });

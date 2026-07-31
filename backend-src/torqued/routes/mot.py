@@ -11,22 +11,14 @@ from torqued.repositories.vehicle_repository import VehicleRepository
 bp = Blueprint("mot", __name__)
 
 
-@bp.get("/api/dvsa-vehicles")
-@admin_required
-def dvsa_vehicles() -> ResponseReturnValue:
-    """List every stored DVSA snapshot (site-admin only), newest refresh first, paginated."""
-    page = max(1, request.args.get("page", 1, type=int))
-    with get_db() as db:
-        return jsonify(MotRepository(db).list_all(page)), 200
-
-
 @bp.post("/api/dvsa-vehicles")
 @admin_required
 def create_dvsa_lookup() -> ResponseReturnValue:
     """Look up any registration at the DVSA and persist it, unassigned (site-admin).
 
     The record is stored detached (no vehicle); adding a garage vehicle on this plate
-    later relinks it. Unconfigured → 503; unknown plate → 404 relayed from DVSA.
+    later relinks it. Returns the baseline so the vehicle form can persist a lookup and
+    prefill its identity fields in one call. Unconfigured → 503; unknown plate → 404.
     """
     registration = ((request.json or {}).get("registration") or "").strip()
     if not registration:
@@ -39,24 +31,12 @@ def create_dvsa_lookup() -> ResponseReturnValue:
         return jsonify(error=str(e)), e.status
     with get_db() as db:
         MotRepository(db).store_detached_lookup(payload)
-    # Return the baseline too so the vehicle form can persist a lookup and prefill in one call.
     return jsonify(
         registration=payload.get("registration"),
         make=payload.get("make"),
         model=payload.get("model"),
         mot_baseline=mot.to_baseline(payload),
     ), 201
-
-
-@bp.get("/api/dvsa-vehicles/<int:dvsa_id>/records")
-@admin_required
-def dvsa_vehicle_records(dvsa_id: int) -> ResponseReturnValue:
-    """Return every raw DVSA record for one stored snapshot (site-admin only)."""
-    with get_db() as db:
-        records = MotRepository(db).get_records_by_id(dvsa_id)
-    if records is None:
-        return jsonify(error="Not found"), 404
-    return jsonify(records), 200
 
 
 @bp.get("/api/mot/status")

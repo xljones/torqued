@@ -2,8 +2,9 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 
+from torqued import mot
 from torqued.models import Vehicle, VehicleTax, to_dict
 from torqued.repositories.base import BaseRepository
 
@@ -13,7 +14,7 @@ TAX_DUE_SOON_DAYS = 30
 
 class TaxRepository(BaseRepository):
     def get_for_vehicle(self, vehicle_id: int) -> dict[str, Any] | None:
-        """Return the stored tax snapshot for a vehicle (raw payload parsed), or None."""
+        """Return the live tax snapshot for a vehicle (raw payload parsed), or None."""
         row = self.session.scalars(
             select(VehicleTax).where(VehicleTax.vehicle_id == vehicle_id)
         ).first()
@@ -24,21 +25,72 @@ class TaxRepository(BaseRepository):
         return snapshot
 
     def clear_for_vehicle(self, vehicle_id: int) -> None:
-        """Remove the stored tax snapshot for a vehicle (plate no longer applies / replace)."""
+        """Hard-delete the stored tax snapshot for a vehicle (registration no longer applies).
+
+        Used by the vehicle disconnect flow. A plain refresh does not delete — see
+        replace_for_vehicle.
+        """
         self.session.execute(delete(VehicleTax).where(VehicleTax.vehicle_id == vehicle_id))
 
     def replace_for_vehicle(self, vehicle_id: int, payload: dict[str, Any]) -> None:
-        """Store a fresh tax lookup, replacing any previous snapshot."""
-        self.clear_for_vehicle(vehicle_id)
-        self.session.add(
-            VehicleTax(
-                vehicle_id=vehicle_id,
-                registration=payload.get("registration"),
-                tax_status=payload.get("tax_status"),
-                tax_due_date=payload.get("tax_due_date"),
-                raw_json=json.dumps(payload),
-            )
+        """Store a fresh tax lookup, keeping any previous lookup as history.
+
+        Mirrors MotRepository: rather than deleting the previous snapshot, drop its link
+        (``vehicle_id`` -> NULL) so it survives as a dated record, still tied to the vehicle
+        by its normalised registration. Detach-then-insert keeps the ``vehicle_id`` UNIQUE
+        constraint satisfied (one live row per vehicle, any number of detached ones).
+        """
+        self.session.execute(
+            update(VehicleTax)
+            .where(VehicleTax.vehicle_id == vehicle_id)
+            .values(vehicle_id=None)
         )
+        self.session.add(self._snapshot(vehicle_id, payload))
+
+    def store_detached_lookup(self, payload: dict[str, Any]) -> None:
+        """Persist a tax lookup not tied to any vehicle (``vehicle_id`` NULL).
+
+        Used by the records page to look up any registration without assigning it to a
+        vehicle; ``relink_detached`` ties it to a vehicle added on that plate later.
+        """
+        self.session.add(self._snapshot(None, payload))
+
+    @staticmethod
+    def _snapshot(vehicle_id: int | None, payload: dict[str, Any]) -> VehicleTax:
+        """Build a VehicleTax row from a tax payload (verbatim in ``raw_json``)."""
+        return VehicleTax(
+            vehicle_id=vehicle_id,
+            registration=payload.get("registration"),
+            tax_status=payload.get("tax_status"),
+            tax_due_date=payload.get("tax_due_date"),
+            raw_json=json.dumps(payload),
+        )
+
+    def relink_detached(self, vehicle_id: int, registration: str) -> bool:
+        """Retie a plate's newest detached tax record to a newly added vehicle.
+
+        Detached records (``vehicle_id`` NULL) accumulate from earlier refreshes, standalone
+        lookups, and deleted vehicles. When a vehicle takes that plate, make the newest
+        historic lookup its live snapshot (the ``vehicle_id`` FK is 1:1); older lookups stay
+        detached but remain grouped under the vehicle by registration. Only detached rows are
+        considered. Returns True if a record was relinked.
+        """
+        norm = mot.normalise_registration(registration)
+        if not norm:
+            return False
+        detached = self.session.scalars(
+            select(VehicleTax)
+            .where(
+                VehicleTax.vehicle_id.is_(None),
+                VehicleTax.registration.is_not(None),
+                func.upper(func.replace(VehicleTax.registration, " ", "")) == norm,
+            )
+            .order_by(VehicleTax.fetched_at.desc(), VehicleTax.id.desc())
+        ).first()
+        if detached is None:
+            return False
+        detached.vehicle_id = vehicle_id
+        return True
 
     def reminders(
         self,
