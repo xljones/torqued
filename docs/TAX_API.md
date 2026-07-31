@@ -49,12 +49,32 @@ row per vehicle in **`vehicle_tax`** (migration `0004`), keeping the whole paylo
 | `registration` | normalised (spaces stripped, upper-cased) |
 | `tax_status` | `Taxed` / `SORN` / `Untaxed` / `Not Taxed for on Road Use` |
 | `tax_due_date` | ISO date, or `NULL` for SORN / untaxed |
-| `raw_json` | the verbatim normalised payload |
+| `raw_json` | the **tax facet** of the VES payload (`registration`, `tax_status`, `tax_due_date`, `make`, `colour`) — the MOT facet is stored on `vehicle_mot_status`, so the two records aren't identical |
 | `fetched_at` | when it was last refreshed |
 
 Repository → [`TaxRepository`](../backend-src/torqued/repositories/tax_repository.py):
 `get_for_vehicle`, `replace_for_vehicle` (replace-on-refresh), `clear_for_vehicle` (used when
 the plate is disconnected), and `reminders`.
+
+### …and the current MOT status (same page, separate record)
+
+The `/VehicleFound` page also shows the vehicle's **current MOT status** (an `#mot-status-panel`
+with an `Expires: <date>`, and a visually-hidden `#mot_hidden_details` status sentence). This is
+distinct from the **DVSA MOT *history*** (`mot_tests`) — it's DVLA's single current-status view,
+and it's fresher than the DVSA feed for e.g. SORN vehicles the history feed lags on. So one
+`fetch_tax` call also returns `mot_status` + `mot_expiry_date`, and they're persisted as their
+own record in **`vehicle_mot_status`** (migration `0007`, same detached-record shape as
+`vehicle_tax`) via
+[`MotStatusRepository`](../backend-src/torqued/repositories/mot_status_repository.py). No extra
+request is made — it's parsed from the page already fetched.
+
+Consumers: the MOT card ([`MotCard.jsx`](../frontend-src/components/MotCard.jsx)) shows the
+**later** of the DVSA test expiry and this VES expiry, and
+[`MotRepository.reminders`](../backend-src/torqued/repositories/mot_repository.py) folds the VES
+expiry into the single `type='mot'` reminder so a fresh VES status suppresses a false "overdue"
+from stale DVSA history. Both records also appear on the admin
+[records page](../frontend-src/components/VehicleRecordsPage.jsx) (source `motstatus`, labelled
+"DVLA MOT status").
 
 ## Endpoints
 
@@ -64,7 +84,8 @@ Routes → [`torqued/routes/tax.py`](../backend-src/torqued/routes/tax.py), gate
 |---|---|---|
 | `/api/tax/status` | GET | any logged-in user — `{configured}` |
 | `/api/vehicles/<id>/tax` | GET | read access to the vehicle (404 if none) — `{configured, tax}` |
-| `/api/vehicles/<id>/tax/refresh` | POST | write access (403 readonly) — fetches live, replaces the snapshot |
+| `/api/vehicles/<id>/mot-status` | GET | read access (404 if none) — `{configured, mot_status}` (the VES MOT record) |
+| `/api/vehicles/<id>/tax/refresh` | POST | write access (403 readonly) — one VES fetch; replaces **both** the tax and MOT-status snapshots; returns `{tax, mot_status}` |
 
 `refresh` returns `400` with no registration, `503` when disabled, and relays the client's
 status (`404` unknown plate, `502` scrape failure).
@@ -153,6 +174,19 @@ Taxed"`):
 
 `tax_status` values seen / documented: `Taxed`, `SORN`, `Untaxed`, `Not Taxed for on Road Use`.
 
+**Current MOT status** lives in its own `#mot-status-panel` on the same page. `mot_status`
+comes from the visually-hidden `#mot_hidden_details` sentence; `mot_expiry_date` from the panel's
+`Expires: DD Month YYYY` (same `_parse_due_date` as tax). Both are optional — a vehicle with no
+MOT record has no panel, and `fetch_tax` leaves them `None` rather than failing:
+
+```html
+<div class="… govuk-panel--fixed-height" id="mot-status-panel">
+  <h2 class="govuk-panel__title …"><span aria-hidden="true"> ✓ MOT </span>
+    <span class="govuk-visually-hidden" id="mot_hidden_details"> Vehicle <REG> has a valid MOT certificate </span></h2>
+  <div class="govuk-panel__body …"> … Expires: 29 July 2027 … </div>
+</div>
+```
+
 ## Failure modes → symptom → what changed / where to fix
 
 | Symptom (error relayed to the UI) | Most likely cause | Fix in `tax.py` |
@@ -163,6 +197,7 @@ Taxed"`):
 | `502 Could not read the vehicle tax status` | result page restructured; `#vehicleStatus` row/`<dd>` changed | `_field(found_html, "vehicleStatus", value_tag="dd")` |
 | values carry a label prefix (e.g. `"Vehicle make VOLKSWAGEN"`) | the `id` moved onto the `<dd>`, or the value tag isn't `<dd>` anymore | the `value_tag` args in `fetch_tax` / `_FieldParser` |
 | `tax_due_date` always `null` for a taxed vehicle | date text moved out of `#tax-status-panel`, or the format isn't `DD Month YYYY` | `_parse_due_date` (regex + `_MONTHS`) and which element it reads |
+| `mot_status` / `mot_expiry_date` always `null` (MOT tile falls back to DVSA-only) | MOT panel restructured / renamed | `_field(found_html, "mot_hidden_details")` and `_parse_due_date(_field(found_html, "mot-status-panel"))` — are those ids still present? (never fatal: MOT is best-effort) |
 | everything `502`, or works locally but not in prod | WAF blocking (UA rejected, rate-limited, IP blocked) or the site is down | `_UA`; reduce request volume; confirm the page loads in a normal browser first |
 
 Note `_request` maps **any** HTTP error or network exception to `TaxError(502)` — so a `502`
@@ -223,8 +258,10 @@ plain dict. To swap:
 
 1. Replace the body of `fetch_tax` with a VES API call (`POST /vehicle-enquiry/v1/vehicles`,
    `x-api-key` header, `{registrationNumber}` body) that returns the **same keys**:
-   `registration`, `tax_status`, `tax_due_date` (ISO or `None`), `make`, `colour`. VES fields:
-   `taxStatus`, `taxDueDate`, `make`, `colour`.
+   `registration`, `tax_status`, `tax_due_date` (ISO or `None`), `mot_status`,
+   `mot_expiry_date` (ISO or `None`), `make`, `colour`. VES fields map 1:1: `taxStatus`,
+   `taxDueDate`, `motStatus`, `motExpiryDate`, `make`, `colour` — so the MOT-status record
+   swaps over with the tax record, no downstream change.
 2. Point `is_configured()` at the API key env var instead of `VES_SCRAPE_ENABLED`.
 3. Delete the scraper helpers (`_TokenParser`, `_FieldParser`, `_request`, `_extract_token`,
    `_field`, `_parse_due_date`) and their tests; the repository/route/UI tests are unaffected.
