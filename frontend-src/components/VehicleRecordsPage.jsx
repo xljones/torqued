@@ -13,18 +13,16 @@ const normReg = r => (r ?? '').replace(/\s+/g, '').toLowerCase();
 
 const SOURCE_LABEL = {
   dvsa: 'DVSA record',
-  tax: 'DVLA tax record',
-  motstatus: 'DVLA MOT status',
+  ves: 'DVLA record (VES)',
 };
 
-// One record's summary line in the expanded view — make/model for DVSA, tax status for tax,
-// MOT status/expiry for the DVLA MOT-status record.
+// One record's summary line in the expanded view — make/model for DVSA; tax + MOT status
+// for the DVLA VES record.
 function recordSummary(r) {
   let head;
-  if (r.source === 'tax') {
-    head = r.tax_status || 'Tax';
-  } else if (r.source === 'motstatus') {
-    head = r.mot_expiry_date ? `MOT until ${r.mot_expiry_date}` : (r.mot_status || 'MOT status');
+  if (r.source === 'ves') {
+    const bits = [r.tax_status, r.mot_expiry_date ? `MOT to ${r.mot_expiry_date}` : null].filter(Boolean);
+    head = bits.join(' · ') || 'DVLA';
   } else {
     head = [r.make, r.model].filter(Boolean).join(' ') || '—';
   }
@@ -35,8 +33,7 @@ function recordSummary(r) {
 function recordCountLabel(v) {
   const parts = [
     [v.dvsa_count, 'DVSA'],
-    [v.tax_count, 'tax'],
-    [v.motstatus_count, 'MOT'],
+    [v.ves_count, 'DVLA'],
   ].filter(([n]) => n);
   const split = parts.length > 1 ? ` (${parts.map(([n, label]) => `${n} ${label}`).join(', ')})` : '';
   return `${plural(v.record_count, 'record')}${split}`;
@@ -83,7 +80,7 @@ function RecordRow({ v, defaultOpen = false, onRefreshed }) {
     try {
       if (v.vehicle_id != null) {
         // Refresh both sources independently so one failing doesn't block the other.
-        await Promise.allSettled([api.refreshMot(v.vehicle_id), api.refreshTax(v.vehicle_id)]);
+        await Promise.allSettled([api.refreshMot(v.vehicle_id), api.refreshVes(v.vehicle_id)]);
       } else {
         await api.lookupVehicleRecord(v.registration);
       }
@@ -197,7 +194,7 @@ export default function VehicleRecordsPage() {
     // The Find form appears when either source can be queried.
     Promise.all([
       api.getMotStatus().then(s => s.configured).catch(() => false),
-      api.getTaxStatus().then(s => s.configured).catch(() => false),
+      api.getVesStatus().then(s => s.configured).catch(() => false),
     ]).then(([mot, tax]) => setCanLookup(mot || tax));
   }, []);
 
@@ -249,7 +246,7 @@ export default function VehicleRecordsPage() {
         {data && (
           <span className="meta">
             {plural(data.total, 'vehicle')}, {plural(data.total_records, 'record')}
-            {' '}({data.total_dvsa} DVSA, {data.total_tax} tax, {data.total_motstatus} MOT)
+            {' '}({data.total_dvsa} DVSA, {data.total_ves} DVLA)
           </span>
         )}
       </div>

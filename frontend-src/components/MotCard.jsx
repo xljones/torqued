@@ -82,26 +82,24 @@ function TestRow({ test, unit }) {
 export default function MotCard({ vehicle, ro, onSynced }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [tax, setTax] = useState(null);
-  // DVLA VES current-MOT-status snapshot (status + expiry), scraped alongside tax. Used to
-  // correct a stale DVSA history (e.g. SORN vehicles the DVSA feed lags on).
-  const [motStatus, setMotStatus] = useState(null);
+  // DVLA VES snapshot: one lookup holding tax + MOT status + the full vehicle profile.
+  // Used (among other things) to correct a stale DVSA history (e.g. SORN vehicles).
+  const [ves, setVes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
   // Clicking a status tile expands its record(s) below; only one is open at a time — the MOT
-  // side (DVSA record + DVLA MOT-status record) or the DVLA tax record.
+  // side (DVSA record + DVLA VES record) or the tax side (the DVLA VES record).
   const [openRecord, setOpenRecord] = useState(null);  // 'mot' | 'tax' | null
   const toggleRecord = which => setOpenRecord(cur => (cur === which ? null : which));
 
   const load = useCallback(() => {
     api.getMot(vehicle.id).then(setData);
-    api.getTax(vehicle.id).then(setTax);
-    api.getVehicleMotStatus(vehicle.id).then(setMotStatus);
+    api.getVes(vehicle.id).then(setVes);
   }, [vehicle.id]);
   useEffect(load, [load]);
 
   const motConfigured = data?.configured;
-  const taxConfigured = tax?.configured;
+  const vesConfigured = ves?.configured;
 
   async function handleRefresh() {
     setBusy(true);
@@ -110,8 +108,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
       // unknown plate at the DVLA) doesn't block the other.
       const jobs = [];
       if (motConfigured) jobs.push(api.refreshMot(vehicle.id).then(setData));
-      // One VES refresh returns both the tax and the current MOT-status records.
-      if (taxConfigured) jobs.push(api.refreshTax(vehicle.id).then(r => { setTax(r); setMotStatus(r); }));
+      if (vesConfigured) jobs.push(api.refreshVes(vehicle.id).then(setVes));
       const failure = (await Promise.allSettled(jobs)).find(r => r.status === 'rejected');
       toast(
         failure ? (failure.reason?.message ?? 'Refresh failed') : 'MOT & tax refreshed',
@@ -124,27 +121,25 @@ export default function MotCard({ vehicle, ro, onSynced }) {
   }
 
   const mot = data?.mot;
-  const taxInfo = tax?.tax;
-  const motStatusInfo = motStatus?.mot_status;
-  if (!data && !tax && !motStatus) return null;
-  if (!vehicle.registration && !mot && !taxInfo && !motStatusInfo) return null;
+  const vesInfo = ves?.ves;
+  if (!data && !ves) return null;
+  if (!vehicle.registration && !mot && !vesInfo) return null;
 
   const tests = mot?.tests ?? [];
   const latest = tests[0];
   // The DVSA history feed lags (e.g. for SORN vehicles), so fold in the DVLA VES current
   // status: the governing expiry is the later of the DVSA test expiry and the VES expiry.
   const dvsaExpiry = latest?.expiry_date ?? mot?.mot_test_due_date;
-  const vesExpiry = motStatusInfo?.mot_expiry_date;
+  const vesExpiry = vesInfo?.mot_expiry_date;
   const expiry = [dvsaExpiry, vesExpiry].filter(Boolean).sort().at(-1);  // ISO → max
   // When the VES expiry governs (later than, or present without, a DVSA test), a newer pass
   // exists per the DVLA, so a stale DVSA "failed" latest test no longer applies.
   const vesGoverns = !!vesExpiry && (!dvsaExpiry || vesExpiry >= dvsaExpiry);
-  const taxStatusLc = (taxInfo?.tax_status || '').toLowerCase();
+  const taxStatusLc = (vesInfo?.tax_status || '').toLowerCase();
   const taxed = taxStatusLc === 'taxed';
   // When a vehicle is untaxed (but not deliberately SORN'd) and we happen to have a date,
-  // it's the date the tax lapsed. Our gov.uk scrape doesn't provide this, but the VES API
-  // would — so surface it when present, like the MOT "Expired <date>" line.
-  const taxLapsedDate = taxInfo && !taxed && taxStatusLc !== 'sorn' ? taxInfo.tax_due_date : null;
+  // it's the date the tax lapsed — surface it like the MOT "Expired <date>" line.
+  const taxLapsedDate = vesInfo && !taxed && taxStatusLc !== 'sorn' ? vesInfo.tax_due_date : null;
   const failed = !!latest && (latest.test_result || '').toUpperCase() !== 'PASSED' && !vesGoverns;
   const expired = !!expiry && isPast(expiry);
   const motValid = !!expiry && !expired && !failed;  // a current, passed MOT
@@ -158,46 +153,46 @@ export default function MotCard({ vehicle, ro, onSynced }) {
       : dvsaExpiry ? 'DVSA only'
       : null;
   // The MOT tile expands to its records only when there's a record to show.
-  const motHasRecord = !!mot || !!motStatusInfo;
+  const motHasRecord = !!mot || !!vesInfo;
   const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 10);
 
-  // Header refresh time. MOT and tax carry independent fetched_at stamps; they normally
-  // refresh together, so collapse to one label when within 2 min of each other (or when
-  // only one source is present) and split them out when they genuinely differ.
+  // Header refresh time. The DVSA and DVLA sources carry independent fetched_at stamps; they
+  // normally refresh together, so collapse to one label when within 2 min of each other (or
+  // when only one source is present) and split them out when they genuinely differ.
   const motFetchedAt = mot?.fetched_at;
-  const taxFetchedAt = taxInfo?.fetched_at;
+  const vesFetchedAt = vesInfo?.fetched_at;
   const motTs = parseTs(motFetchedAt);
-  const taxTs = parseTs(taxFetchedAt);
-  const oneRefresh = !motTs || !taxTs || Math.abs(motTs - taxTs) < 120_000;
-  const latestFetchedAt = motTs && (!taxTs || motTs >= taxTs) ? motFetchedAt : taxFetchedAt;
+  const vesTs = parseTs(vesFetchedAt);
+  const oneRefresh = !motTs || !vesTs || Math.abs(motTs - vesTs) < 120_000;
+  const latestFetchedAt = motTs && (!vesTs || motTs >= vesTs) ? motFetchedAt : vesFetchedAt;
 
   return (
     <div className="card card-body mb-6">
       <div className="section-header">
         <div className="mot-header-left">
           <h2 className="section-title">MOT &amp; tax</h2>
-          {(mot || taxInfo) && (
+          {(mot || vesInfo) && (
             <span className="mot-reauth text-muted text-sm">
               <span className="mot-reauth-dot" aria-hidden="true">•</span>{' '}
               {oneRefresh
                 ? <>refreshed <RelativeTime value={latestFetchedAt} /></>
-                : <>MOT refreshed <RelativeTime value={motFetchedAt} />, tax <RelativeTime value={taxFetchedAt} /></>}
+                : <>MOT refreshed <RelativeTime value={motFetchedAt} />, DVLA <RelativeTime value={vesFetchedAt} /></>}
             </span>
           )}
         </div>
-        {!ro && (motConfigured || taxConfigured) && (
+        {!ro && (motConfigured || vesConfigured) && (
           <button className="btn btn-secondary btn-sm" onClick={handleRefresh} disabled={busy}>
-            {busy ? 'Refreshing…' : (mot || taxInfo) ? 'Refresh from DVSA & DVLA' : 'Fetch from DVSA & DVLA'}
+            {busy ? 'Refreshing…' : (mot || vesInfo) ? 'Refresh from DVSA & DVLA' : 'Fetch from DVSA & DVLA'}
           </button>
         )}
       </div>
 
       {/* Core info: MOT (left) | tax (right), side by side. Each tile is a button that
           expands its underlying record(s) below — no separate record buttons. */}
-      {(mot || taxInfo || motStatusInfo) && (
+      {(mot || vesInfo) && (
         <div className="motax-primary">
-          {(mot || motStatusInfo) && (
+          {(mot || vesInfo) && (
             <div
               className={`pressure-tile ${motTileClass}${motHasRecord ? ' dvsa-record-tile' : ''}${openRecord === 'mot' ? ' dvsa-record-tile--open' : ''}`}
               {...(motHasRecord && {
@@ -225,9 +220,9 @@ export default function MotCard({ vehicle, ro, onSynced }) {
               {motAgreement && <div className="pressure-alt text-muted text-sm">{motAgreement}</div>}
             </div>
           )}
-          {taxInfo && (
+          {vesInfo && (
             <div
-              className={`pressure-tile ${tileClass(taxTone(taxInfo.tax_status))} dvsa-record-tile${openRecord === 'tax' ? ' dvsa-record-tile--open' : ''}`}
+              className={`pressure-tile ${tileClass(taxTone(vesInfo.tax_status))} dvsa-record-tile${openRecord === 'tax' ? ' dvsa-record-tile--open' : ''}`}
               role="button"
               tabIndex={0}
               onClick={() => toggleRecord('tax')}
@@ -241,12 +236,12 @@ export default function MotCard({ vehicle, ro, onSynced }) {
               </div>
               <div className="pressure-value">
                 {taxed
-                  ? (taxInfo.tax_due_date ? <>Due <RelativeTime value={taxInfo.tax_due_date} /></> : 'Taxed')
-                  : (taxInfo.tax_status || '—')}
+                  ? (vesInfo.tax_due_date ? <>Due <RelativeTime value={vesInfo.tax_due_date} /></> : 'Taxed')
+                  : (vesInfo.tax_status || '—')}
               </div>
               <div className="pressure-alt">
                 {taxed
-                  ? (taxInfo.tax_due_date || '—')
+                  ? (vesInfo.tax_due_date || '—')
                   : taxLapsedDate ? `Expired ${taxLapsedDate}` : '—'}
               </div>
             </div>
@@ -254,13 +249,13 @@ export default function MotCard({ vehicle, ro, onSynced }) {
         </div>
       )}
 
-      {/* DVLA tax record — expanded from the tax tile above. */}
-      {openRecord === 'tax' && taxInfo && (
-        <DvsaRecordPanel raw={taxInfo.raw} className="mt-2" />
+      {/* DVLA VES record — expanded from the tax tile above (the whole DVLA snapshot). */}
+      {openRecord === 'tax' && vesInfo && (
+        <DvsaRecordPanel raw={vesInfo.raw} className="mt-2" />
       )}
 
-      {/* MOT records — expanded from the MOT tile: the DVSA test history record AND the DVLA
-          VES current-status record, side by side, so the user can compare both sources. */}
+      {/* MOT records — expanded from the MOT tile: the DVSA test-history record AND the DVLA
+          VES record, so the user can compare both MOT sources. */}
       {openRecord === 'mot' && motHasRecord && (
         <div className="mt-2">
           {mot && (
@@ -272,10 +267,10 @@ export default function MotCard({ vehicle, ro, onSynced }) {
               <DvsaRecordPanel raw={mot.raw} className="mt-1" />
             </>
           )}
-          {motStatusInfo && (
+          {vesInfo && (
             <>
-              <div className="pressure-label mt-3">DVLA MOT status</div>
-              <DvsaRecordPanel raw={motStatusInfo.raw} className="mt-1" />
+              <div className="pressure-label mt-3">DVLA record (VES)</div>
+              <DvsaRecordPanel raw={vesInfo.raw} className="mt-1" />
             </>
           )}
         </div>

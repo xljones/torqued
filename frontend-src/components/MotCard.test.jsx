@@ -11,9 +11,8 @@ vi.mock('../api.js', () => ({
   api: {
     getMot: vi.fn(),
     refreshMot: vi.fn(),
-    getTax: vi.fn(),
-    refreshTax: vi.fn(),
-    getVehicleMotStatus: vi.fn(),
+    getVes: vi.fn(),
+    refreshVes: vi.fn(),
   },
 }));
 
@@ -45,18 +44,22 @@ const mot = {
   ],
 };
 
-const tax = {
+// One DVLA VES snapshot: tax + MOT status + the vehicle profile, all in `raw`.
+const ves = {
   registration: 'A1XYZ', tax_status: 'Taxed', tax_due_date: '2026-12-01',
+  mot_status: null, mot_expiry_date: null, make: 'FORD', colour: 'Blue',
   fetched_at: '2026-06-11 12:00:00',
-  raw: { registration: 'A1XYZ', tax_status: 'Taxed' },
+  raw: {
+    registration: 'A1XYZ', tax_status: 'Taxed', tax_due_date: '2026-12-01',
+    make: 'FORD', cylinder_capacity: '1781 cc',
+  },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: tax + MOT-status enabled but nothing stored, so the MOT-only tests are unaffected.
-  api.getTax.mockResolvedValue({ configured: true, tax: null });
-  api.refreshTax.mockResolvedValue({ configured: true, tax: null, mot_status: null });
-  api.getVehicleMotStatus.mockResolvedValue({ configured: true, mot_status: null });
+  // Default: VES enabled but nothing stored, so the MOT-only tests are unaffected.
+  api.getVes.mockResolvedValue({ configured: true, ves: null });
+  api.refreshVes.mockResolvedValue({ configured: true, ves: null });
 });
 
 describe('MotCard', () => {
@@ -78,7 +81,7 @@ describe('MotCard', () => {
 
   it('shows the dev env-var hint and hides the button when nothing is configured', async () => {
     api.getMot.mockResolvedValue({ configured: false, mot: null });
-    api.getTax.mockResolvedValue({ configured: false, tax: null });
+    api.getVes.mockResolvedValue({ configured: false, ves: null });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
       expect(screen.getByText(/credentials are not configured/)).toBeInTheDocument();
@@ -90,7 +93,7 @@ describe('MotCard', () => {
   it('shows a generic message in production when nothing is configured', async () => {
     vi.stubEnv('DEV', false);
     api.getMot.mockResolvedValue({ configured: false, mot: null });
-    api.getTax.mockResolvedValue({ configured: false, tax: null });
+    api.getVes.mockResolvedValue({ configured: false, ves: null });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => {
       expect(screen.getByText('MOT history is unavailable right now.')).toBeInTheDocument();
@@ -178,9 +181,9 @@ describe('MotCard', () => {
     // DVSA's newest test lapsed long ago, but the DVLA VES status shows a valid future MOT.
     const stale = { ...mot, tests: [{ ...mot.tests[0], expiry_date: '2023-07-15' }] };
     api.getMot.mockResolvedValue({ configured: true, mot: stale });
-    api.getVehicleMotStatus.mockResolvedValue({
+    api.getVes.mockResolvedValue({
       configured: true,
-      mot_status: { mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
+      ves: { ...ves, mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
@@ -188,62 +191,61 @@ describe('MotCard', () => {
     const tile = screen.getByText('MOT').closest('.pressure-tile');
     expect(tile).not.toHaveClass('pressure-tile--danger'); // not shown as expired
     expect(tile.textContent).toMatch(/2027-07-29/);
-    // The two sources disagree (DVSA 2023 vs DVLA 2027) → the tile says so, and notes we
-    // show the latest.
+    // The two sources disagree (DVSA 2023 vs DVLA 2027) → the tile says so, noting the latest.
     expect(tile.textContent).toMatch(/DVSA & DVLA differ/);
   });
 
   it('notes when the DVSA and DVLA MOT dates agree', async () => {
     const agreeing = { ...mot, tests: [{ ...mot.tests[0], expiry_date: '2027-07-29' }] };
     api.getMot.mockResolvedValue({ configured: true, mot: agreeing });
-    api.getVehicleMotStatus.mockResolvedValue({
+    api.getVes.mockResolvedValue({
       configured: true,
-      mot_status: { mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
+      ves: { ...ves, mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
     expect(screen.getByText('MOT').closest('.pressure-tile').textContent).toMatch(/DVSA & DVLA agree/);
   });
 
-  it('refreshes both MOT and tax and reports synced readings', async () => {
+  it('refreshes both MOT and DVLA and reports synced readings', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
     api.refreshMot.mockResolvedValue({ configured: true, mot });
-    api.refreshTax.mockResolvedValue({ configured: true, tax, mot_status: null });
+    api.refreshVes.mockResolvedValue({ configured: true, ves });
     const onSynced = vi.fn();
     render(<MotCard vehicle={vehicle} ro={false} onSynced={onSynced} />);
     await waitFor(() => expect(screen.getByText('Refresh from DVSA & DVLA')).toBeInTheDocument());
     await userEvent.click(screen.getByText('Refresh from DVSA & DVLA'));
     await waitFor(() => {
       expect(api.refreshMot).toHaveBeenCalledWith(1);
-      expect(api.refreshTax).toHaveBeenCalledWith(1);
+      expect(api.refreshVes).toHaveBeenCalledWith(1);
       expect(onSynced).toHaveBeenCalled();
     });
   });
 
-  it('shows one refreshed time when MOT and tax were refreshed together', async () => {
-    // Fixture mot + tax share the same fetched_at → collapse to a single label.
+  it('shows one refreshed time when MOT and DVLA were refreshed together', async () => {
+    // Fixture mot + ves share the same fetched_at → collapse to a single label.
     api.getMot.mockResolvedValue({ configured: true, mot });
-    api.getTax.mockResolvedValue({ configured: true, tax });
+    api.getVes.mockResolvedValue({ configured: true, ves });
     const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(container.querySelector('.mot-reauth')).toBeInTheDocument());
     expect(container.querySelector('.mot-reauth').textContent).toMatch(/refreshed/);
     expect(container.querySelector('.mot-reauth').textContent).not.toMatch(/MOT refreshed/);
   });
 
-  it('splits the refreshed times when MOT and tax differ', async () => {
+  it('splits the refreshed times when MOT and DVLA differ', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot }); // fetched 2026-06-11
-    api.getTax.mockResolvedValue({
-      configured: true, tax: { ...tax, fetched_at: '2026-01-01 09:00:00' },
+    api.getVes.mockResolvedValue({
+      configured: true, ves: { ...ves, fetched_at: '2026-01-01 09:00:00' },
     });
     const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(container.querySelector('.mot-reauth')).toBeInTheDocument());
     expect(container.querySelector('.mot-reauth').textContent).toMatch(/MOT refreshed/);
-    expect(container.querySelector('.mot-reauth').textContent).toMatch(/tax/);
+    expect(container.querySelector('.mot-reauth').textContent).toMatch(/DVLA/);
   });
 
-  it('shows the refreshed time from tax alone when there is no MOT data', async () => {
+  it('shows the refreshed time from DVLA alone when there is no MOT data', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot: null });
-    api.getTax.mockResolvedValue({ configured: true, tax });
+    api.getVes.mockResolvedValue({ configured: true, ves });
     const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(container.querySelector('.mot-reauth')).toBeInTheDocument());
     expect(container.querySelector('.mot-reauth').textContent).toMatch(/refreshed/);
@@ -273,31 +275,27 @@ describe('MotCard', () => {
     expect(screen.getByText('completedDate')).toBeInTheDocument();
   });
 
-  it('expands each record from its status tile, one at a time', async () => {
+  it('expands the DVSA record only from the MOT tile, VES record from either', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
-    api.getTax.mockResolvedValue({ configured: true, tax });
+    api.getVes.mockResolvedValue({ configured: true, ves });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('Taxed')).toBeInTheDocument());
 
-    // Clicking the tax tile reveals the DVLA tax record's raw fields.
+    // The tax tile expands the VES record (its raw fields), without the DVSA record.
     await userEvent.click(screen.getByText('Taxed').closest('.pressure-tile'));
-    expect(screen.getByText('tax_status')).toBeInTheDocument();
+    expect(screen.getByText('cylinder_capacity')).toBeInTheDocument();
+    expect(screen.queryByText('motTests')).not.toBeInTheDocument();
 
-    // Clicking the MOT tile shows the DVSA record and closes the tax record (one at a time).
+    // The MOT tile shows the DVSA record too (one tile open at a time).
     await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
     expect(screen.getByText('motTests')).toBeInTheDocument();
-    expect(screen.queryByText('tax_status')).not.toBeInTheDocument();
   });
 
-  it('expanding the MOT tile shows both the DVSA record and the DVLA MOT status', async () => {
+  it('expanding the MOT tile shows both the DVSA record and the DVLA VES record', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot });
-    api.getVehicleMotStatus.mockResolvedValue({
+    api.getVes.mockResolvedValue({
       configured: true,
-      mot_status: {
-        mot_status: 'valid MOT certificate',
-        mot_expiry_date: '2027-07-29',
-        raw: { registration: 'A1XYZ', mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
-      },
+      ves: { ...ves, mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29' },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
@@ -305,9 +303,9 @@ describe('MotCard', () => {
     await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
     // Both record sources are shown together under the one tile.
     expect(screen.getByText(/DVSA record/)).toBeInTheDocument();
-    expect(screen.getByText('DVLA MOT status')).toBeInTheDocument();
-    expect(screen.getByText('motTests')).toBeInTheDocument();       // DVSA raw
-    expect(screen.getAllByText('mot_expiry_date').length).toBeGreaterThan(0); // VES raw
+    expect(screen.getByText('DVLA record (VES)')).toBeInTheDocument();
+    expect(screen.getByText('motTests')).toBeInTheDocument();          // DVSA raw
+    expect(screen.getAllByText('cylinder_capacity').length).toBeGreaterThan(0); // VES raw
   });
 
   it('shows up to 10 MOT tests before the "show all" button appears', async () => {
@@ -332,11 +330,11 @@ describe('MotCard', () => {
     expect(screen.queryByText('Refresh from DVSA & DVLA')).not.toBeInTheDocument();
   });
 
-  // ── tax ────────────────────────────────────────────────────────────────────
+  // ── tax (from the VES snapshot) ──────────────────────────────────────────────
 
   it('shows tax status and due date in one tile, green when taxed', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot: null });
-    api.getTax.mockResolvedValue({ configured: true, tax });
+    api.getVes.mockResolvedValue({ configured: true, ves });
     render(<MotCard vehicle={vehicle} ro={false} />);
     // When taxed the label carries the status; the value shows "Due <relative>" and the
     // exact due date sits on the bottom line.
@@ -349,8 +347,8 @@ describe('MotCard', () => {
 
   it('colours a SORN vehicle amber with no due date', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot: null });
-    api.getTax.mockResolvedValue({
-      configured: true, tax: { ...tax, tax_status: 'SORN', tax_due_date: null },
+    api.getVes.mockResolvedValue({
+      configured: true, ves: { ...ves, tax_status: 'SORN', tax_due_date: null },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
@@ -363,8 +361,8 @@ describe('MotCard', () => {
 
   it('colours an untaxed vehicle red', async () => {
     api.getMot.mockResolvedValue({ configured: true, mot: null });
-    api.getTax.mockResolvedValue({
-      configured: true, tax: { ...tax, tax_status: 'Untaxed', tax_due_date: null },
+    api.getVes.mockResolvedValue({
+      configured: true, ves: { ...ves, tax_status: 'Untaxed', tax_due_date: null },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());
@@ -373,10 +371,9 @@ describe('MotCard', () => {
   });
 
   it('shows when tax lapsed for an untaxed vehicle that carries a date', async () => {
-    // The gov.uk scrape leaves this null, but the VES API would supply it — show it when present.
     api.getMot.mockResolvedValue({ configured: true, mot: null });
-    api.getTax.mockResolvedValue({
-      configured: true, tax: { ...tax, tax_status: 'Untaxed', tax_due_date: '2024-03-01' },
+    api.getVes.mockResolvedValue({
+      configured: true, ves: { ...ves, tax_status: 'Untaxed', tax_due_date: '2024-03-01' },
     });
     render(<MotCard vehicle={vehicle} ro={false} />);
     await waitFor(() => expect(screen.getByText('Tax status')).toBeInTheDocument());

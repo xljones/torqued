@@ -18,7 +18,7 @@ vi.mock('../api.js', () => ({
     getVehicle: vi.fn(),
     createVehicle: vi.fn(),
     refreshMot: vi.fn(),
-    refreshTax: vi.fn(),
+    refreshVes: vi.fn(),
     updateVehicle: vi.fn(),
   },
 }));
@@ -48,7 +48,7 @@ function renderEdit() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.refreshTax.mockResolvedValue({ configured: true, tax: null });
+  api.refreshVes.mockResolvedValue({ configured: true, ves: null });
 });
 
 describe('VehicleForm DVSA lookup', () => {
@@ -190,7 +190,7 @@ describe('VehicleForm DVSA lookup', () => {
     await waitFor(() => {
       expect(api.createVehicle).toHaveBeenCalled();
       expect(api.refreshMot).toHaveBeenCalledWith(42);
-      expect(api.refreshTax).toHaveBeenCalledWith(42);
+      expect(api.refreshVes).toHaveBeenCalledWith(42);
     });
   });
 });

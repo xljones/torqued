@@ -209,14 +209,14 @@ export default function VehicleForm({ mode }) {
         // against the now-saved plate so the detail page shows the new MOT and tax data.
         if (shouldClear) body.disconnect_mot = true;
         await api.updateVehicle(id, body);
-        if (needRefresh) await Promise.allSettled([api.refreshMot(id), api.refreshTax(id)]);
+        if (needRefresh) await Promise.allSettled([api.refreshMot(id), api.refreshVes(id)]);
         toast('Vehicle updated');
         navigate(`/vehicles/${id}`);
       } else {
         const v = await api.createVehicle({ ...body, garage_id: currentGarage.id });
         // Fetch + store MOT history and tax status for the new plate so the detail page is ready.
         if (form.registration.trim()) {
-          await Promise.allSettled([api.refreshMot(v.id), api.refreshTax(v.id)]);
+          await Promise.allSettled([api.refreshMot(v.id), api.refreshVes(v.id)]);
         }
         toast('Vehicle added');
         navigate(`/vehicles/${v.id}`);
