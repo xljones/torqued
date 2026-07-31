@@ -38,16 +38,15 @@ def records_for(source: str, row_id: int) -> ResponseReturnValue:
 def create_lookup() -> ResponseReturnValue:
     """Look up any registration at the DVSA and DVLA and persist both, unassigned.
 
-    Each configured source is fetched independently so one failing (e.g. an unknown plate
-    at one service) doesn't block the other; the record is stored detached and relinks to a
-    vehicle added on this plate later. 503 only when neither source is configured; a
-    per-source failure is reported without discarding the source that succeeded.
+    Each source is fetched independently so one failing (e.g. an unknown plate at one
+    service) doesn't block the other; the record is stored detached and relinks to a
+    vehicle added on this plate later. DVSA is fetched only when its API credentials are
+    configured; DVLA VES is a credential-less scrape and is always attempted. A per-source
+    failure is reported without discarding the source that succeeded.
     """
     registration = ((request.json or {}).get("registration") or "").strip()
     if not registration:
         return jsonify(error="registration is required"), 400
-    if not mot.is_configured() and not ves.is_configured():
-        return jsonify(error="DVSA and DVLA lookups are not configured"), 503
 
     saved: dict[str, dict[str, object] | None] = {"dvsa": None, "ves": None}
     errors: list[str] = []
@@ -58,11 +57,10 @@ def create_lookup() -> ResponseReturnValue:
         except mot.MotError as e:
             errors.append(f"DVSA: {e}")
     ves_payload = None
-    if ves.is_configured():
-        try:
-            ves_payload = ves.fetch_ves(registration)
-        except ves.VesError as e:
-            errors.append(f"DVLA: {e}")
+    try:
+        ves_payload = ves.fetch_ves(registration)
+    except ves.VesError as e:
+        errors.append(f"DVLA: {e}")
 
     if dvsa_payload is None and ves_payload is None:
         # Both configured sources failed (e.g. unknown plate) — relay the errors.

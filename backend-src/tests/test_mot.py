@@ -92,6 +92,14 @@ def test_is_configured(monkeypatch: pytest.MonkeyPatch, mot_env: None) -> None:
     assert mot.is_configured() is False
 
 
+def test_effective_endpoint(mot_env: None) -> None:
+    ep = mot.effective_endpoint()
+    assert ep["configured"] is True
+    assert ep["url"] == mot.API_BASE
+    # No secrets or the token URL leak into the admin-facing payload.
+    assert set(ep) == {"configured", "url"}
+
+
 def test_normalise_registration() -> None:
     assert mot.normalise_registration("a1 xyz") == "A1XYZ"
 

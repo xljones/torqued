@@ -236,7 +236,6 @@ def both_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MOT_CLIENT_SECRET", "secret")
     monkeypatch.setenv("MOT_TOKEN_URL", "https://login.example/token")
     monkeypatch.setenv("MOT_API_KEY", "key")
-    monkeypatch.delenv("VES_SCRAPE_ENABLED", raising=False)
 
 
 def test_create_lookup_requires_admin(auth_client: FlaskClient) -> None:
@@ -245,15 +244,6 @@ def test_create_lookup_requires_admin(auth_client: FlaskClient) -> None:
 
 def test_create_lookup_requires_registration(admin_client: FlaskClient) -> None:
     assert admin_client.post("/api/vehicle-records", json={}).status_code == 400
-
-
-def test_create_lookup_unconfigured(
-    admin_client: FlaskClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(mot, "is_configured", lambda: False)
-    monkeypatch.setattr(ves, "is_configured", lambda: False)
-    r = admin_client.post("/api/vehicle-records", json={"registration": "A1XYZ"})
-    assert r.status_code == 503
 
 
 def test_create_lookup_saves_both(
@@ -317,13 +307,13 @@ def test_create_lookup_both_fail_is_404(
     assert "No vehicle found" in r.json["error"]
 
 
-def test_create_lookup_only_dvsa_configured(
+def test_create_lookup_only_ves_when_mot_unconfigured(
     admin_client: FlaskClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(ves, "is_configured", lambda: False)
-    monkeypatch.setattr(mot, "is_configured", lambda: True)
-    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: SAMPLE)
+    # DVSA needs credentials; when they're absent, only the always-available VES runs.
+    monkeypatch.setattr(mot, "is_configured", lambda: False)
+    monkeypatch.setattr(ves, "fetch_ves", lambda reg: TAX_PAYLOAD)
     r = admin_client.post("/api/vehicle-records", json={"registration": "A1XYZ"})
     assert r.status_code == 201
-    assert r.json["saved"]["dvsa"] is not None
-    assert r.json["saved"]["ves"] is None
+    assert r.json["saved"]["dvsa"] is None
+    assert r.json["saved"]["ves"] is not None
