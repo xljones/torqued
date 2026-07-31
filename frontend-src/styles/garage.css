@@ -100,7 +100,7 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .badge-due_soon { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
 .badge-upcoming { background: var(--tint-ok-bg); color: var(--tint-ok-fg); }
 .reg-plate {
-  display: inline-block; line-height: 1;
+  display: inline-block; line-height: 1; position: relative; /* anchor the [data-tooltip] bubble */
   font-family: 'Charles Wright', 'Courier New', monospace; font-size: 12px; font-weight: bold;
   background: #fdd835; border: 1px solid #c6a700; color: #000;
   padding: 4px 6px 2px; border-radius: 4px; white-space: nowrap;

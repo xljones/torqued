@@ -16,7 +16,7 @@ import { KIND_LABELS, REMINDER_LABELS, ScheduleKind } from '../constants.js';
 import ScheduleForm, { EMPTY_SCHEDULE } from './ScheduleForm.jsx';
 import { scheduleTitle, scheduleInterval } from '../schedules.js';
 import { overdueBy } from '../reminders.js';
-import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, fromKm, toKm } from '../units.js';
+import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, formatReg, fromKm, toKm } from '../units.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
 const SOURCE_LABEL = { manual: 'Manual', mot: 'MOT', service: 'Service' };
@@ -539,7 +539,7 @@ export default function VehicleDetail() {
                         {f('make', v.make || '—', 'make')}
                         {f('model', v.model || '—', 'model')}
                         {f('year', v.year ?? '—', 'year')}
-                        {f('plate', v.registration || '—', 'registration')}
+                        {f('plate', formatReg(v.registration) || '—', 'registration')}
                         {f('front psi', v.tyre_pressure_front_psi ?? '—', 'tyre_pressure_front_psi')}
                         {f('rear psi', v.tyre_pressure_rear_psi ?? '—', 'tyre_pressure_rear_psi')}
                         {f('notes', v.notes || '—', 'notes')}

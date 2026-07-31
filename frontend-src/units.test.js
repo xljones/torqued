@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   toKm, fromKm, psiToBar, barToPsi,
   fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval,
-  fmtPressure, fmtPressurePsiBar, fmtCost, titleCase,
+  fmtPressure, fmtPressurePsiBar, fmtCost, titleCase, formatReg, regPlateType,
 } from './units.js';
 
 describe('units', () => {
@@ -78,5 +78,49 @@ describe('units', () => {
     expect(titleCase(null)).toBeNull();
     expect(titleCase(undefined)).toBeUndefined();
     expect(titleCase('BMW')).toBe('Bmw'); // documented imperfection for acronym makes
+  });
+
+  it('formats UK plates with canonical spacing across eras', () => {
+    // Current format (AA00 AAA) — regardless of input case/spacing
+    expect(formatReg('ab12cde')).toBe('AB12 CDE');
+    expect(formatReg('AB12 CDE')).toBe('AB12 CDE');
+    expect(formatReg('AB12  CDE')).toBe('AB12 CDE');
+    // Prefix (A000 AAA)
+    expect(formatReg('v292ktx')).toBe('V292 KTX');
+    expect(formatReg('a1xyz')).toBe('A1 XYZ');
+    // Suffix (AAA 000A)
+    expect(formatReg('abc123a')).toBe('ABC 123A');
+    // Dateless / Northern Ireland (AAA 0000) — I/Z allowed
+    expect(formatReg('aaz1234')).toBe('AAZ 1234');
+    expect(formatReg('abc123')).toBe('ABC 123');
+    // Reverse dateless (0000 AAA)
+    expect(formatReg('1abc')).toBe('1 ABC');
+  });
+
+  it('leaves unrecognised plates uppercased with no inserted space', () => {
+    expect(formatReg('qwerty')).toBe('QWERTY');
+    expect(formatReg('abcdefghij')).toBe('ABCDEFGHIJ');
+    expect(formatReg('  a b c ')).toBe('ABC'); // collapses stray whitespace
+  });
+
+  it('returns empty string for nullish/empty plates', () => {
+    expect(formatReg('')).toBe('');
+    expect(formatReg(null)).toBe('');
+    expect(formatReg(undefined)).toBe('');
+  });
+
+  it('classifies plates by era, tolerant of input case/spacing', () => {
+    expect(regPlateType('ab12 cde')).toBe('Current style (2001–present)');
+    expect(regPlateType('v292ktx')).toBe('Prefix (1983–2001)');
+    expect(regPlateType('abc123a')).toBe('Suffix (1963–1983)');
+    expect(regPlateType('aaz1234')).toBe('Dateless (pre-1963)'); // NI, I/Z allowed
+    expect(regPlateType('1abc')).toBe('Dateless (pre-1963)'); // reversed
+    expect(regPlateType('qwerty')).toBe('Personalised / unrecognised');
+  });
+
+  it('returns null plate type for nullish/empty plates', () => {
+    expect(regPlateType('')).toBeNull();
+    expect(regPlateType(null)).toBeNull();
+    expect(regPlateType(undefined)).toBeNull();
   });
 });

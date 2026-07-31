@@ -76,3 +76,55 @@ export function titleCase(str) {
     .toLowerCase()
     .replace(/(^|[\s\-/])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
 }
+
+// UK registration formats, most-specific first. Each `re` splits the (uppercased,
+// spaceless) plate into exactly two groups so the canonical single space sits between
+// them; `label` names the era for tooltips. Shared by formatReg and regPlateType.
+const PLATE_FORMATS = [
+  // Current (Sep 2001+):  AA00 AAA
+  { label: 'Current style (2001–present)', re: /^([A-Z]{2}[0-9]{2})([A-Z]{3})$/ },
+  // Prefix (1983-2001):   A000 AAA   (year letter + 1-3 digits, then 3 letters)
+  { label: 'Prefix (1983–2001)', re: /^([A-Z][0-9]{1,3})([A-Z]{3})$/ },
+  // Suffix (1963-1983):   AAA 000A   (3 letters, then 1-3 digits + year letter)
+  { label: 'Suffix (1963–1983)', re: /^([A-Z]{3})([0-9]{1,3}[A-Z])$/ },
+  // Dateless (pre-1963):  AAA 0000   (1-3 letters, then 1-4 digits) — covers NI (I/Z allowed)
+  { label: 'Dateless (pre-1963)', re: /^([A-Z]{1,3})([0-9]{1,4})$/ },
+  // Reverse dateless:     0000 AAA   (1-4 digits, then 1-3 letters)
+  { label: 'Dateless (pre-1963)', re: /^([0-9]{1,4})([A-Z]{1,3})$/ },
+];
+
+const UNKNOWN_PLATE_LABEL = 'Personalised / unrecognised';
+
+// Uppercase + strip whitespace — the canonical spaceless key both plate helpers match on.
+const canonicalReg = (reg) => String(reg).toUpperCase().replace(/\s+/g, '');
+
+/**
+ * Format a UK registration for display: uppercase, strip any existing spaces, then
+ * re-insert the canonical single space per the plate's era/format (checked most
+ * specific first). If it matches no known UK pattern, return it uppercased with no
+ * inserted space — today's behaviour — so personalised/foreign plates render as-is.
+ * Display-only: the stored value is never touched.
+ */
+export function formatReg(reg) {
+  if (!reg) return '';
+  const s = canonicalReg(reg);
+  for (const { re } of PLATE_FORMATS) {
+    const m = s.match(re);
+    if (m) return `${m[1]} ${m[2]}`;
+  }
+  return s; // Unknown format — uppercase, no inserted space (today's fallback).
+}
+
+/**
+ * Classify a UK registration by era ("Current style", "Prefix", "Dateless", …) for
+ * display hints such as tooltips. Returns 'Personalised / unrecognised' for anything
+ * that matches no known pattern, or null for an empty value.
+ */
+export function regPlateType(reg) {
+  if (!reg) return null;
+  const s = canonicalReg(reg);
+  for (const { label, re } of PLATE_FORMATS) {
+    if (re.test(s)) return label;
+  }
+  return UNKNOWN_PLATE_LABEL;
+}

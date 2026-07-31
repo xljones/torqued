@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useToast } from './Toast.jsx';
 import RelativeTime from './RelativeTime.jsx';
 import DvsaRecord from './DvsaRecord.jsx';
-import { fmtDistanceBoth, toKm } from '../units.js';
+import { fmtDistanceBoth, formatReg, toKm } from '../units.js';
 import { isPast, taxTone, motTone } from '../status.js';
 
 // A summary tile takes its colour from the shared status tone (see status.js).
@@ -228,7 +228,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
 
       {!mot && motConfigured && vehicle.registration && (
         <p className="text-muted text-sm">
-          No MOT data yet — fetch the official test history for {vehicle.registration} from the DVSA.
+          No MOT data yet — fetch the official test history for {formatReg(vehicle.registration)} from the DVSA.
         </p>
       )}
       {!mot && motConfigured === false && (

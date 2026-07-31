@@ -86,7 +86,7 @@ describe('VehicleList', () => {
     renderList();
     await waitFor(() => {
       expect(screen.getByText('2003 VOLKSWAGEN PASSAT')).toBeInTheDocument();
-      expect(screen.getByText('A1XYZ')).toBeInTheDocument();
+      expect(screen.getByText('A1 XYZ')).toBeInTheDocument(); // RegPlate applies canonical UK spacing
     });
     // Baseline values are searchable too
     await userEvent.type(screen.getByPlaceholderText(/Filter by name/), 'volkswagen');
