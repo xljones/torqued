@@ -276,6 +276,92 @@ def test_fetch_ves_missing_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert e.value.status == 502
 
 
+# ── baseline & DVSA/DVLA provenance ──────────────────────────────────────────────
+
+# A full snapshot as fetch_ves would return it (real values, incl. "Not available" rows).
+_SNAPSHOT = {
+    "registration": "A1XYZ",
+    "make": "FORD", "colour": "Blue", "fuel_type": "PETROL",
+    "year_of_manufacture": "2003", "cylinder_capacity": "1781 cc",
+    "date_of_first_registration": "October 2003",
+    "co2_emissions": "204 g/km", "euro_status": "Not available",
+    "real_driving_emissions": "Not available", "export_marker": "No",
+    "type_approval": "M1", "wheelplan": "2 AXLE RIGID BODY",
+    "revenue_weight": "Not available", "date_of_last_v5c": "7 June 2023",
+}
+
+
+def test_to_baseline_normalises_and_maps_dvla_fields() -> None:
+    base = ves.to_baseline(_SNAPSHOT)
+    # Shared fields keyed like DVSA, with units/type folded off.
+    assert base["make"] == "FORD"
+    assert base["year"] == 2003          # int, not "2003"
+    assert base["engine_size"] == "1781"  # " cc" stripped, matches DVSA
+    assert base["registration_date"] == "October 2003"
+    # DVLA-only fields present…
+    assert base["co2_emissions"] == "204 g/km"
+    assert base["type_approval"] == "M1"
+    assert base["date_of_last_v5c"] == "7 June 2023"
+    # …but "Not available" and blanks are dropped entirely.
+    assert "euro_status" not in base
+    assert "revenue_weight" not in base
+    assert "real_driving_emissions" not in base
+
+
+def test_to_baseline_none_snapshot_is_empty() -> None:
+    assert ves.to_baseline(None) == {}
+
+
+def test_field_sources_agreement_and_uniqueness() -> None:
+    dvsa = {
+        "make": "FORD", "model": "FOCUS", "year": 2003, "registration": "A1 XYZ",
+        "colour": "BLUE", "fuel_type": "Petrol", "engine_size": "1781",
+        "first_used_date": "2003-10-15", "registration_date": "2003-10-15",
+    }
+    sources = ves.field_sources(dvsa, _SNAPSHOT)
+    # Same data, differently formatted, in both → both tags.
+    assert sources["make"] == ["dvsa", "dvla"]
+    assert sources["colour"] == ["dvsa", "dvla"]        # BLUE vs Blue
+    assert sources["fuel_type"] == ["dvsa", "dvla"]     # Petrol vs PETROL
+    assert sources["year"] == ["dvsa", "dvla"]          # 2003 vs "2003"
+    assert sources["engine_size"] == ["dvsa", "dvla"]   # 1781 vs "1781 cc"
+    assert sources["registration"] == ["dvsa", "dvla"]  # A1 XYZ vs A1XYZ
+    assert sources["registration_date"] == ["dvsa", "dvla"]  # ISO vs "October 2003"
+    # DVSA-only fields carry a single DVSA tag.
+    assert sources["model"] == ["dvsa"]
+    assert sources["first_used_date"] == ["dvsa"]
+    # DVLA-only fields carry a single DVLA tag; "Not available" ones are omitted.
+    assert sources["co2_emissions"] == ["dvla"]
+    assert "euro_status" not in sources
+
+
+def test_field_sources_disagreement_prefers_dvsa() -> None:
+    dvsa = {"make": "VAUXHALL", "year": 1999}  # differ from the FORD/2003 snapshot
+    sources = ves.field_sources(dvsa, _SNAPSHOT)
+    assert sources["make"] == ["dvsa"]  # values differ → only the displayed (DVSA) source
+    assert sources["year"] == ["dvsa"]
+
+
+def test_field_sources_dvla_only_when_dvsa_absent() -> None:
+    sources = ves.field_sources(None, _SNAPSHOT)
+    assert sources["make"] == ["dvla"]
+    assert sources["registration_date"] == ["dvla"]
+    assert "model" not in sources  # nothing to show
+
+
+def test_field_sources_both_empty() -> None:
+    assert ves.field_sources(None, None) == {}
+
+
+def test_month_key_handles_iso_named_and_bad() -> None:
+    assert ves._month_key("2012-05-16") == "2012-05"
+    assert ves._month_key("16 May 2012") == "2012-05"
+    assert ves._month_key("October 2003") == "2003-10"
+    assert ves._month_key("Smarch 2003") is None  # unknown month name
+    assert ves._month_key("no date here") is None
+    assert ves._month_key(None) is None
+
+
 # ── routes ──────────────────────────────────────────────────────────────────────
 
 def test_ves_status(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
