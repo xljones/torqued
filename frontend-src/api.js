@@ -117,8 +117,10 @@ export const api = {
   // Admin
   getPythonAnywhereStats: () => req('GET', '/admin/pythonanywhere'),
   getDeploymentInfo:      () => req('GET', '/admin/deployment'),
-  getDvsaVehicles:        (page = 1) => req('GET', `/dvsa-vehicles?page=${page}`),
-  getDvsaVehicleRecords:  (id)       => req('GET', `/dvsa-vehicles/${id}/records`),
+  getVehicleRecords:      (page = 1) => req('GET', `/vehicle-records?page=${page}`),
+  getRecordsForPlate:     (source, id) => req('GET', `/vehicle-records/${source}/${id}/records`),
+  lookupVehicleRecord:    (registration) => req('POST', '/vehicle-records', { registration }),
+  // Standalone DVSA-only lookup used by the vehicle form to persist + prefill in one call.
   lookupDvsaVehicle:      (registration) => req('POST', '/dvsa-vehicles', { registration }),
 
   // Users
