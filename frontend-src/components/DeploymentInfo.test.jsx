@@ -46,4 +46,26 @@ describe('DeploymentInfo', () => {
       expect(screen.getByText('Network down')).toBeInTheDocument();
     });
   });
+
+  it('shows the DB migration revision and an up-to-date marker', async () => {
+    api.getDeploymentInfo.mockResolvedValue({
+      configured: false,
+      migration: { current: '0007_abc', head: '0007_abc' },
+    });
+    render(<DeploymentInfo />);
+    await waitFor(() => {
+      expect(screen.getByText('Database migration')).toBeInTheDocument();
+      expect(screen.getByText('0007_abc')).toBeInTheDocument();
+      expect(screen.getByText(/up to date/)).toBeInTheDocument();
+    });
+  });
+
+  it('flags when the DB is behind the latest migration head', async () => {
+    api.getDeploymentInfo.mockResolvedValue({
+      configured: false,
+      migration: { current: '0006_old', head: '0007_new' },
+    });
+    render(<DeploymentInfo />);
+    await waitFor(() => expect(screen.getByText(/behind head \(0007_new\)/)).toBeInTheDocument());
+  });
 });
