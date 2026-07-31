@@ -246,7 +246,9 @@ class VehicleRepository(BaseRepository):
             ves_expiry = ves.get(vid)
             # ISO YYYY-MM-DD strings sort chronologically, so max() is the later date.
             expiry = max((d for d in (dvsa_expiry, ves_expiry) if d), default=None)
-            ves_governs = bool(ves_expiry) and (not dvsa_expiry or ves_expiry >= dvsa_expiry)
+            ves_governs = ves_expiry is not None and (
+                dvsa_expiry is None or ves_expiry >= dvsa_expiry
+            )
             failed = (
                 result is not None and (result or "").upper() != "PASSED" and not ves_governs
             )
