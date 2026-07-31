@@ -98,13 +98,12 @@ function RecordRow({ v, defaultOpen = false, onRefreshed }) {
           <span className="dvsa-record-caret">{open ? '▼' : '▶'}</span>{' '}
           {v.year ? <span className="dvsa-year">{v.year} </span> : null}
           {makeModel}
-          {v.tax_status ? <span className="record-tax-chip">{v.tax_status}</span> : null}
           {v.vehicle_id != null ? (
-            <button type="button" className="btn btn-success btn-sm dvsa-view-btn" onClick={viewVehicle}>
-              View {v.vehicle_name}{v.garage_name ? ` in ${v.garage_name}` : ''}
+            <button type="button" className="btn btn-secondary btn-sm dvsa-view-btn" onClick={viewVehicle}>
+              View in garage
             </button>
           ) : (
-            <button type="button" className="btn btn-secondary btn-sm dvsa-add-btn" onClick={addToGarage}>
+            <button type="button" className="btn btn-success btn-sm dvsa-add-btn" onClick={addToGarage}>
               + Add to garage
             </button>
           )}

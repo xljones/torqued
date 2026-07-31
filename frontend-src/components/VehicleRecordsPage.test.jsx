@@ -66,7 +66,7 @@ describe('VehicleRecordsPage', () => {
     api.getTaxStatus.mockResolvedValue({ configured: false });
   });
 
-  it('shows year + make/model, a tax chip, source-split counts, and a green view button', async () => {
+  it('shows year + make/model, source-split counts, and a green view button', async () => {
     api.getVehicleRecords.mockResolvedValue(page([item({
       ref: { source: 'dvsa', id: 2 }, vehicle_id: 7, vehicle_name: 'Daily', garage_name: 'Home Garage',
       registration: 'a1xyz', tax_status: 'Taxed', record_count: 2, dvsa_count: 1, tax_count: 1,
@@ -77,11 +77,10 @@ describe('VehicleRecordsPage', () => {
     expect(api.getVehicleRecords).toHaveBeenCalledWith(1);
     expect(screen.getByText('A1XYZ')).toBeInTheDocument();  // RegPlate forces uppercase
     expect(screen.getByText('2003')).toBeInTheDocument();
-    expect(screen.getByText('Taxed')).toBeInTheDocument();  // tax status chip
     expect(screen.getByText('1 vehicle, 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
     expect(screen.getByText('· 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
-    const btn = screen.getByRole('button', { name: 'View Daily in Home Garage' });
-    expect(btn).toHaveClass('btn-success');
+    const btn = screen.getByRole('button', { name: 'View in garage' });
+    expect(btn).toHaveClass('btn-secondary');
   });
 
   it('expands a row to browse DVSA and tax records together, newest first', async () => {
@@ -121,7 +120,7 @@ describe('VehicleRecordsPage', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', { name: 'View Daily in Home Garage' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View in garage' }));
     expect(api.getRecordsForPlate).not.toHaveBeenCalled();
   });
 
@@ -157,7 +156,7 @@ describe('VehicleRecordsPage', () => {
 
     await waitFor(() => expect(screen.getByText('FORD FOCUS')).toBeInTheDocument());
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '+ Add to garage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ Add to garage' })).toHaveClass('btn-success');
   });
 
   it('finds a registration (both sources), saves, reloads, and auto-expands the found row', async () => {

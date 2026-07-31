@@ -278,10 +278,6 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
   padding: 7px 10px !important; width: 9em; box-sizing: border-box;
 }
 .dvsa-year { color: var(--text2); }
-.record-tax-chip {
-  margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 0.78em;
-  background: var(--surface3); color: var(--text2); vertical-align: middle;
-}
 .dvsa-view-btn { margin-left: 8px; }
 .dvsa-add-btn { margin-left: 8px; }
 .dvsa-refresh-btn { margin-left: 8px; padding: 2px 8px; line-height: 1; }
