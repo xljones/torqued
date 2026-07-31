@@ -116,6 +116,31 @@ def set_cover(photo_id: int) -> ResponseReturnValue:
     return "", 204
 
 
+@bp.put("/api/photos/<int:photo_id>/cover-frame")
+@login_required
+def update_cover_frame(photo_id: int) -> ResponseReturnValue:
+    d = request.json or {}
+    focal_x_raw, focal_y_raw, zoom_raw = d.get("focal_x"), d.get("focal_y"), d.get("zoom")
+    if focal_x_raw is None or focal_y_raw is None or zoom_raw is None:
+        return jsonify(error="focal_x, focal_y, and zoom are required"), 400
+    try:
+        focal_x = float(focal_x_raw)
+        focal_y = float(focal_y_raw)
+        zoom = float(zoom_raw)
+    except (TypeError, ValueError):
+        return jsonify(error="focal_x, focal_y, and zoom must be numbers"), 400
+    if not (0 <= focal_x <= 1) or not (0 <= focal_y <= 1):
+        return jsonify(error="focal_x and focal_y must be between 0 and 1"), 400
+    if not (1 <= zoom <= 4):
+        return jsonify(error="zoom must be between 1 and 4"), 400
+    with get_db() as db:
+        repo = PhotoRepository(db)
+        err = _check_photo(db, repo.get_by_id(photo_id), write=True)
+        if err:
+            return err
+        return jsonify(repo.update_cover_frame(photo_id, focal_x, focal_y, zoom))
+
+
 @bp.delete("/api/photos/<int:photo_id>")
 @login_required
 def delete_photo(photo_id: int) -> ResponseReturnValue:

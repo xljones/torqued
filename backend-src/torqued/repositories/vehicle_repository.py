@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from sqlalchemy import Float, case, cast, delete, func, literal, or_, select, union_all, update
+from sqlalchemy.orm import aliased
 
 from torqued import mot
 from torqued.db import utcnow_text
@@ -83,6 +84,9 @@ class VehicleRepository(BaseRepository):
                 .correlate(Vehicle)
             ).scalar_subquery(),
         )
+        # Second alias of Photo, joined on the resolved cover id, so the card image can
+        # apply the same cover-crop framing the lightbox editor saved for that photo.
+        CoverPhoto = aliased(Photo)
         stmt = (
             select(
                 Vehicle,
@@ -90,8 +94,12 @@ class VehicleRepository(BaseRepository):
                 service_count.label("service_count"),
                 photo_count.label("photo_count"),
                 cover_photo_id.label("cover_photo_id"),
+                CoverPhoto.cover_focal_x.label("cover_focal_x"),
+                CoverPhoto.cover_focal_y.label("cover_focal_y"),
+                CoverPhoto.cover_zoom.label("cover_zoom"),
             )
             .join(Garage, Garage.id == Vehicle.garage_id)
+            .outerjoin(CoverPhoto, CoverPhoto.id == cover_photo_id)
             .where(Vehicle.garage_id.in_(garage_ids))
         )
         if not include_archived:
@@ -104,10 +112,20 @@ class VehicleRepository(BaseRepository):
                 "service_count": service_count_,
                 "photo_count": photo_count_,
                 "cover_photo_id": cover_photo_id_,
+                "cover_focal_x": cover_focal_x_,
+                "cover_focal_y": cover_focal_y_,
+                "cover_zoom": cover_zoom_,
             }
-            for vehicle, garage_name, service_count_, photo_count_, cover_photo_id_ in (
-                self.session.execute(stmt).all()
-            )
+            for (
+                vehicle,
+                garage_name,
+                service_count_,
+                photo_count_,
+                cover_photo_id_,
+                cover_focal_x_,
+                cover_focal_y_,
+                cover_zoom_,
+            ) in (self.session.execute(stmt).all())
         ]
         ids = [v["id"] for v in vehicles]
         latest = self.latest_odometers()
