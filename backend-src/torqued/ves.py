@@ -25,11 +25,19 @@ VES API fields, so swapping in the API later changes only this module's internal
 
 Set VES_SCRAPE_ENABLED=0 to turn lookups off (is_configured() → False).
 
+Where the gov.uk host is unreachable but a whitelisted host is (e.g. a free
+PythonAnywhere account, whose egress whitelist allows *.workers.dev but not
+vehicleenquiry.service.gov.uk), set VES_RELAY_URL to a relay (the Cloudflare Worker in
+relay/ves-worker/) that runs this same scrape and returns the same JSON; fetch_ves then
+proxies through it instead of hitting gov.uk directly. See docs/VES_API.md →
+"Production relay".
+
 This scrapes unversioned HTML and WILL break when the service changes. When it
 does, see docs/VES_API.md → "Maintenance & troubleshooting" for the exact page
 structures this depends on, a symptom→fix table, and a step-by-step debug recipe.
 """
 import http.cookiejar
+import json
 import os
 import re
 import urllib.error
@@ -68,6 +76,16 @@ class VesError(Exception):
 def is_configured() -> bool:
     """Whether VES lookups are enabled (opt out with VES_SCRAPE_ENABLED=0)."""
     return os.environ.get("VES_SCRAPE_ENABLED", "1").strip() != "0"
+
+
+def _relay_url() -> str:
+    """Base URL of the VES relay, or '' when unset.
+
+    When set, fetch_ves proxies through the relay (a Cloudflare Worker that runs the same
+    scrape and returns the same snapshot JSON) instead of reaching gov.uk directly — for
+    hosts whose outbound whitelist blocks the enquiry service. See docs/VES_API.md.
+    """
+    return os.environ.get("VES_RELAY_URL", "").strip()
 
 
 # The vehicle-profile rows on the result page: our snapshot key -> the row's element id.
@@ -210,6 +228,27 @@ def _request(
         raise VesError(f"Could not reach the vehicle enquiry service: {e}", 502) from e
 
 
+def _fetch_via_relay(reg: str) -> dict[str, Any]:
+    """Fetch the VES snapshot through the relay; it returns the same dict fetch_ves builds."""
+    url = _relay_url().rstrip("/") + "/ves/" + urllib.parse.quote(reg)
+    headers = {"User-Agent": _UA}
+    token = os.environ.get("VES_RELAY_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            result: dict[str, Any] = json.loads(resp.read().decode())
+            return result
+    except urllib.error.HTTPError as e:
+        e.close()
+        if e.code == 404:
+            raise VesError(f"No vehicle found for registration {reg}", 404) from e
+        raise VesError(f"VES relay error: {e.code} {e.reason}", 502) from e
+    except Exception as e:
+        raise VesError(f"Could not reach the VES relay: {e}", 502) from e
+
+
 def fetch_ves(registration: str) -> dict[str, Any]:
     """Fetch the full DVLA VES snapshot for a registration in one lookup.
 
@@ -229,8 +268,13 @@ def fetch_ves(registration: str) -> dict[str, Any]:
     VesError(502) for any other failure.
 
     The keys map 1:1 to the real VES API, so an API swap changes only this function.
+
+    When VES_RELAY_URL is set the lookup is proxied through the relay; otherwise it
+    scrapes gov.uk directly.
     """
     reg = normalise_registration(registration)
+    if _relay_url():
+        return _fetch_via_relay(reg)
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     )
