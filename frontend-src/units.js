@@ -67,14 +67,32 @@ export function fmtCost(cost) {
   return Number(cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** "VOLKSWAGEN PASSAT" → "Volkswagen Passat". Tidies the all-caps text the DVSA returns;
- *  imperfect for names that aren't plain words (BMW → "Bmw", McLaren → "Mclaren"). Preserves
- *  null/undefined so callers can pass values straight through. */
+// Known makes/models whose real casing isn't plain title case (acronyms, camelCase
+// brand names). Keyed lowercase; extend freely as more come up.
+export const TITLE_CASE_EXCEPTIONS = {
+  // acronym car makes
+  bmw: 'BMW', mg: 'MG', gmc: 'GMC', seat: 'SEAT', cupra: 'CUPRA', tvr: 'TVR',
+  gwm: 'GWM', byd: 'BYD', jac: 'JAC', ldv: 'LDV', ram: 'RAM', ds: 'DS',
+  ac: 'AC', mini: 'MINI', daf: 'DAF',
+  // camelCase / compound car makes
+  mclaren: 'McLaren', ssangyong: 'SsangYong', delorean: 'DeLorean',
+  // acronym motorcycle makes
+  ktm: 'KTM', bsa: 'BSA', ajs: 'AJS', mv: 'MV', tvs: 'TVS', cfmoto: 'CFMOTO',
+};
+
+/** "VOLKSWAGEN PASSAT" → "Volkswagen Passat"; known makes (BMW, McLaren, ...) keep
+ *  their real casing via TITLE_CASE_EXCEPTIONS. Preserves null/undefined so callers
+ *  can pass values straight through. */
 export function titleCase(str) {
   if (str == null) return str;
   return String(str)
-    .toLowerCase()
-    .replace(/(^|[\s\-/])([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
+    .split(/([\s\-/]+)/)
+    .map((chunk) => {
+      if (chunk === '' || /^[\s\-/]+$/.test(chunk)) return chunk;
+      const lower = chunk.toLowerCase();
+      return TITLE_CASE_EXCEPTIONS[lower] ?? lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join('');
 }
 
 // UK registration formats, most-specific first. Each `re` splits the (uppercased,

@@ -77,7 +77,14 @@ describe('units', () => {
     expect(titleCase('')).toBe('');
     expect(titleCase(null)).toBeNull();
     expect(titleCase(undefined)).toBeUndefined();
-    expect(titleCase('BMW')).toBe('Bmw'); // documented imperfection for acronym makes
+  });
+
+  it('preserves known non-title-case make casing via TITLE_CASE_EXCEPTIONS', () => {
+    expect(titleCase('BMW')).toBe('BMW');
+    expect(titleCase('MG')).toBe('MG');
+    expect(titleCase('MCLAREN')).toBe('McLaren');
+    expect(titleCase('SSANGYONG')).toBe('SsangYong');
+    expect(titleCase('MV AGUSTA')).toBe('MV Agusta');
   });
 
   it('formats UK plates with canonical spacing across eras', () => {

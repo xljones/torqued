@@ -45,6 +45,14 @@ def is_configured() -> bool:
     return all(_config().values())
 
 
+def effective_endpoint() -> dict[str, Any]:
+    """The external URL a DVSA MOT lookup hits: the API base.
+
+    Surfaced in the admin panel; never exposes the API key, client secret, or token URL.
+    """
+    return {"configured": is_configured(), "url": API_BASE}
+
+
 def normalise_registration(registration: str) -> str:
     return registration.replace(" ", "").upper()
 

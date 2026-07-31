@@ -338,13 +338,13 @@ class ServiceLogRepository(BaseRepository):
             )
         from torqued.repositories.mot_repository import MotRepository
         from torqued.repositories.service_schedule_repository import ServiceScheduleRepository
-        from torqued.repositories.tax_repository import TaxRepository
+        from torqued.repositories.ves_repository import VesRepository
 
         reminders.extend(
             MotRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
         )
         reminders.extend(
-            TaxRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
+            VesRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
         )
         reminders.extend(
             ServiceScheduleRepository(self.session).reminders(

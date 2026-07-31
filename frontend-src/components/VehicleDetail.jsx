@@ -377,7 +377,24 @@ export default function VehicleDetail() {
   const ro = roleFor(vehicle.garage_id) === 'readonly';
   const unit = vehicle.odometer_unit;
   const dueReminders = vehicle.reminders.filter(r => r.status !== 'upcoming');
-  const fieldProps = { vehicle, baseline: vehicle.mot_baseline, ro };
+  const fieldProps = {
+    vehicle,
+    baseline: vehicle.mot_baseline,
+    vesBaseline: vehicle.ves_baseline,
+    fieldSources: vehicle.field_sources,
+    ro,
+  };
+  // DVLA-only detail fields (from the VES snapshot); rendered only when present.
+  const vesOnlyFields = [
+    { key: 'co2_emissions', label: 'CO₂ emissions' },
+    { key: 'euro_status', label: 'Euro status' },
+    { key: 'real_driving_emissions', label: 'Real driving emissions' },
+    { key: 'export_marker', label: 'Marked for export' },
+    { key: 'type_approval', label: 'Type approval' },
+    { key: 'wheelplan', label: 'Wheelplan' },
+    { key: 'revenue_weight', label: 'Revenue weight' },
+    { key: 'date_of_last_v5c', label: 'Last V5C issued' },
+  ].filter(f => vehicle.ves_baseline?.[f.key] != null);
 
   return (
     <div>
@@ -448,6 +465,9 @@ export default function VehicleDetail() {
           <MotField label="Fuel" fieldKey="fuel_type" {...fieldProps} format={formatName} />
           <MotField label="First used" fieldKey="first_used_date" {...fieldProps} />
           <MotField label="First registered" fieldKey="registration_date" {...fieldProps} />
+          {vesOnlyFields.map(f => (
+            <MotField key={f.key} label={f.label} fieldKey={f.key} {...fieldProps} />
+          ))}
           <div className="field"><label>VIN</label><span>{vehicle.vin || '—'}</span></div>
           <div className="field"><label>Purchased</label><span>{vehicle.purchase_date || '—'}</span></div>
           <div className="field"><label>Updated</label><span><RelativeTime value={vehicle.updated_at} /></span></div>

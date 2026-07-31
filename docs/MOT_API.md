@@ -3,6 +3,11 @@
 What the official [DVSA MOT History API](https://documentation.history.mot.api.gov.uk/) returns, how
 Torqued stores it, and the **baseline-with-overrides** model for the vehicle details panel.
 
+> **Note — two MOT sources.** This is the DVSA MOT *history* (full test records). Torqued also
+> reads DVLA's **current MOT status** (status + expiry) from the VES page it scrapes for road tax
+> — see [VES_API.md](VES_API.md). The DVSA history feed lags for some vehicles (e.g. SORN), so the
+> MOT card and the MOT reminder use the **later** of the DVSA test expiry and the VES expiry.
+
 Field names below are quoted exactly as the API returns them (camelCase). The schema is taken from
 DVSA's own published data models; Torqued additionally keeps the **entire raw response verbatim** in
 `raw_json` (per vehicle and per test), so any field not yet surfaced is still captured.

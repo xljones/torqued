@@ -48,6 +48,39 @@ def test_create_persists_mot_override_fields(auth_client: FlaskClient) -> None:
     assert got["registration_date"] == "2021-03-05"
     # No MOT fetched, so there is no baseline to fall back to
     assert got["mot_baseline"] is None
+    # …and with neither source stored there are no DVLA fields or provenance tags.
+    assert got["ves_baseline"] is None
+    assert got["field_sources"] == {}
+
+
+def test_detail_exposes_ves_baseline_and_field_sources(auth_client: FlaskClient) -> None:
+    import json
+
+    from torqued.db import get_db
+    from torqued.models import DvsaVehicle
+    from torqued.repositories.ves_repository import VesRepository
+
+    v = mk_vehicle(auth_client, registration="A1 XYZ")
+    with get_db() as db:
+        # A DVSA snapshot (make/year) plus a DVLA VES lookup of the same vehicle,
+        # differently formatted, so field_sources exercises the "both agree" path.
+        db.add(DvsaVehicle(
+            vehicle_id=v["id"], registration="A1XYZ", make="FORD", manufacture_year=2003,
+            raw_json=json.dumps({"make": "FORD", "manufactureYear": 2003}),
+        ))
+        VesRepository(db).replace_for_vehicle(v["id"], {
+            "registration": "A1XYZ", "tax_status": "Taxed", "make": "FORD",
+            "year_of_manufacture": "2003", "cylinder_capacity": "1781 cc",
+            "co2_emissions": "204 g/km", "euro_status": "Not available",
+        })
+    got = auth_client.get(f"/api/vehicles/{v['id']}").json
+    # DVLA-only field surfaces in ves_baseline; "Not available" is dropped.
+    assert got["ves_baseline"]["co2_emissions"] == "204 g/km"
+    assert "euro_status" not in got["ves_baseline"]
+    # DVSA + DVLA agree once normalised → both tags; CO₂ is DVLA-only.
+    assert got["field_sources"]["make"] == ["dvsa", "dvla"]
+    assert got["field_sources"]["year"] == ["dvsa", "dvla"]
+    assert got["field_sources"]["co2_emissions"] == ["dvla"]
 
 
 def test_clear_override_field(auth_client: FlaskClient) -> None:

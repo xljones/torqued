@@ -113,3 +113,38 @@ def test_deployment_info_success(admin_client: FlaskClient, monkeypatch, tmp_pat
     assert r.json["sha"] == "abc1234"
     assert r.json["msg"] == "fix(admin): add deployment card"
     assert r.json["built_at"] == "2026-06-23T20:00:00Z"
+
+
+def test_deployment_info_reports_migration_revision(admin_client: FlaskClient, monkeypatch, tmp_path) -> None:
+    # Shown even without build info. Tests run against a fully-migrated DB → current == head.
+    monkeypatch.setenv("BUILD_INFO_FILE", str(tmp_path / "missing.json"))
+    m = admin_client.get("/api/admin/deployment").json["migration"]
+    assert m["current"] and m["current"] == m["head"]
+
+
+def test_external_apis_requires_auth(client: FlaskClient) -> None:
+    assert client.get("/api/admin/external-apis").status_code == 401
+
+
+def test_external_apis_requires_admin(auth_client: FlaskClient) -> None:
+    assert auth_client.get("/api/admin/external-apis").status_code == 403
+
+
+def test_external_apis_shows_effective_urls(admin_client: FlaskClient, monkeypatch) -> None:
+    monkeypatch.delenv("VES_RELAY_URL", raising=False)
+    r = admin_client.get("/api/admin/external-apis")
+    assert r.status_code == 200
+    apis = {a["name"]: a for a in r.json["apis"]}
+    assert apis["DVLA VES"]["mode"] == "direct"
+    assert apis["DVLA VES"]["url"] == "https://vehicleenquiry.service.gov.uk"
+    assert apis["DVSA MOT"]["url"].startswith("https://history.mot.api.gov.uk")
+    # The DVSA OAuth token URL is not surfaced.
+    assert "token_url" not in apis["DVSA MOT"]
+
+
+def test_external_apis_shows_relay_when_configured(admin_client: FlaskClient, monkeypatch) -> None:
+    monkeypatch.setenv("VES_RELAY_URL", "https://torqued-ves.example.workers.dev")
+    ves_api = next(a for a in admin_client.get("/api/admin/external-apis").json["apis"]
+                   if a["name"] == "DVLA VES")
+    assert ves_api["mode"] == "relay"
+    assert ves_api["url"] == "https://torqued-ves.example.workers.dev"

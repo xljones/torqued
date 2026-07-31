@@ -36,6 +36,7 @@ __all__ = [
     "database_url",
     "execute_sql",
     "get_db",
+    "migration_revisions",
     "run_migrations",
     "utcnow_text",
 ]
@@ -151,3 +152,21 @@ def run_migrations() -> None:
     config.set_main_option("script_location", str(_MIGRATIONS_DIR))
     config.set_main_option("sqlalchemy.url", database_url())
     command.upgrade(config, "head")
+
+
+def migration_revisions() -> dict[str, str | None]:
+    """The DB's currently-applied Alembic revision and the latest head in the migrations.
+
+    ``current == head`` means the schema is up to date. ``current`` is None on a database
+    that has never been migrated (no ``alembic_version`` row).
+    """
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    config = Config()
+    config.set_main_option("script_location", str(_MIGRATIONS_DIR))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    with get_engine().connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    return {"current": current, "head": head}

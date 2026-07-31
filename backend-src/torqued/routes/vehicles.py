@@ -9,8 +9,8 @@ from torqued.access import accessible_garage_ids, can_write, garage_role, vehicl
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
-from torqued.repositories.tax_repository import TaxRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
+from torqued.repositories.ves_repository import VesRepository
 
 bp = Blueprint("vehicles", __name__)
 
@@ -116,12 +116,12 @@ def create_vehicle() -> ResponseReturnValue:
         if not can_write(role):
             return jsonify(error="Read-only access to this garage"), 403
         vehicle = VehicleRepository(db).create(garage_id, data, changed_by=current_user.id)
-        # Retie any historic DVSA/tax records we already hold for this plate (from earlier
+        # Retie any historic DVSA/VES records we already hold for this plate (from earlier
         # refreshes, standalone lookups, or a deleted vehicle): the newest of each becomes
         # the live snapshot, the rest stay grouped under the vehicle by registration.
         if (vehicle.get("registration") or "").strip():
             MotRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
-            TaxRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
+            VesRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
     analytics.capture(
         current_user.id,
         "vehicle.created",
@@ -158,12 +158,12 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         old = VehicleRepository(db).get_by_id(vehicle_id)
         result = VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id)
         mot_repo = MotRepository(db)
-        tax_repo = TaxRepository(db)
-        # Drop any attached DVSA/MOT and tax data when the registration change means it no
+        ves_repo = VesRepository(db)
+        # Drop any attached DVSA and VES data when the registration change means it no
         # longer applies (the form prompts the user before sending this flag).
         if (request.json or {}).get("disconnect_mot"):
             mot_repo.clear_for_vehicle(vehicle_id)
-            tax_repo.clear_for_vehicle(vehicle_id)
+            ves_repo.clear_for_vehicle(vehicle_id)
         # If the plate changed and nothing is attached, re-link a detached DVSA / tax record
         # left behind by a deleted vehicle (or standalone lookup) on the new plate.
         new_reg = (result.get("registration") or "") if result else ""
@@ -174,8 +174,8 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         ):
             if mot_repo.get_for_vehicle(vehicle_id) is None:
                 mot_repo.relink_detached(vehicle_id, new_reg)
-            if tax_repo.get_for_vehicle(vehicle_id) is None:
-                tax_repo.relink_detached(vehicle_id, new_reg)
+            if ves_repo.get_for_vehicle(vehicle_id) is None:
+                ves_repo.relink_detached(vehicle_id, new_reg)
         return jsonify(result)
 
 

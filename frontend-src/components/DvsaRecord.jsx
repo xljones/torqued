@@ -69,13 +69,37 @@ export function JsonTree({ data }) {
   );
 }
 
+// The body of a record: a Formatted (interactive tree) / Raw (pretty JSON) switch over a
+// single payload. Exported so a parent can show a record's contents under its own trigger
+// (e.g. the MOT card expands this when its status tile is clicked) instead of the built-in
+// tile header below.
+export function DvsaRecordPanel({ raw, className = '' }) {
+  const [jsonFmt, setJsonFmt] = useState('formatted');
+  return (
+    <div className={`dvsa-json-panel${className ? ` ${className}` : ''}`}>
+      <div className="dvsa-json-toolbar">
+        <button
+          className={`btn btn-sm ${jsonFmt === 'formatted' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setJsonFmt('formatted')}
+        >Formatted</button>
+        <button
+          className={`btn btn-sm ${jsonFmt === 'raw' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setJsonFmt('raw')}
+        >Raw</button>
+      </div>
+      {jsonFmt === 'formatted'
+        ? <JsonTree data={raw} />
+        : <pre className="dvsa-raw-json mt-2">{JSON.stringify(raw, null, 2)}</pre>}
+    </div>
+  );
+}
+
 // `open`/`onToggle` are optional: pass both to control the panel from a parent (e.g. to keep
 // only one of several records open at once); omit them for self-managed open state.
 export default function DvsaRecord({ label, summary, raw, className = '', open: openProp, onToggle }) {
   const [openState, setOpenState] = useState(false);
   const controlled = openProp !== undefined;
   const open = controlled ? openProp : openState;
-  const [jsonFmt, setJsonFmt] = useState('formatted');
   const toggle = () => (controlled ? onToggle?.() : setOpenState(v => !v));
 
   return (
@@ -95,23 +119,7 @@ export default function DvsaRecord({ label, summary, raw, className = '', open: 
         {summary != null && <div className="pressure-size">{summary}</div>}
       </div>
 
-      {open && (
-        <div className="dvsa-json-panel mt-2">
-          <div className="dvsa-json-toolbar">
-            <button
-              className={`btn btn-sm ${jsonFmt === 'formatted' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setJsonFmt('formatted')}
-            >Formatted</button>
-            <button
-              className={`btn btn-sm ${jsonFmt === 'raw' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setJsonFmt('raw')}
-            >Raw</button>
-          </div>
-          {jsonFmt === 'formatted'
-            ? <JsonTree data={raw} />
-            : <pre className="dvsa-raw-json mt-2">{JSON.stringify(raw, null, 2)}</pre>}
-        </div>
-      )}
+      {open && <DvsaRecordPanel raw={raw} className="mt-2" />}
     </>
   );
 }

@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import Float, case, cast, delete, func, literal, or_, select, union_all, update
 from sqlalchemy.orm import aliased
 
-from torqued import mot
+from torqued import mot, ves
 from torqued.db import utcnow_text
 from torqued.models import (
     DvsaVehicle,
@@ -17,7 +17,7 @@ from torqued.models import (
     Vehicle,
     VehicleHistory,
     VehicleSpec,
-    VehicleTax,
+    VehicleVes,
     to_dict,
 )
 from torqued.repositories.base import BaseRepository
@@ -182,7 +182,20 @@ class VehicleRepository(BaseRepository):
             vehicle["cover_photo_id"] = vehicle["photos"][0]["id"] if vehicle["photos"] else None
         vehicle["latest_odometer"] = self.latest_odometers().get(vehicle_id)
         vehicle["mot_baseline"] = self.mot_baseline(vehicle_id)
+        # DVLA VES supplements DVSA for the detail card: `ves_baseline` carries the
+        # DVLA-only fields (and DVLA fallbacks), `field_sources` tags every field DVSA /
+        # DVLA / both once the two sources are normalised (see torqued.ves).
+        ves_snapshot = self._ves_snapshot(vehicle_id)
+        vehicle["ves_baseline"] = ves.to_baseline(ves_snapshot) if ves_snapshot else None
+        vehicle["field_sources"] = ves.field_sources(vehicle["mot_baseline"], ves_snapshot)
         return vehicle
+
+    def _ves_snapshot(self, vehicle_id: int) -> dict[str, Any] | None:
+        """The live DVLA VES snapshot for a vehicle (parsed raw_json), or None."""
+        raw = self.session.execute(
+            select(VehicleVes.raw_json).where(VehicleVes.vehicle_id == vehicle_id)
+        ).scalar_one_or_none()
+        return json.loads(raw) if raw else None
 
     def _specs(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's spec rows ordered by position."""
@@ -219,9 +232,12 @@ class VehicleRepository(BaseRepository):
     def mot_summaries(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:
         """Compact per-vehicle MOT status for the list view: ``{expiry, failed}``.
 
-        ``expiry`` is the latest test's expiry, falling back to the DVSA vehicle-level due
-        date; ``failed`` marks a latest test that didn't pass. Only vehicles with a stored
-        snapshot are included — the same colour/text the detail card derives, minus the tests.
+        ``expiry`` is the **later** of the latest DVSA test's expiry (falling back to the
+        DVSA vehicle-level due date) and the DVLA VES current-status expiry — so the list
+        pill consolidates both sources exactly like the detail card, and a fresh VES status
+        overrides a stale DVSA history. ``failed`` marks a latest DVSA test that didn't pass,
+        unless the VES expiry governs (a newer pass exists per the DVLA). A vehicle is
+        included if it has either source stored.
         """
         if not vehicle_ids:
             return {}
@@ -244,13 +260,29 @@ class VehicleRepository(BaseRepository):
         ).all()
         for vid, expiry, result in rows:
             latest.setdefault(vid, (expiry, result))
+        ves: dict[int, str | None] = {
+            vid: expiry
+            for vid, expiry in self.session.execute(
+                select(VehicleVes.vehicle_id, VehicleVes.mot_expiry_date).where(
+                    VehicleVes.vehicle_id.in_(vehicle_ids)
+                )
+            ).all()
+            if vid is not None
+        }
         summaries: dict[int, dict[str, Any]] = {}
-        for vid, due_date in due.items():
-            expiry, result = latest.get(vid, (None, None))
-            summaries[vid] = {
-                "expiry": expiry or due_date,
-                "failed": result is not None and (result or "").upper() != "PASSED",
-            }
+        for vid in due.keys() | ves.keys():
+            dvsa_expiry, result = latest.get(vid, (None, None))
+            dvsa_expiry = dvsa_expiry or due.get(vid)
+            ves_expiry = ves.get(vid)
+            # ISO YYYY-MM-DD strings sort chronologically, so max() is the later date.
+            expiry = max((d for d in (dvsa_expiry, ves_expiry) if d), default=None)
+            ves_governs = ves_expiry is not None and (
+                dvsa_expiry is None or ves_expiry >= dvsa_expiry
+            )
+            failed = (
+                result is not None and (result or "").upper() != "PASSED" and not ves_governs
+            )
+            summaries[vid] = {"expiry": expiry, "failed": failed}
         return summaries
 
     def tax_summaries(self, vehicle_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -259,8 +291,8 @@ class VehicleRepository(BaseRepository):
             return {}
         rows = self.session.execute(
             select(
-                VehicleTax.vehicle_id, VehicleTax.tax_status, VehicleTax.tax_due_date
-            ).where(VehicleTax.vehicle_id.in_(vehicle_ids))
+                VehicleVes.vehicle_id, VehicleVes.tax_status, VehicleVes.tax_due_date
+            ).where(VehicleVes.vehicle_id.in_(vehicle_ids))
         ).all()
         return {
             vid: {"tax_status": status, "tax_due_date": due}

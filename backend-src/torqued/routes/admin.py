@@ -7,7 +7,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify
 from flask.typing import ResponseReturnValue
 
+from torqued import mot, ves
 from torqued.access import admin_required
+from torqued.db import migration_revisions
 
 bp = Blueprint("admin", __name__)
 
@@ -27,12 +29,14 @@ def _build_info_path() -> str:
 @bp.get("/api/admin/deployment")
 @admin_required
 def deployment_info() -> ResponseReturnValue:
+    # The applied vs latest Alembic revision is shown regardless of build-info presence.
+    migration = migration_revisions()
     try:
         with open(_build_info_path(), encoding="utf-8") as fh:
             info = json.load(fh)
     except (OSError, ValueError):
         # No dist/build-info.json yet (e.g. dev, or before the first deploy).
-        return jsonify(configured=False), 200
+        return jsonify(configured=False, migration=migration), 200
 
     return jsonify(
         configured=True,
@@ -40,6 +44,21 @@ def deployment_info() -> ResponseReturnValue:
         sha=info.get("sha"),
         msg=info.get("msg"),
         built_at=info.get("built_at"),
+        migration=migration,
+    ), 200
+
+
+@bp.get("/api/admin/external-apis")
+@admin_required
+def external_apis() -> ResponseReturnValue:
+    """The outbound URL each external vehicle-data API actually routes to."""
+    return jsonify(
+        apis=[
+            {"name": "DVLA VES", "purpose": "Tax, MOT status & vehicle profile",
+             **ves.effective_endpoint()},
+            {"name": "DVSA MOT", "purpose": "Full MOT test history",
+             **mot.effective_endpoint()},
+        ]
     ), 200
 
 

@@ -16,10 +16,10 @@ vi.mock('../api.js', () => ({
     getVehicleRecords: vi.fn(),
     getRecordsForPlate: vi.fn(),
     getMotStatus: vi.fn(),
-    getTaxStatus: vi.fn(),
+    getVesStatus: vi.fn(),
     lookupVehicleRecord: vi.fn(),
     refreshMot: vi.fn(),
-    refreshTax: vi.fn(),
+    refreshVes: vi.fn(),
   },
 }));
 vi.mock('./Toast.jsx', () => ({ useToast: () => vi.fn() }));
@@ -32,9 +32,9 @@ function item(overrides = {}) {
     ref: { source: 'dvsa', id: 1 },
     vehicle_id: null, vehicle_name: null, garage_name: null,
     registration: 'A1XYZ', make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003,
-    tax_status: null, tax_due_date: null,
+    tax_status: null, tax_due_date: null, mot_status: null, mot_expiry_date: null,
     fetched_at: '2024-01-01 00:00:00',
-    record_count: 1, dvsa_count: 1, tax_count: 0,
+    record_count: 1, dvsa_count: 1, ves_count: 0,
     ...overrides,
   };
 }
@@ -45,7 +45,7 @@ function page(items, extra = {}) {
     total: items.length,
     total_records: items.reduce((n, i) => n + i.record_count, 0),
     total_dvsa: items.reduce((n, i) => n + i.dvsa_count, 0),
-    total_tax: items.reduce((n, i) => n + i.tax_count, 0),
+    total_ves: items.reduce((n, i) => n + (i.ves_count || 0), 0),
     page: 1, per_page: 25, pages: 1,
     ...extra,
   };
@@ -63,13 +63,13 @@ describe('VehicleRecordsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.getMotStatus.mockResolvedValue({ configured: false });
-    api.getTaxStatus.mockResolvedValue({ configured: false });
+    api.getVesStatus.mockResolvedValue({ configured: false });
   });
 
   it('shows year + make/model, source-split counts, and a green view button', async () => {
     api.getVehicleRecords.mockResolvedValue(page([item({
       ref: { source: 'dvsa', id: 2 }, vehicle_id: 7, vehicle_name: 'Daily', garage_name: 'Home Garage',
-      registration: 'a1xyz', tax_status: 'Taxed', record_count: 2, dvsa_count: 1, tax_count: 1,
+      registration: 'a1xyz', tax_status: 'Taxed', record_count: 2, dvsa_count: 1, ves_count: 1,
     })]));
     renderPage();
 
@@ -77,22 +77,24 @@ describe('VehicleRecordsPage', () => {
     expect(api.getVehicleRecords).toHaveBeenCalledWith(1);
     expect(screen.getByText('A1 XYZ')).toBeInTheDocument();  // RegPlate uppercases + applies UK spacing
     expect(screen.getByText('2003')).toBeInTheDocument();
-    expect(screen.getByText('1 vehicle, 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
-    expect(screen.getByText('· 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
+    expect(screen.getByText('1 vehicle, 2 records (1 DVSA, 1 DVLA)')).toBeInTheDocument();
+    expect(screen.getByText('· 2 records (1 DVSA, 1 DVLA)')).toBeInTheDocument();
     const btn = screen.getByRole('button', { name: 'View in garage' });
     expect(btn).toHaveClass('btn-secondary');
   });
 
-  it('expands a row to browse DVSA and tax records together, newest first', async () => {
+  it('expands a row to browse the DVSA and DVLA VES records together, newest first', async () => {
     api.getVehicleRecords.mockResolvedValue(page([item({
-      ref: { source: 'tax', id: 5 }, vehicle_id: 7, tax_status: 'Taxed',
-      record_count: 2, dvsa_count: 1, tax_count: 1,
+      ref: { source: 'ves', id: 5 }, vehicle_id: 7, tax_status: 'Taxed', mot_expiry_date: '2027-07-29',
+      record_count: 2, dvsa_count: 1, ves_count: 1,
     })]));
     api.getRecordsForPlate.mockResolvedValue({
       registration: 'A1XYZ',
       records: [
-        { source: 'tax', id: 5, vehicle_id: 7, registration: 'A1XYZ', tax_status: 'Taxed',
-          fetched_at: '2024-06-01 00:00:00', raw: { tax_status: 'Taxed', tax_due_date: '2026-12-01' } },
+        { source: 'ves', id: 5, vehicle_id: 7, registration: 'A1XYZ', tax_status: 'Taxed',
+          mot_status: 'valid MOT certificate', mot_expiry_date: '2027-07-29',
+          fetched_at: '2024-06-01 00:00:00',
+          raw: { tax_status: 'Taxed', tax_due_date: '2026-12-01', mot_expiry_date: '2027-07-29' } },
         { source: 'dvsa', id: 2, vehicle_id: 7, registration: 'A1XYZ', make: 'VOLKSWAGEN',
           fetched_at: '2024-01-01 00:00:00', raw: { registration: 'A1XYZ', motTests: [] } },
       ],
@@ -103,13 +105,15 @@ describe('VehicleRecordsPage', () => {
     expect(api.getRecordsForPlate).not.toHaveBeenCalled();
     await userEvent.click(screen.getByText('VOLKSWAGEN PASSAT').closest('tr'));
 
-    // One viewer per lookup, each labelled by source.
-    await waitFor(() => expect(screen.getByText('DVLA tax record')).toBeInTheDocument());
-    expect(api.getRecordsForPlate).toHaveBeenCalledWith('tax', 5);
+    // One viewer per lookup, each labelled by source. The VES record's summary shows tax +
+    // MOT ("… · MOT to <expiry>").
+    await waitFor(() => expect(screen.getByText('DVLA record (VES)')).toBeInTheDocument());
+    expect(api.getRecordsForPlate).toHaveBeenCalledWith('ves', 5);
     expect(screen.getByText('DVSA record')).toBeInTheDocument();
+    expect(screen.getByText(/MOT to 2027-07-29/)).toBeInTheDocument();
 
     // The shared viewer expands a lookup into its raw fields.
-    await userEvent.click(screen.getByText('DVLA tax record'));
+    await userEvent.click(screen.getByText('DVLA record (VES)'));
     expect(screen.getByText('tax_due_date')).toBeInTheDocument();
   });
 
@@ -184,7 +188,7 @@ describe('VehicleRecordsPage', () => {
 
   it('shows the Find form when only the tax API is configured', async () => {
     api.getMotStatus.mockResolvedValue({ configured: false });
-    api.getTaxStatus.mockResolvedValue({ configured: true });
+    api.getVesStatus.mockResolvedValue({ configured: true });
     api.getVehicleRecords.mockResolvedValue(page([]));
     renderPage();
     expect(await screen.findByLabelText('Registration to look up')).toBeInTheDocument();
@@ -201,7 +205,7 @@ describe('VehicleRecordsPage', () => {
         fetched_at: '2024-06-01 00:00:00', record_count: 2, dvsa_count: 2,
       })]));
     api.refreshMot.mockResolvedValue({});
-    api.refreshTax.mockResolvedValue({});
+    api.refreshVes.mockResolvedValue({});
     api.getRecordsForPlate.mockResolvedValue({
       registration: 'A1XYZ',
       records: [{ source: 'dvsa', id: 4, vehicle_id: 7, make: 'VOLKSWAGEN', model: 'PASSAT',
@@ -214,7 +218,7 @@ describe('VehicleRecordsPage', () => {
 
     // A linked row refreshes both sources via its vehicle.
     await waitFor(() => expect(api.refreshMot).toHaveBeenCalledWith(7));
-    expect(api.refreshTax).toHaveBeenCalledWith(7);
+    expect(api.refreshVes).toHaveBeenCalledWith(7);
     await waitFor(() => expect(screen.getByText('· 2 records')).toBeInTheDocument());
     await waitFor(() => expect(api.getRecordsForPlate).toHaveBeenCalledWith('dvsa', 4));
   });

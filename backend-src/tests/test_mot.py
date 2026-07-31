@@ -92,6 +92,14 @@ def test_is_configured(monkeypatch: pytest.MonkeyPatch, mot_env: None) -> None:
     assert mot.is_configured() is False
 
 
+def test_effective_endpoint(mot_env: None) -> None:
+    ep = mot.effective_endpoint()
+    assert ep["configured"] is True
+    assert ep["url"] == mot.API_BASE
+    # No secrets or the token URL leak into the admin-facing payload.
+    assert set(ep) == {"configured", "url"}
+
+
 def test_normalise_registration() -> None:
     assert mot.normalise_registration("a1 xyz") == "A1XYZ"
 
@@ -723,6 +731,43 @@ def test_mot_reminder_overdue(
     assert rem["status"] == "overdue"
 
 
+def _store_ves_mot(vehicle_id: int, expiry: str | None) -> None:
+    """Persist a DVLA VES record (with a MOT expiry) against a vehicle."""
+    from torqued.db import get_db
+    from torqued.repositories.ves_repository import VesRepository
+
+    with get_db() as db:
+        VesRepository(db).replace_for_vehicle(
+            vehicle_id,
+            {"registration": "A1XYZ", "mot_status": "valid MOT", "mot_expiry_date": expiry},
+        )
+
+
+def test_mot_reminder_ves_supplements_stale_dvsa(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # DVSA history is stale (expiry in the past → would be overdue), but the DVLA VES status
+    # shows a fresh future expiry, so the false 'overdue' reminder is suppressed. This is the
+    # YT12OPZ (SORN, DVSA-lagging) case.
+    past = (date.today() - timedelta(days=10)).isoformat()
+    future = (date.today() + timedelta(days=300)).isoformat()
+    v = _store_mot(auth_client, monkeypatch, _passed(past))
+    _store_ves_mot(v["id"], future)
+    assert _mot_reminders(auth_client) == []
+
+
+def test_mot_reminder_ves_earlier_does_not_override_valid_dvsa(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # A stale/earlier VES expiry never forces a false 'overdue' when DVSA has a later pass:
+    # the governing date is the later of the two, and only one 'mot' reminder is ever emitted.
+    dvsa_future = (date.today() + timedelta(days=200)).isoformat()
+    ves_past = (date.today() - timedelta(days=10)).isoformat()
+    v = _store_mot(auth_client, monkeypatch, _passed(dvsa_future))
+    _store_ves_mot(v["id"], ves_past)
+    assert _mot_reminders(auth_client) == []  # 200 days out, well outside the window
+
+
 def test_mot_reminder_outside_window_hidden(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
 ) -> None:
@@ -807,6 +852,42 @@ def test_mot_summary_falls_back_to_due_date(
     auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
     row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
     assert row["mot_summary"] == {"expiry": "2027-09-01", "failed": False}
+
+
+def test_mot_summary_consolidates_latest_of_both_sources(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # DVSA history lapsed in 2025, but the DVLA VES status is valid into 2027 → the list pill
+    # shows the later (VES) date, not a false "expired". Mirrors the detail card.
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: _passed("2025-05-09"))
+    v = mk_vehicle(auth_client, registration="A5 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    _store_ves_mot(v["id"], "2027-08-20")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    assert row["mot_summary"] == {"expiry": "2027-08-20", "failed": False}
+
+
+def test_mot_summary_ves_clears_a_failed_dvsa_latest(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # A fresh VES pass means the stale DVSA "failed" latest test no longer governs.
+    payload: dict[str, Any] = {"registration": "A9XYZ", "motTests": [
+        {"completedDate": "2025-01-02T00:00:00.000Z", "testResult": "FAILED", "expiryDate": None},
+    ]}
+    monkeypatch.setattr(mot, "fetch_vehicle", lambda reg: payload)
+    v = mk_vehicle(auth_client, registration="A8 XYZ")
+    auth_client.post(f"/api/vehicles/{v['id']}/mot/refresh")
+    _store_ves_mot(v["id"], "2027-08-20")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    assert row["mot_summary"] == {"expiry": "2027-08-20", "failed": False}
+
+
+def test_mot_summary_from_ves_only(auth_client: FlaskClient) -> None:
+    # A vehicle with only a DVLA VES record (no DVSA snapshot) still gets a MOT pill.
+    v = mk_vehicle(auth_client, registration="A7 XYZ")
+    _store_ves_mot(v["id"], "2027-08-20")
+    row = next(x for x in auth_client.get("/api/vehicles").json if x["id"] == v["id"])
+    assert row["mot_summary"] == {"expiry": "2027-08-20", "failed": False}
 
 
 def test_mot_summaries_empty() -> None:
