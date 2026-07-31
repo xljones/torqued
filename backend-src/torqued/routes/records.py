@@ -5,6 +5,7 @@ from torqued import mot, tax
 from torqued.access import admin_required
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
+from torqued.repositories.mot_status_repository import MotStatusRepository
 from torqued.repositories.records_repository import SOURCES, RecordsRepository
 from torqued.repositories.tax_repository import TaxRepository
 
@@ -49,7 +50,7 @@ def create_lookup() -> ResponseReturnValue:
     if not mot.is_configured() and not tax.is_configured():
         return jsonify(error="DVSA and DVLA lookups are not configured"), 503
 
-    saved: dict[str, dict[str, object] | None] = {"dvsa": None, "tax": None}
+    saved: dict[str, dict[str, object] | None] = {"dvsa": None, "tax": None, "motstatus": None}
     errors: list[str] = []
     dvsa_payload = None
     if mot.is_configured():
@@ -76,8 +77,11 @@ def create_lookup() -> ResponseReturnValue:
                 "model": dvsa_payload.get("model"),
             }
         if tax_payload is not None:
+            # One VES fetch → two detached records (tax + MOT status).
             TaxRepository(db).store_detached_lookup(tax_payload)
+            MotStatusRepository(db).store_detached_lookup(tax_payload)
             saved["tax"] = {"tax_status": tax_payload.get("tax_status")}
+            saved["motstatus"] = {"mot_status": tax_payload.get("mot_status")}
 
     payload = dvsa_payload or tax_payload or {}
     return jsonify(

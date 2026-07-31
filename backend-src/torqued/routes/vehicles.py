@@ -8,6 +8,7 @@ from torqued import analytics, mot
 from torqued.access import accessible_garage_ids, can_write, garage_role, vehicle_role
 from torqued.db import get_db
 from torqued.repositories.mot_repository import MotRepository
+from torqued.repositories.mot_status_repository import MotStatusRepository
 from torqued.repositories.service_log_repository import ServiceLogRepository
 from torqued.repositories.tax_repository import TaxRepository
 from torqued.repositories.vehicle_repository import VehicleRepository
@@ -122,6 +123,7 @@ def create_vehicle() -> ResponseReturnValue:
         if (vehicle.get("registration") or "").strip():
             MotRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
             TaxRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
+            MotStatusRepository(db).relink_detached(vehicle["id"], vehicle["registration"])
     analytics.capture(
         current_user.id,
         "vehicle.created",
@@ -159,11 +161,13 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
         result = VehicleRepository(db).update(vehicle_id, data, changed_by=current_user.id)
         mot_repo = MotRepository(db)
         tax_repo = TaxRepository(db)
+        mot_status_repo = MotStatusRepository(db)
         # Drop any attached DVSA/MOT and tax data when the registration change means it no
         # longer applies (the form prompts the user before sending this flag).
         if (request.json or {}).get("disconnect_mot"):
             mot_repo.clear_for_vehicle(vehicle_id)
             tax_repo.clear_for_vehicle(vehicle_id)
+            mot_status_repo.clear_for_vehicle(vehicle_id)
         # If the plate changed and nothing is attached, re-link a detached DVSA / tax record
         # left behind by a deleted vehicle (or standalone lookup) on the new plate.
         new_reg = (result.get("registration") or "") if result else ""
@@ -176,6 +180,8 @@ def update_vehicle(vehicle_id: int) -> ResponseReturnValue:
                 mot_repo.relink_detached(vehicle_id, new_reg)
             if tax_repo.get_for_vehicle(vehicle_id) is None:
                 tax_repo.relink_detached(vehicle_id, new_reg)
+            if mot_status_repo.get_for_vehicle(vehicle_id) is None:
+                mot_status_repo.relink_detached(vehicle_id, new_reg)
         return jsonify(result)
 
 
