@@ -23,8 +23,6 @@ stop-gap: the HTML is unversioned and behind a WAF, so keep lookups to on-demand
 single-plate refreshes. `fetch_ves` returns a flat dict whose keys map 1:1 to the real
 VES API fields, so swapping in the API later changes only this module's internals.
 
-Set VES_SCRAPE_ENABLED=0 to turn lookups off (is_configured() → False).
-
 Where the gov.uk host is unreachable but a whitelisted host is (e.g. a free
 PythonAnywhere account, whose egress whitelist allows *.workers.dev but not
 vehicleenquiry.service.gov.uk), set VES_RELAY_URL to a relay (the Cloudflare Worker in
@@ -73,11 +71,6 @@ class VesError(Exception):
         self.status = status
 
 
-def is_configured() -> bool:
-    """Whether VES lookups are enabled (opt out with VES_SCRAPE_ENABLED=0)."""
-    return os.environ.get("VES_SCRAPE_ENABLED", "1").strip() != "0"
-
-
 def _relay_url() -> str:
     """Base URL of the VES relay, or '' when unset.
 
@@ -86,6 +79,17 @@ def _relay_url() -> str:
     hosts whose outbound whitelist blocks the enquiry service. See docs/VES_API.md.
     """
     return os.environ.get("VES_RELAY_URL", "").strip()
+
+
+def effective_endpoint() -> dict[str, str]:
+    """Where a VES lookup actually goes: the relay if configured, else gov.uk directly.
+
+    Surfaced in the admin panel so it's clear which outbound URL each lookup hits.
+    """
+    relay = _relay_url()
+    if relay:
+        return {"mode": "relay", "url": relay}
+    return {"mode": "direct", "url": BASE_URL}
 
 
 # The vehicle-profile rows on the result page: our snapshot key -> the row's element id.

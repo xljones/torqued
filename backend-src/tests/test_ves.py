@@ -112,12 +112,6 @@ def _no_relay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("VES_RELAY_TOKEN", raising=False)
 
 
-@pytest.fixture
-def ves_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force the default 'enabled' state regardless of ambient VES_SCRAPE_ENABLED."""
-    monkeypatch.delenv("VES_SCRAPE_ENABLED", raising=False)
-
-
 # ── fake HTTP plumbing (covers _request) ───────────────────────────────────────
 
 class FakeResponse:
@@ -170,11 +164,11 @@ def test_request_network_error() -> None:
 
 # ── client parsing helpers ──────────────────────────────────────────────────────
 
-def test_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("VES_SCRAPE_ENABLED", raising=False)
-    assert ves.is_configured() is True
-    monkeypatch.setenv("VES_SCRAPE_ENABLED", "0")
-    assert ves.is_configured() is False
+def test_effective_endpoint_direct_and_relay(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("VES_RELAY_URL", raising=False)
+    assert ves.effective_endpoint() == {"mode": "direct", "url": ves.BASE_URL}
+    monkeypatch.setenv("VES_RELAY_URL", "https://relay.example/")
+    assert ves.effective_endpoint() == {"mode": "relay", "url": "https://relay.example/"}
 
 
 def test_normalise_registration() -> None:
@@ -361,11 +355,9 @@ def test_fetch_ves_via_relay_network_error(monkeypatch: pytest.MonkeyPatch) -> N
 
 # ── routes ──────────────────────────────────────────────────────────────────────
 
-def test_ves_status(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("VES_SCRAPE_ENABLED", raising=False)
+def test_ves_status(auth_client: FlaskClient) -> None:
+    # VES is a credential-less scrape, so it always reports configured.
     assert auth_client.get("/api/ves/status").json == {"configured": True}
-    monkeypatch.setenv("VES_SCRAPE_ENABLED", "0")
-    assert auth_client.get("/api/ves/status").json == {"configured": False}
 
 
 def test_get_ves_requires_auth(client: FlaskClient) -> None:
@@ -376,7 +368,7 @@ def test_get_ves_vehicle_404(auth_client: FlaskClient) -> None:
     assert auth_client.get("/api/vehicles/999/ves").status_code == 404
 
 
-def test_get_ves_empty(auth_client: FlaskClient, ves_enabled: None) -> None:
+def test_get_ves_empty(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client, registration="A1 XYZ")
     r = auth_client.get(f"/api/vehicles/{v['id']}/ves")
     assert r.status_code == 200
@@ -403,15 +395,8 @@ def test_refresh_ves_without_registration(auth_client: FlaskClient) -> None:
     assert "registration" in r.json["error"]
 
 
-def test_refresh_ves_unconfigured(auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("VES_SCRAPE_ENABLED", "0")
-    v = mk_vehicle(auth_client, registration="A1 XYZ")
-    assert auth_client.post(f"/api/vehicles/{v['id']}/ves/refresh").status_code == 503
-
-
 def test_refresh_ves_relays_error(
-    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, ves_enabled: None
-) -> None:
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(reg: str) -> dict[str, Any]:
         raise ves.VesError("No vehicle found for registration ZZ99ZZZ", 404)
 
@@ -423,8 +408,7 @@ def test_refresh_ves_relays_error(
 
 
 def test_refresh_ves_stores_and_gets(
-    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, ves_enabled: None
-) -> None:
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {"registration": "A1XYZ", "tax_status": "Taxed", "tax_due_date": "2026-12-01",
                "mot_status": "Vehicle has a valid MOT certificate", "mot_expiry_date": "2027-06-11",
                "make": "FORD", "colour": "Blue", "cylinder_capacity": "1781 cc"}
@@ -448,8 +432,7 @@ def test_refresh_ves_stores_and_gets(
 
 
 def test_disconnect_clears_ves(
-    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, ves_enabled: None
-) -> None:
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {"registration": "A1XYZ", "tax_status": "Taxed", "tax_due_date": "2026-12-01"}
     monkeypatch.setattr(ves, "fetch_ves", lambda reg: payload)
     v = mk_vehicle(auth_client, registration="A1 XYZ")
@@ -545,7 +528,6 @@ def test_ves_relink_noop_without_registration(
 def _store_ves(
     auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    monkeypatch.delenv("VES_SCRAPE_ENABLED", raising=False)
     monkeypatch.setattr(ves, "fetch_ves", lambda reg: payload)
     v = mk_vehicle(auth_client, registration=payload["registration"])
     r = auth_client.post(f"/api/vehicles/{v['id']}/ves/refresh")
@@ -615,8 +597,7 @@ def test_tax_reminders_empty_garages() -> None:
 # ── tax summaries (vehicle list cards) ──────────────────────────────────────────
 
 def test_vehicle_list_includes_tax_summary(
-    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, ves_enabled: None
-) -> None:
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {"registration": "A1XYZ", "tax_status": "Taxed", "tax_due_date": "2026-12-01"}
     monkeypatch.setattr(ves, "fetch_ves", lambda reg: payload)
     v = mk_vehicle(auth_client, registration="A1 XYZ")

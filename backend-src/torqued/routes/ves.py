@@ -14,7 +14,8 @@ bp = Blueprint("ves", __name__)
 @bp.get("/api/ves/status")
 @login_required
 def ves_status() -> ResponseReturnValue:
-    return jsonify(configured=ves.is_configured()), 200
+    # VES is a credential-less gov.uk scrape, so it is always available.
+    return jsonify(configured=True), 200
 
 
 @bp.get("/api/vehicles/<int:vehicle_id>/ves")
@@ -25,7 +26,7 @@ def get_ves(vehicle_id: int) -> ResponseReturnValue:
         if vehicle_role(db, current_user, vehicle_id) is None:
             return jsonify(error="Not found"), 404
         return jsonify(
-            configured=ves.is_configured(),
+            configured=True,
             ves=VesRepository(db).get_for_vehicle(vehicle_id),
         ), 200
 
@@ -43,8 +44,6 @@ def refresh_ves(vehicle_id: int) -> ResponseReturnValue:
         registration = (vehicle or {}).get("registration") or ""
         if not registration.strip():
             return jsonify(error="Vehicle has no registration set"), 400
-    if not ves.is_configured():
-        return jsonify(error="Vehicle enquiry lookups are disabled"), 503
     try:
         payload = ves.fetch_ves(registration)
     except ves.VesError as e:

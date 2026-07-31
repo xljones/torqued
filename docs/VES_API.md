@@ -39,9 +39,11 @@ refreshes** (never bulk). A browser-like `User-Agent` is sent so the WAF doesn't
 
 ### Config
 
+VES needs no credentials and is always available; the only choice is **how the request is
+routed** — directly to gov.uk, or through a relay:
+
 | Env | Meaning |
 |---|---|
-| `VES_SCRAPE_ENABLED` | `1` (default) enables lookups; `0` disables them (`is_configured()` → False, so the UI hides the refresh and `refresh` returns 503). |
 | `VES_RELAY_URL` | Optional. When set, `fetch_ves` proxies through a relay instead of scraping gov.uk directly (see below). |
 | `VES_RELAY_TOKEN` | Optional shared secret sent as `Authorization: Bearer …` to the relay; must match the relay's `RELAY_TOKEN`. |
 
@@ -126,8 +128,8 @@ Routes → [`torqued/routes/ves.py`](../backend-src/torqued/routes/ves.py), gate
 | `/api/vehicles/<id>/ves` | GET | read access to the vehicle (404 if none) — `{configured, ves}` |
 | `/api/vehicles/<id>/ves/refresh` | POST | write access (403 readonly) — one VES fetch; replaces the snapshot; returns `{ves}` |
 
-`refresh` returns `400` with no registration, `503` when disabled, and relays the client's
-status (`404` unknown plate, `502` scrape failure).
+`refresh` returns `400` with no registration and relays the client's status (`404` unknown
+plate, `502` scrape/relay failure).
 
 ### When it's fetched
 
@@ -302,6 +304,8 @@ plain dict. To swap:
    `mot_expiry_date` (ISO or `None`), `make`, `colour`. VES fields map 1:1: `taxStatus`,
    `taxDueDate`, `motStatus`, `motExpiryDate`, `make`, `colour` — so the MOT-status record
    swaps over with the tax record, no downstream change.
-2. Point `is_configured()` at the API key env var instead of `VES_SCRAPE_ENABLED`.
+2. Gate it on the API key env var (VES currently needs no credentials, so it has no
+   `is_configured()` — the routes always report `configured: true`). With an API key it
+   would gain one, and the `/ves/status` + refresh routes would honour it.
 3. Delete the scraper helpers (`_TokenParser`, `_FieldParser`, `_request`, `_extract_token`,
    `_field`, `_parse_due_date`) and their tests; the repository/route/UI tests are unaffected.
