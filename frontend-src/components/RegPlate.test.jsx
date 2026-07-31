@@ -13,6 +13,11 @@ describe('RegPlate', () => {
     expect(screen.getByText('AB12 CDE')).toBeInTheDocument();
   });
 
+  it('inserts canonical UK spacing for an unspaced plate', () => {
+    render(<RegPlate reg="ab12cde" />);
+    expect(screen.getByText('AB12 CDE')).toBeInTheDocument();
+  });
+
   it('renders nothing when empty', () => {
     const { container } = render(<RegPlate reg="" />);
     expect(container).toBeEmptyDOMElement();
