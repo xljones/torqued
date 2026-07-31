@@ -76,7 +76,7 @@ describe('VehicleRecordsPage', () => {
 
     await waitFor(() => expect(screen.getByText('VOLKSWAGEN PASSAT')).toBeInTheDocument());
     expect(api.getVehicleRecords).toHaveBeenCalledWith(1);
-    expect(screen.getByText('A1XYZ')).toBeInTheDocument();  // RegPlate forces uppercase
+    expect(screen.getByText('A1 XYZ')).toBeInTheDocument();  // RegPlate uppercases + applies UK spacing
     expect(screen.getByText('2003')).toBeInTheDocument();
     expect(screen.getByText('1 vehicle, 2 records (1 DVSA, 1 tax, 0 MOT)')).toBeInTheDocument();
     expect(screen.getByText('· 2 records (1 DVSA, 1 tax)')).toBeInTheDocument();
