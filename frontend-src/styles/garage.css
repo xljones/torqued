@@ -43,12 +43,17 @@
   border: 1px solid var(--tint-ok-border); border-radius: var(--radius); padding: 8px 12px;
 }
 
-/* ── MOT-sourced detail fields ─────────────────────────────────────────────── */
+/* ── DVSA / DVLA-sourced detail fields ─────────────────────────────────────── */
 .field-source {
   display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; color: var(--text2); background: var(--surface2);
   border: 1px solid var(--border); border-radius: 99px; padding: 0 6px; margin-left: 6px;
   vertical-align: middle;
+}
+/* DVLA badge tinted so a field backed by both sources reads at a glance. */
+.field-source-dvla {
+  color: var(--tint-ok-fg); background: var(--tint-ok-bg);
+  border-color: var(--tint-ok-border);
 }
 .field-reset { margin-left: 8px; font-size: 11px; }
 

@@ -96,6 +96,164 @@ def normalise_registration(registration: str) -> str:
     return registration.replace(" ", "").upper()
 
 
+# ── Vehicle-detail baseline & DVSA/DVLA provenance ──────────────────────────────
+#
+# The DVSA MOT record and this DVLA VES snapshot describe the same vehicle, so many
+# fields appear in both — but formatted differently ("1170" vs "1170 cc", an ISO date
+# vs "October 2003", `Petrol` vs `PETROL`). `to_baseline` maps a stored VES snapshot
+# onto the same detail-field keys DVSA uses (see mot.to_baseline), and `field_sources`
+# reports, per field, which sources supplied it: DVSA, DVLA, or both when they agree
+# once normalised. The vehicle-detail UI uses the first to display DVLA-only fields and
+# the second to tag every field DVSA / DVLA / both.
+
+# DVLA-only detail fields the VES page carries but DVSA does not. These key straight off
+# the stored snapshot (the keys `fetch_ves` writes, i.e. the left side of _PROFILE_FIELDS).
+_VES_ONLY = (
+    "co2_emissions",
+    "euro_status",
+    "real_driving_emissions",
+    "export_marker",
+    "type_approval",
+    "wheelplan",
+    "revenue_weight",
+    "date_of_last_v5c",
+)
+
+
+def _clean(value: Any) -> str | None:
+    """Trim a snapshot value, treating blanks and DVLA's "Not available" as absent."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "not available":
+        return None
+    return text
+
+
+def _int(value: Any) -> int | None:
+    """The first run of digits in a value as an int (year, etc.), or None."""
+    match = re.search(r"\d+", str(value)) if value is not None else None
+    return int(match.group()) if match else None
+
+
+def _digits(value: Any) -> str | None:
+    """All digits in a value ("1170 cc" -> "1170"), or None when there are none."""
+    cleaned = _clean(value)
+    if cleaned is None:
+        return None
+    return re.sub(r"\D", "", cleaned) or None
+
+
+def _month_key(value: Any) -> str | None:
+    """A 'YYYY-MM' key from an ISO date or a '[day] Month YYYY' string, else None.
+
+    DVSA gives a full ISO registration date; DVLA gives only the month of first
+    registration ("October 2003"), so the sources can only be compared at month
+    granularity.
+    """
+    cleaned = _clean(value)
+    if cleaned is None:
+        return None
+    iso = re.match(r"(\d{4})-(\d{2})", cleaned)
+    if iso:
+        return f"{iso.group(1)}-{iso.group(2)}"
+    named = re.search(r"([A-Za-z]+)\s+(\d{4})", cleaned)
+    if named:
+        month = _MONTHS.get(named.group(1).lower())
+        if month:
+            return f"{int(named.group(2))}-{month:02d}"
+    return None
+
+
+def _casefold(value: Any) -> str | None:
+    cleaned = _clean(value)
+    return cleaned.lower() if cleaned else None
+
+
+def _reg_key(value: Any) -> str | None:
+    cleaned = _clean(value)
+    return normalise_registration(cleaned) if cleaned else None
+
+
+def _year_key(value: Any) -> str | None:
+    number = _int(value)
+    return str(number) if number is not None else None
+
+
+# Detail fields present in both sources: detail key -> (VES snapshot key, comparison key).
+# The comparison key folds away formatting differences so equal data compares equal.
+_SHARED = {
+    "make": ("make", _casefold),
+    "colour": ("colour", _casefold),
+    "fuel_type": ("fuel_type", _casefold),
+    "year": ("year_of_manufacture", _year_key),
+    "engine_size": ("cylinder_capacity", _digits),
+    "registration": ("registration", _reg_key),
+    "registration_date": ("date_of_first_registration", _month_key),
+}
+
+# Every overridable DVSA detail field, so provenance covers DVSA-only ones (model, first
+# used) too — they simply never gain a DVLA source.
+_DVSA_FIELDS = (
+    "make", "model", "year", "registration", "colour",
+    "fuel_type", "engine_size", "first_used_date", "registration_date",
+)
+
+
+def to_baseline(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    """Map a stored VES snapshot onto vehicle-detail fields (DVLA display values).
+
+    Shared fields are keyed the same as DVSA's baseline (see mot.to_baseline) so the UI
+    can fall back to a DVLA value when DVSA lacks one; DVLA-only fields (CO₂, Euro status,
+    …) are included verbatim. Absent / "Not available" values are dropped.
+    """
+    s = snapshot or {}
+    out: dict[str, Any] = {
+        "make": _clean(s.get("make")),
+        "colour": _clean(s.get("colour")),
+        "fuel_type": _clean(s.get("fuel_type")),
+        "year": _int(s.get("year_of_manufacture")),
+        "engine_size": _digits(s.get("cylinder_capacity")),
+        "registration": _clean(s.get("registration")),
+        "registration_date": _clean(s.get("date_of_first_registration")),
+        **{key: _clean(s.get(key)) for key in _VES_ONLY},
+    }
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def field_sources(
+    dvsa_baseline: dict[str, Any] | None, ves_snapshot: dict[str, Any] | None
+) -> dict[str, list[str]]:
+    """Per detail field, which sources supply it: ``["dvsa"]`` / ``["dvla"]`` / both.
+
+    Both are listed only when the values agree once normalised (case, units, date
+    granularity). When they disagree the DVSA value is the one displayed, so only DVSA is
+    tagged. DVLA-only fields are tagged ``["dvla"]``.
+    """
+    dvsa = dvsa_baseline or {}
+    ves = ves_snapshot or {}
+    out: dict[str, list[str]] = {}
+    for key in _DVSA_FIELDS:
+        raw = dvsa.get(key)
+        has_dvsa = raw is not None and str(raw) != ""
+        sources = ["dvsa"] if has_dvsa else []
+        shared = _SHARED.get(key)
+        if shared:
+            ves_key, to_key = shared
+            ves_norm = to_key(ves.get(ves_key))
+            if ves_norm is not None:
+                if has_dvsa and to_key(raw) == ves_norm:
+                    sources.append("dvla")
+                elif not has_dvsa:
+                    sources = ["dvla"]
+        if sources:
+            out[key] = sources
+    for key in _VES_ONLY:
+        if _clean(ves.get(key)) is not None:
+            out[key] = ["dvla"]
+    return out
+
+
 class _TokenParser(HTMLParser):
     """Pull the `authenticity_token` from the form that posts to the save endpoint.
 
