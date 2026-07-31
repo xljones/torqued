@@ -128,6 +128,7 @@ def test_repo_no_op_paths_on_missing_photo(app: Flask) -> None:
     with get_db() as db:
         repo = PhotoRepository(db)
         assert repo.update_caption(999, "x") is None
+        assert repo.update_cover_frame(999, 0.5, 0.5, 1.0) is None
         assert repo.delete(999) is False
 
 
@@ -204,3 +205,120 @@ def test_set_cover_cross_garage_404(client: FlaskClient, garage: dict[str, Any])
 
     login(client, "alice")
     assert client.put(f"/api/photos/{photo['id']}/cover").status_code == 404
+
+
+# ── cover-crop framing ────────────────────────────────────────────────────────────
+
+def _cover_frame(client: FlaskClient, vehicle_id: int) -> dict[str, Any]:
+    """The vehicle's cover-crop framing fields as reported by the list endpoint."""
+    listed = next(v for v in client.get("/api/vehicles").json if v["id"] == vehicle_id)
+    return {k: listed[k] for k in ("cover_focal_x", "cover_focal_y", "cover_zoom")}
+
+
+def test_update_cover_frame(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    photo = upload(auth_client, v["id"]).json
+    r = auth_client.put(
+        f"/api/photos/{photo['id']}/cover-frame",
+        json={"focal_x": 0.25, "focal_y": 0.75, "zoom": 2.5},
+    )
+    assert r.status_code == 200
+    assert r.json["cover_focal_x"] == 0.25
+    assert r.json["cover_focal_y"] == 0.75
+    assert r.json["cover_zoom"] == 2.5
+    # This photo is the (only, latest-upload) cover, so the framing surfaces on the list too.
+    assert _cover_frame(auth_client, v["id"]) == {
+        "cover_focal_x": 0.25, "cover_focal_y": 0.75, "cover_zoom": 2.5,
+    }
+
+
+def test_cover_frame_null_before_set(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    upload(auth_client, v["id"])
+    assert _cover_frame(auth_client, v["id"]) == {
+        "cover_focal_x": None, "cover_focal_y": None, "cover_zoom": None,
+    }
+
+
+def test_cover_frame_null_without_photos(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    assert _cover_frame(auth_client, v["id"]) == {
+        "cover_focal_x": None, "cover_focal_y": None, "cover_zoom": None,
+    }
+
+
+def test_cover_frame_follows_pinned_cover_not_fallback(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    p1 = upload(auth_client, v["id"]).json
+    p2 = upload(auth_client, v["id"]).json
+    auth_client.put(f"/api/photos/{p1['id']}/cover-frame", json={"focal_x": 0.1, "focal_y": 0.2, "zoom": 1.5})
+    # p2 is the latest-upload fallback cover, but has no framing of its own.
+    assert _cover_frame(auth_client, v["id"]) == {
+        "cover_focal_x": None, "cover_focal_y": None, "cover_zoom": None,
+    }
+    # Pinning p1 as the actual cover surfaces its previously-saved framing.
+    auth_client.put(f"/api/photos/{p1['id']}/cover")
+    assert _cover_frame(auth_client, v["id"]) == {
+        "cover_focal_x": 0.1, "cover_focal_y": 0.2, "cover_zoom": 1.5,
+    }
+
+
+def test_update_cover_frame_missing_fields(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    photo = upload(auth_client, v["id"]).json
+    r = auth_client.put(f"/api/photos/{photo['id']}/cover-frame", json={"focal_x": 0.5, "focal_y": 0.5})
+    assert r.status_code == 400
+
+
+def test_update_cover_frame_non_numeric(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    photo = upload(auth_client, v["id"]).json
+    r = auth_client.put(
+        f"/api/photos/{photo['id']}/cover-frame",
+        json={"focal_x": "nope", "focal_y": 0.5, "zoom": 1},
+    )
+    assert r.status_code == 400
+
+
+def test_update_cover_frame_focal_out_of_range(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    photo = upload(auth_client, v["id"]).json
+    assert auth_client.put(
+        f"/api/photos/{photo['id']}/cover-frame", json={"focal_x": -0.1, "focal_y": 0.5, "zoom": 1}
+    ).status_code == 400
+    assert auth_client.put(
+        f"/api/photos/{photo['id']}/cover-frame", json={"focal_x": 0.5, "focal_y": 1.1, "zoom": 1}
+    ).status_code == 400
+
+
+def test_update_cover_frame_zoom_out_of_range(auth_client: FlaskClient) -> None:
+    v = mk_vehicle(auth_client)
+    photo = upload(auth_client, v["id"]).json
+    assert auth_client.put(
+        f"/api/photos/{photo['id']}/cover-frame", json={"focal_x": 0.5, "focal_y": 0.5, "zoom": 0.9}
+    ).status_code == 400
+    assert auth_client.put(
+        f"/api/photos/{photo['id']}/cover-frame", json={"focal_x": 0.5, "focal_y": 0.5, "zoom": 4.1}
+    ).status_code == 400
+
+
+def test_update_cover_frame_404(auth_client: FlaskClient) -> None:
+    r = auth_client.put(
+        "/api/photos/999/cover-frame", json={"focal_x": 0.5, "focal_y": 0.5, "zoom": 1}
+    )
+    assert r.status_code == 404
+
+
+def test_update_cover_frame_readonly_403(readonly_client: FlaskClient, garage: dict[str, Any]) -> None:
+    from torqued.db import get_db
+    from torqued.repositories.photo_repository import PhotoRepository
+    from torqued.repositories.vehicle_repository import VehicleRepository
+
+    with get_db() as db:
+        vehicle = VehicleRepository(db).create(garage["id"], {"name": "Shared bike"})
+        photo = PhotoRepository(db).create(vehicle["id"], "shared.png")
+
+    r = readonly_client.put(
+        f"/api/photos/{photo['id']}/cover-frame", json={"focal_x": 0.5, "focal_y": 0.5, "zoom": 1}
+    )
+    assert r.status_code == 403

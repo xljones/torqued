@@ -44,6 +44,19 @@ class PhotoRepository(BaseRepository):
         self.session.flush()
         return to_dict(photo)
 
+    def update_cover_frame(
+        self, photo_id: int, focal_x: float, focal_y: float, zoom: float
+    ) -> dict[str, Any] | None:
+        """Update a photo's cover-crop framing (focal point + zoom) and return the record."""
+        photo = self.session.get(Photo, photo_id)
+        if photo is None:
+            return None
+        photo.cover_focal_x = focal_x
+        photo.cover_focal_y = focal_y
+        photo.cover_zoom = zoom
+        self.session.flush()
+        return to_dict(photo)
+
     def delete(self, photo_id: int) -> bool:
         """Delete a photo record by primary key; return True if a row was removed."""
         photo = self.session.get(Photo, photo_id)

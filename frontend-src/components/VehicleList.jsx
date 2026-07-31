@@ -88,7 +88,18 @@ export default function VehicleList() {
     <Link key={v.id} to={`/vehicles/${v.id}`} className={`vehicle-card${v.archived ? ' archived' : ''}`}>
       <div className="vehicle-card-photo">
         {v.cover_photo_id
-          ? <img src={api.photoUrl(v.cover_photo_id)} alt={v.name} loading="lazy" />
+          ? (
+            <img
+              src={api.photoUrl(v.cover_photo_id)}
+              alt={v.name}
+              loading="lazy"
+              style={v.cover_focal_x != null ? {
+                objectPosition: `${v.cover_focal_x * 100}% ${v.cover_focal_y * 100}%`,
+                transform: `scale(${v.cover_zoom})`,
+                transformOrigin: `${v.cover_focal_x * 100}% ${v.cover_focal_y * 100}%`,
+              } : undefined}
+            />
+          )
           : <span aria-hidden="true">{KIND_ICONS[v.kind]}</span>}
       </div>
       {(v.mot_summary || v.tax_summary) && (

@@ -10,4 +10,7 @@ class Photo:
     original_name: str | None = None
     caption: str | None = None
     uploaded_by: int | None = None
+    cover_focal_x: float | None = None
+    cover_focal_y: float | None = None
+    cover_zoom: float | None = None
     created_at: str | None = None

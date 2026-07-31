@@ -148,6 +148,33 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .lightbox img { max-width: 90vw; max-height: 70vh; border-radius: var(--radius); }
 .lightbox-bar { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13px; flex-wrap: wrap; justify-content: center; }
 .lightbox-caption-input { min-width: 240px; }
+.lightbox-counter {
+  position: fixed; top: 20px; right: 20px; color: #fff; font-size: 13px;
+  background: rgba(0, 0, 0, 0.5); padding: 4px 10px; border-radius: 999px;
+}
+.lightbox-stage { position: relative; display: flex; align-items: center; justify-content: center; }
+.lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 999px; border: none; cursor: pointer;
+  background: rgba(0, 0, 0, 0.5); color: #fff; font-size: 22px; line-height: 1;
+}
+.lightbox-nav--prev { left: 12px; }
+.lightbox-nav--next { right: 12px; }
+.cover-star { color: #ffd24a; }
+
+/* ── Cover-crop framer (avatar-cropper style: fixed frame, pan/zoom the photo) ──────── */
+.cover-framer { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.cover-frame {
+  position: relative; width: 480px; max-width: 90vw; aspect-ratio: 16 / 9;
+  overflow: hidden; border-radius: var(--radius); background: var(--surface2); touch-action: none;
+}
+.cover-frame img { position: absolute; top: 0; left: 0; max-width: none; cursor: grab; }
+.cover-frame-loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px;
+}
+.cover-frame-controls { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13px; }
 
 /* ── Mileage chart ─────────────────────────────────────────────────────────── */
 .mileage-chart { position: relative; width: 100%; height: 115px; margin-top: 4px; margin-bottom: 40px; }

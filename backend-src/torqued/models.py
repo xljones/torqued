@@ -225,6 +225,12 @@ class Photo(Base):
     original_name: Mapped[str | None] = mapped_column(Text)
     caption: Mapped[str | None] = mapped_column(Text)
     uploaded_by: Mapped[int | None] = mapped_column(Integer)
+    # Cover-crop framing for when this photo is used as a vehicle's cover: a focal point
+    # (fraction 0..1 of the image) plus a zoom multiplier on top of the natural
+    # object-fit: cover scale. NULL on all three reproduces today's plain centered crop.
+    cover_focal_x: Mapped[float | None] = mapped_column(Float)
+    cover_focal_y: Mapped[float | None] = mapped_column(Float)
+    cover_zoom: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
 
 
