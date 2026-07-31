@@ -91,10 +91,11 @@ export const api = {
   getMotStatus: ()               => req('GET',  '/mot/status'),
   lookupMot:    (registration)   => req('GET',  `/mot/lookup/${encodeURIComponent(registration)}`),
 
-  // Road tax / SORN (DVLA, scraped from the gov.uk vehicle enquiry service)
-  getTax:       (vehicleId)      => req('GET',  `/vehicles/${vehicleId}/tax`),
-  refreshTax:   (vehicleId)      => req('POST', `/vehicles/${vehicleId}/tax/refresh`),
-  getTaxStatus: ()               => req('GET',  '/tax/status'),
+  // DVLA Vehicle Enquiry Service (scraped from gov.uk): one lookup = tax + MOT status +
+  // the full vehicle profile, stored as a single VES record.
+  getVes:       (vehicleId) => req('GET',  `/vehicles/${vehicleId}/ves`),
+  refreshVes:   (vehicleId) => req('POST', `/vehicles/${vehicleId}/ves/refresh`),
+  getVesStatus: ()          => req('GET',  '/ves/status'),
 
   // Odometer logs
   getOdometerLogs:    (vehicleId)      => req('GET',    `/vehicles/${vehicleId}/odometer`),

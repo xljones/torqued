@@ -1,9 +1,13 @@
-"""Client for a vehicle's road-tax / SORN status.
+"""Client for the DVLA Vehicle Enquiry Service (VES): a full vehicle snapshot.
 
-The official DVLA Vehicle Enquiry Service (VES) API is the canonical source, but it
-is closed to new sign-ups. Until we can get an API key this scrapes the same data
-from the public gov.uk "Check if a vehicle is taxed" service
-(https://vehicleenquiry.service.gov.uk/), which needs no credentials.
+The official VES API is the canonical source, but it is closed to new sign-ups. Until we
+can get an API key this scrapes the same data from the public gov.uk "Check if a vehicle
+is taxed" service (https://vehicleenquiry.service.gov.uk/), which needs no credentials.
+
+One lookup returns the whole VES record the result page shows: tax + MOT status *and*
+the vehicle profile (make, colour, first-registration date, year, cylinder capacity, CO₂,
+fuel, Euro status, RDE, export marker, type approval, wheelplan, revenue weight, last V5C
+date). All of it is captured in one fetch and stored in a single `vehicle_ves` record.
 
 The public service is a small Rails wizard. One lookup is four requests sharing a
 cookie session:
@@ -12,17 +16,17 @@ cookie session:
     2. POST /vehicle-enquiry/save — the registration; 302 → /ConfirmVehicle (or
                                      /VehicleNotFound for an unknown plate)
     3. POST /vehicle-enquiry/save — confirm the vehicle; 302 → /VehicleFound
-    4. (the GET the redirect lands on) — the result page with tax status + due date
+    4. (the GET the redirect lands on) — the result page with the full snapshot
 
 The CSRF token is per-page, so it is re-read before each POST. This is a deliberate
 stop-gap: the HTML is unversioned and behind a WAF, so keep lookups to on-demand
-single-plate refreshes. `fetch_tax` is shaped like `mot.fetch_vehicle` so swapping in
-the real VES API later is a drop-in.
+single-plate refreshes. `fetch_ves` returns a flat dict whose keys map 1:1 to the real
+VES API fields, so swapping in the API later changes only this module's internals.
 
 Set VES_SCRAPE_ENABLED=0 to turn lookups off (is_configured() → False).
 
 This scrapes unversioned HTML and WILL break when the service changes. When it
-does, see docs/TAX_API.md → "Maintenance & troubleshooting" for the exact page
+does, see docs/VES_API.md → "Maintenance & troubleshooting" for the exact page
 structures this depends on, a symptom→fix table, and a step-by-step debug recipe.
 """
 import http.cookiejar
@@ -53,8 +57,8 @@ _MONTHS = {
 }
 
 
-class TaxError(Exception):
-    """A tax lookup failed; `status` is the HTTP status to relay."""
+class VesError(Exception):
+    """A VES lookup failed; `status` is the HTTP status to relay."""
 
     def __init__(self, message: str, status: int = 502) -> None:
         super().__init__(message)
@@ -62,8 +66,30 @@ class TaxError(Exception):
 
 
 def is_configured() -> bool:
-    """Whether tax lookups are enabled (opt out with VES_SCRAPE_ENABLED=0)."""
+    """Whether VES lookups are enabled (opt out with VES_SCRAPE_ENABLED=0)."""
     return os.environ.get("VES_SCRAPE_ENABLED", "1").strip() != "0"
+
+
+# The vehicle-profile rows on the result page: our snapshot key -> the row's element id.
+# Each is a GOV.UK summary row keyed by id wrapping a <dt> label and the <dd> value, read
+# with _field(..., value_tag="dd"). `vehicleStatus` (tax) and the two MOT panels are read
+# separately below.
+_PROFILE_FIELDS = {
+    "make": "make",
+    "colour": "colour",
+    "date_of_first_registration": "date_of_first_registration",
+    "year_of_manufacture": "year_of_manufacture",
+    "cylinder_capacity": "engine_capacity",
+    "co2_emissions": "co2_emissions",
+    "fuel_type": "fuel_type",
+    "euro_status": "euro_status",
+    "real_driving_emissions": "real_driving_emissions",
+    "export_marker": "marked_for_export",
+    "type_approval": "type_approval",
+    "wheelplan": "wheelPlan",
+    "revenue_weight": "revenue_weight",
+    "date_of_last_v5c": "date_of_last_v5c_issued",
+}
 
 
 def normalise_registration(registration: str) -> str:
@@ -139,7 +165,7 @@ def _extract_token(html: str) -> str:
     parser = _TokenParser()
     parser.feed(html)
     if not parser.token:
-        raise TaxError("Could not read the vehicle-enquiry form", 502)
+        raise VesError("Could not read the vehicle-enquiry form", 502)
     return parser.token
 
 
@@ -179,17 +205,30 @@ def _request(
             return resp.read().decode("utf-8", "replace"), resp.geturl()
     except urllib.error.HTTPError as e:
         e.close()
-        raise TaxError(f"Vehicle enquiry service error: {e.code} {e.reason}", 502) from e
+        raise VesError(f"Vehicle enquiry service error: {e.code} {e.reason}", 502) from e
     except Exception as e:
-        raise TaxError(f"Could not reach the vehicle enquiry service: {e}", 502) from e
+        raise VesError(f"Could not reach the vehicle enquiry service: {e}", 502) from e
 
 
-def fetch_tax(registration: str) -> dict[str, Any]:
-    """Fetch tax status, SORN, and tax due date for a registration.
+def fetch_ves(registration: str) -> dict[str, Any]:
+    """Fetch the full DVLA VES snapshot for a registration in one lookup.
 
-    Returns a dict with `registration`, `tax_status` ('Taxed'/'SORN'/'Untaxed'/…),
-    `tax_due_date` (ISO string or None), and best-effort `make`/`colour`. Raises
-    TaxError(404) for an unknown plate and TaxError(502) for any other failure.
+    Returns a flat dict:
+      * `registration`
+      * `tax_status` ('Taxed'/'SORN'/'Untaxed'/…) and `tax_due_date` (ISO or None)
+      * `mot_status` (the panel's status sentence, or None) and `mot_expiry_date`
+        (ISO or None)
+      * the vehicle profile — `make`, `colour`, `date_of_first_registration`,
+        `year_of_manufacture`, `cylinder_capacity`, `co2_emissions`, `fuel_type`,
+        `euro_status`, `real_driving_emissions`, `export_marker`, `type_approval`,
+        `wheelplan`, `revenue_weight`, `date_of_last_v5c` (verbatim strings, or None)
+
+    Only an unreadable *tax* status is fatal (a valid result page always has one); every
+    other field is best-effort and left None when the row is absent (a bike has no CO₂,
+    a vehicle may have no MOT, etc.). Raises VesError(404) for an unknown plate and
+    VesError(502) for any other failure.
+
+    The keys map 1:1 to the real VES API, so an API swap changes only this function.
     """
     reg = normalise_registration(registration)
     opener = urllib.request.build_opener(
@@ -204,7 +243,7 @@ def fetch_tax(registration: str) -> dict[str, Any]:
          "wizard_vehicle_enquiry_capture_vrn[vrn]": reg},
     )
     if "VehicleNotFound" in confirm_url:
-        raise TaxError(f"No vehicle found for registration {reg}", 404)
+        raise VesError(f"No vehicle found for registration {reg}", 404)
 
     found_html, found_url = _request(
         opener,
@@ -213,15 +252,22 @@ def fetch_tax(registration: str) -> dict[str, Any]:
          "wizard_vehicle_enquiry_capture_confirm_vehicle[confirmed]": "Yes"},
     )
     if "VehicleFound" not in found_url:
-        raise TaxError("Unexpected response from the vehicle enquiry service", 502)
+        raise VesError("Unexpected response from the vehicle enquiry service", 502)
 
     status = _field(found_html, "vehicleStatus", value_tag="dd")
     if not status:
-        raise TaxError("Could not read the vehicle tax status", 502)
-    return {
+        raise VesError("Could not read the vehicle tax status", 502)
+    snapshot: dict[str, Any] = {
         "registration": reg,
         "tax_status": status,
         "tax_due_date": _parse_due_date(_field(found_html, "tax-status-panel")),
-        "make": _field(found_html, "make", value_tag="dd"),
-        "colour": _field(found_html, "colour", value_tag="dd"),
+        # MOT is on the same result page: `mot_hidden_details` holds the status sentence
+        # ("Vehicle … has a valid MOT certificate") and `mot-status-panel` the "Expires:
+        # <date>". Both absent for a vehicle with no MOT — left as None, never fatal.
+        "mot_status": _field(found_html, "mot_hidden_details"),
+        "mot_expiry_date": _parse_due_date(_field(found_html, "mot-status-panel")),
     }
+    # The rest of the vehicle profile — verbatim summary-row values, best-effort.
+    for key, element_id in _PROFILE_FIELDS.items():
+        snapshot[key] = _field(found_html, element_id, value_tag="dd")
+    return snapshot

@@ -57,9 +57,9 @@ def create_app() -> Flask:
         schedules,
         search,
         services,
-        tax,
         users,
         vehicles,
+        ves,
     )
 
     # On PythonAnywhere, migrations are applied explicitly (single process) by
@@ -136,7 +136,7 @@ def create_app() -> Flask:
         services.bp,
         odometer.bp,
         mot.bp,
-        tax.bp,
+        ves.bp,
         records.bp,
         photos.bp,
         schedules.bp,

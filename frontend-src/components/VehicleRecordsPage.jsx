@@ -11,22 +11,32 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // Normalise a plate the way the backend groups them (strip spaces, case-insensitive).
 const normReg = r => (r ?? '').replace(/\s+/g, '').toLowerCase();
 
-const SOURCE_LABEL = { dvsa: 'DVSA record', tax: 'DVLA tax record' };
+const SOURCE_LABEL = {
+  dvsa: 'DVSA record',
+  ves: 'DVLA record (VES)',
+};
 
-// One record's summary line in the expanded view — make/model for DVSA, tax status for tax.
+// One record's summary line in the expanded view — make/model for DVSA; tax + MOT status
+// for the DVLA VES record.
 function recordSummary(r) {
-  const head = r.source === 'tax'
-    ? (r.tax_status || 'Tax')
-    : ([r.make, r.model].filter(Boolean).join(' ') || '—');
+  let head;
+  if (r.source === 'ves') {
+    const bits = [r.tax_status, r.mot_expiry_date ? `MOT to ${r.mot_expiry_date}` : null].filter(Boolean);
+    head = bits.join(' · ') || 'DVLA';
+  } else {
+    head = [r.make, r.model].filter(Boolean).join(' ') || '—';
+  }
   return <>{head}{' · looked up '}<RelativeTime value={r.fetched_at} /></>;
 }
 
-// "N records" with a per-source split when the vehicle has both kinds.
+// "N records" with a per-source split when the vehicle has more than one kind.
 function recordCountLabel(v) {
-  if (v.dvsa_count && v.tax_count) {
-    return `${plural(v.record_count, 'record')} (${v.dvsa_count} DVSA, ${v.tax_count} tax)`;
-  }
-  return plural(v.record_count, 'record');
+  const parts = [
+    [v.dvsa_count, 'DVSA'],
+    [v.ves_count, 'DVLA'],
+  ].filter(([n]) => n);
+  const split = parts.length > 1 ? ` (${parts.map(([n, label]) => `${n} ${label}`).join(', ')})` : '';
+  return `${plural(v.record_count, 'record')}${split}`;
 }
 
 // One vehicle row: a summary line that expands to reveal every stored DVLA + DVSA record
@@ -70,7 +80,7 @@ function RecordRow({ v, defaultOpen = false, onRefreshed }) {
     try {
       if (v.vehicle_id != null) {
         // Refresh both sources independently so one failing doesn't block the other.
-        await Promise.allSettled([api.refreshMot(v.vehicle_id), api.refreshTax(v.vehicle_id)]);
+        await Promise.allSettled([api.refreshMot(v.vehicle_id), api.refreshVes(v.vehicle_id)]);
       } else {
         await api.lookupVehicleRecord(v.registration);
       }
@@ -184,7 +194,7 @@ export default function VehicleRecordsPage() {
     // The Find form appears when either source can be queried.
     Promise.all([
       api.getMotStatus().then(s => s.configured).catch(() => false),
-      api.getTaxStatus().then(s => s.configured).catch(() => false),
+      api.getVesStatus().then(s => s.configured).catch(() => false),
     ]).then(([mot, tax]) => setCanLookup(mot || tax));
   }, []);
 
@@ -236,7 +246,7 @@ export default function VehicleRecordsPage() {
         {data && (
           <span className="meta">
             {plural(data.total, 'vehicle')}, {plural(data.total_records, 'record')}
-            {' '}({data.total_dvsa} DVSA, {data.total_tax} tax)
+            {' '}({data.total_dvsa} DVSA, {data.total_ves} DVLA)
           </span>
         )}
       </div>
