@@ -45,9 +45,44 @@ describe('MotField', () => {
     expect(screen.getByText('DVSA')).toBeInTheDocument();
   });
 
+  it('quotes the verbatim record value in the badge tooltip despite a format', () => {
+    render(<MotField {...props({ make: null }, { make: 'VOLKSWAGEN' }, { format: titleCase })} />);
+    // Displayed value is tidied, but the tooltip reveals the record's true value.
+    expect(screen.getByText('Volkswagen')).toBeInTheDocument();
+    expect(screen.getByText('DVSA')).toHaveAttribute(
+      'title', '"VOLKSWAGEN" from the DVSA record',
+    );
+  });
+
   it('never applies the format prop to a user override', () => {
     render(<MotField {...props({ make: 'McLaren' }, { make: 'MCLAREN' }, { format: titleCase })} />);
     expect(screen.getByText('McLaren')).toBeInTheDocument();
     expect(screen.queryByText('Mclaren')).not.toBeInTheDocument();
+  });
+
+  it('tags both sources when field_sources says DVSA and DVLA agree', () => {
+    render(<MotField {...props({ make: null }, { make: 'FORD' }, {
+      vesBaseline: { make: 'FORD' }, fieldSources: { make: ['dvsa', 'dvla'] },
+    })} />);
+    expect(screen.getByText('DVSA')).toBeInTheDocument();
+    expect(screen.getByText('DVLA')).toBeInTheDocument();
+  });
+
+  it('falls back to the DVLA value with a DVLA tag when DVSA lacks it', () => {
+    render(<MotField {...props({ co2_emissions: undefined }, null, {
+      label: 'CO₂', fieldKey: 'co2_emissions',
+      vesBaseline: { co2_emissions: '204 g/km' }, fieldSources: { co2_emissions: ['dvla'] },
+    })} />);
+    expect(screen.getByText('204 g/km')).toBeInTheDocument();
+    expect(screen.getByText('DVLA')).toBeInTheDocument();
+    expect(screen.queryByText('DVSA')).not.toBeInTheDocument();
+  });
+
+  it('shows no source tag when an override overrides both baselines', () => {
+    render(<MotField {...props({ make: 'Custom' }, { make: 'FORD' }, {
+      vesBaseline: { make: 'FORD' }, fieldSources: { make: ['dvsa', 'dvla'] },
+    })} />);
+    expect(screen.queryByText('DVSA')).not.toBeInTheDocument();
+    expect(screen.queryByText('DVLA')).not.toBeInTheDocument();
   });
 });

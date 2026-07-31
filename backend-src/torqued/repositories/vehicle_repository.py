@@ -3,7 +3,7 @@ from typing import Any
 
 from sqlalchemy import Float, case, cast, delete, func, literal, or_, select, union_all, update
 
-from torqued import mot
+from torqued import mot, ves
 from torqued.db import utcnow_text
 from torqued.models import (
     DvsaVehicle,
@@ -164,7 +164,20 @@ class VehicleRepository(BaseRepository):
             vehicle["cover_photo_id"] = vehicle["photos"][0]["id"] if vehicle["photos"] else None
         vehicle["latest_odometer"] = self.latest_odometers().get(vehicle_id)
         vehicle["mot_baseline"] = self.mot_baseline(vehicle_id)
+        # DVLA VES supplements DVSA for the detail card: `ves_baseline` carries the
+        # DVLA-only fields (and DVLA fallbacks), `field_sources` tags every field DVSA /
+        # DVLA / both once the two sources are normalised (see torqued.ves).
+        ves_snapshot = self._ves_snapshot(vehicle_id)
+        vehicle["ves_baseline"] = ves.to_baseline(ves_snapshot) if ves_snapshot else None
+        vehicle["field_sources"] = ves.field_sources(vehicle["mot_baseline"], ves_snapshot)
         return vehicle
+
+    def _ves_snapshot(self, vehicle_id: int) -> dict[str, Any] | None:
+        """The live DVLA VES snapshot for a vehicle (parsed raw_json), or None."""
+        raw = self.session.execute(
+            select(VehicleVes.raw_json).where(VehicleVes.vehicle_id == vehicle_id)
+        ).scalar_one_or_none()
+        return json.loads(raw) if raw else None
 
     def _specs(self, vehicle_id: int) -> list[dict[str, Any]]:
         """Return a vehicle's spec rows ordered by position."""
