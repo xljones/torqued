@@ -169,7 +169,10 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
   position: relative; width: 480px; max-width: 90vw; aspect-ratio: 16 / 9;
   overflow: hidden; border-radius: var(--radius); background: var(--surface2); touch-action: none;
 }
-.cover-frame img { position: absolute; top: 0; left: 0; max-width: none; cursor: grab; }
+.cover-frame img {
+  position: absolute; top: 0; left: 0; max-width: none; cursor: grab;
+  -webkit-user-drag: none; user-select: none;
+}
 .cover-frame-loading {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 13px;

@@ -169,4 +169,17 @@ describe('PhotoGallery cover framing', () => {
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
     rectSpy.mockRestore();
   });
+
+  it('makes the framer image non-draggable so native image-drag cannot hijack panning', async () => {
+    // On desktop a plain <img> is natively draggable; the browser's drag-image gesture
+    // steals the pointer stream mid-drag so panning stops working (worked on touch only).
+    const rectSpy = mockFrameRect();
+    renderGallery();
+    await userEvent.click(screen.getByAltText('Front'));
+    await userEvent.click(screen.getByRole('button', { name: /Edit cover/ }));
+
+    const img = screen.getByAltText('Frame the cover crop');
+    expect(img).toHaveAttribute('draggable', 'false');
+    rectSpy.mockRestore();
+  });
 });

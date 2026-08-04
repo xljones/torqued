@@ -111,7 +111,15 @@ function CoverFramer({ photo, onSave, onCancel }) {
         onPointerCancel={handlePointerUp}
       >
         {!ready && <div className="cover-frame-loading">Loading…</div>}
-        <img ref={imgRef} src={api.photoUrl(photo.id)} alt="Frame the cover crop" onLoad={handleImgLoad} style={imgStyle} />
+        <img
+          ref={imgRef}
+          src={api.photoUrl(photo.id)}
+          alt="Frame the cover crop"
+          onLoad={handleImgLoad}
+          style={imgStyle}
+          draggable={false}
+          onDragStart={e => e.preventDefault()}
+        />
       </div>
       <div className="cover-frame-controls">
         <input type="range" min="1" max="4" step="0.01" value={zoom} disabled={!ready} onChange={handleZoomChange} />
