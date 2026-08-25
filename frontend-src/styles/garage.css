@@ -101,6 +101,8 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 /* ── Kind & reminder badges ────────────────────────────────────────────────── */
 .badge-car { background: var(--tint-info-bg); color: var(--tint-info-fg); }
 .badge-motorcycle { background: var(--tint-accent2-bg); color: var(--tint-accent2-fg); }
+/* Archived is a state, not a category — greyscale so it reads as "set aside". */
+.badge-archived { background: var(--surface2); color: var(--text2); }
 .badge-overdue { background: var(--tint-bad-bg); color: var(--tint-bad-fg); }
 .badge-due_soon { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
 .badge-upcoming { background: var(--tint-ok-bg); color: var(--tint-ok-fg); }
