@@ -7,6 +7,11 @@
   `/api/admin/neon` endpoint are gone (the `NEON_*` env vars are no longer read).
 
 ### Changed
+- **Stay logged in for 30 days.** The login session previously had no expiry set at all, so
+  the browser treated it as a session cookie and dropped it whenever the browser closed — on
+  mobile that meant being signed out roughly daily. Sessions now last 30 days on a rolling
+  window (every request pushes the expiry back, so only 30 days of inactivity signs you out),
+  and the session cookie is marked `Secure` when running on PythonAnywhere.
 - **SQLite by default everywhere.** Development, tests, and production all use SQLite; the
   local Docker Postgres service and the dev-only login database switcher were removed.
   PostgreSQL is still supported by setting `DATABASE_URL`.
