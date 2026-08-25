@@ -1,6 +1,6 @@
 from typing import Any
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request, session
 from flask.typing import ResponseReturnValue
 from flask_login import current_user, login_required, login_user, logout_user
 
@@ -47,6 +47,7 @@ def login() -> ResponseReturnValue:
     user = _user_obj(row)
     if not user.is_active:
         return jsonify(error="Account expired"), 401
+    session.permanent = True
     login_user(user)
     analytics.capture(
         user.id,

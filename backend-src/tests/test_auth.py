@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -13,6 +15,35 @@ def test_login_success(client: FlaskClient, app: Flask) -> None:
     assert r.status_code == 200
     assert r.json["username"] == "alice"
     assert r.json["memberships"] == []
+
+
+def test_session_lifetime_is_30_days(app: Flask) -> None:
+    assert app.config["PERMANENT_SESSION_LIFETIME"] == timedelta(days=30)
+
+
+def test_login_sets_dated_cookie(client: FlaskClient, app: Flask) -> None:
+    """Login must issue a dated cookie, not a browser-session one (which mobile
+    browsers discard within a day)."""
+    with app.app_context():
+        with get_db() as db:
+            UserRepository(db).create("alice", "secret")
+    r = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
+    assert "Expires=" in r.headers["Set-Cookie"]
+    expires = client.get_cookie("session").expires
+    assert expires is not None
+    days = (expires.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).days
+    assert 29 <= days <= 30
+
+
+def test_request_refreshes_cookie_expiry(auth_client: FlaskClient) -> None:
+    """Every authenticated request pushes the expiry back, so the 30 days are rolling —
+    and a session issued before this existed gets upgraded on first use."""
+    auth_client.set_cookie("session", auth_client.get_cookie("session").value)
+    assert auth_client.get_cookie("session").expires is None
+    r = auth_client.get("/api/auth/me")
+    assert r.status_code == 200
+    assert "Expires=" in r.headers["Set-Cookie"]
+    assert auth_client.get_cookie("session").expires is not None
 
 
 def test_login_wrong_password(client: FlaskClient, app: Flask) -> None:
