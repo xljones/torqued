@@ -56,8 +56,9 @@ class MotRepository(BaseRepository):
         recent DVSA test's expiry and the DVLA VES current-MOT-status expiry (the DVSA
         history feed lags for e.g. SORN vehicles, so a fresh VES expiry corrects a stale
         DVSA one and prevents a false 'overdue'), falling back to the DVSA vehicle-level
-        next-due date — the same value the MOT card shows. Shaped (and tagged type='mot')
-        to merge with the service-log reminders.
+        next-due date — the same value the MOT card shows. Vehicles the DVLA records as
+        SORN are skipped entirely: off the road, no MOT needed, nothing to act on.
+        Shaped (and tagged type='mot') to merge with the service-log reminders.
         """
         today = today or date.today()
         if not garage_ids:
@@ -80,6 +81,7 @@ class MotRepository(BaseRepository):
                 DvsaVehicle.mot_test_due_date,
                 latest_expiry.label("latest_expiry"),
                 VehicleVes.mot_expiry_date.label("ves_expiry"),
+                VehicleVes.tax_status.label("ves_tax_status"),
             )
             .join(DvsaVehicle, DvsaVehicle.vehicle_id == Vehicle.id)
             .outerjoin(VehicleVes, VehicleVes.vehicle_id == Vehicle.id)
@@ -92,6 +94,10 @@ class MotRepository(BaseRepository):
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
         for r in rows:
+            # A SORN vehicle is declared off the road and needs no MOT, so a lapsed one
+            # isn't actionable. The vehicle card still shows the factual 'expired' status.
+            if (r["ves_tax_status"] or "").upper() == "SORN":
+                continue
             # The later of the DVSA test expiry and the VES expiry (ISO YYYY-MM-DD strings
             # sort chronologically), so a fresh VES status overrides stale DVSA history.
             expiry = max(
