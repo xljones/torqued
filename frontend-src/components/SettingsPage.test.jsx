@@ -4,13 +4,15 @@ import SettingsPage from './SettingsPage';
 import { ThemeProvider } from '../ThemeContext.jsx';
 import { DisplayPrefsProvider } from '../DisplayPrefsContext.jsx';
 
+let currentUser = { username: 'alice', is_admin: false };
 vi.mock('../AuthContext.jsx', () => ({
-  useAuth: () => ({ user: { username: 'alice', is_admin: false } }),
+  useAuth: () => ({ user: currentUser }),
 }));
 vi.mock('./Toast.jsx', () => ({ useToast: () => vi.fn() }));
 vi.mock('../api.js', () => ({ api: { changePassword: vi.fn() } }));
 
 beforeEach(() => {
+  currentUser = { username: 'alice', is_admin: false };
   localStorage.clear();
   document.documentElement.removeAttribute('data-theme');
 });
@@ -25,7 +27,6 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Settings', level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Account' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Password' })).toBeInTheDocument();
   });
 
   it('shows the three theme options with System selected by default', () => {
@@ -43,10 +44,28 @@ describe('SettingsPage', () => {
     expect(localStorage.getItem('torqued.theme')).toBe('dark');
   });
 
-  it('still exposes the change-password form', () => {
+  it('keeps the password form collapsed inside the account card until asked for', () => {
     renderSettings();
     expect(screen.getByText('Signed in as')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
+    expect(screen.getByText('alice')).toBeInTheDocument();
+    expect(screen.queryByText('Current password')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
+    expect(screen.getByText('Current password')).toBeInTheDocument();
+    expect(screen.getByText('New password')).toBeInTheDocument();
+    expect(screen.getByText('Confirm new password')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('Current password')).not.toBeInTheDocument();
+  });
+
+  it('shows the site-admin pill inline with the username, for admins only', () => {
+    renderSettings();
+    expect(screen.queryByText('Site admin')).not.toBeInTheDocument();
+
+    currentUser = { username: 'root', is_admin: true };
+    renderSettings();
+    expect(screen.getByText('Site admin')).toHaveClass('user-badge-admin');
   });
 
   it('shows the tidy-names toggle on by default', () => {
