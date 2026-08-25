@@ -71,8 +71,14 @@ a.core-depth-marker:hover, a.core-depth-marker--active { transform: translate(-5
 .alert-error { color: var(--danger); background: var(--tint-bad-bg); border: 1px solid var(--tint-bad-border); border-radius: var(--radius); padding: 12px 16px; }
 
 /* ── Settings page ───────────────────────────────────────────────────────────── */
-.settings-page { max-width: 520px; }
+.settings-page { max-width: 680px; }
 .settings-section { margin-bottom: 24px; }
 .settings-section:last-child { margin-bottom: 0; }
 /* Label/description on the left, control on the right; wraps on narrow screens. */
 .settings-field { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+/* Let a long description reflow rather than push the control onto its own line. */
+.settings-field > :first-child { flex: 1 1 320px; min-width: 0; }
+/* Stacked settings rows need air between them, or the descriptions run together. */
+.settings-field + .settings-field { margin-top: 20px; }
+/* A form revealed inside a settings card (e.g. Change password under Account). */
+.settings-subform { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }

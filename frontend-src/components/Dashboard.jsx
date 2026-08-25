@@ -6,7 +6,7 @@ import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
 import RegPlate from './RegPlate.jsx';
 import { REMINDER_LABELS } from '../constants.js';
-import { fmtCost, fmtDistance } from '../units.js';
+import { fmtCost, fmtDistance, fmtPressurePsiBar } from '../units.js';
 import { overdueBy } from '../reminders.js';
 
 const statSkeleton = <span className="skeleton-line" style={{ width: 48, height: 34, display: 'inline-block' }} />;
@@ -37,7 +37,6 @@ export default function Dashboard() {
 
   const dueCount = reminders === null ? null : reminders.filter(r => r.status !== 'upcoming').length;
   const totalSpent = services === null ? null : services.reduce((sum, s) => sum + (s.cost ?? 0), 0);
-  const unitFor = (vehicleId) => vehicles?.find(v => v.id === vehicleId)?.odometer_unit ?? 'mi';
 
   return (
     <div>
@@ -102,13 +101,22 @@ export default function Dashboard() {
       </div>
 
       <h2 className="section-title mb-3">The garage</h2>
-      <div className="card mb-6">
+      <div className="card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Vehicle</th><th className="col-mobile-hide">Make / model</th><th>Odometer</th><th>Services</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Vehicle</th>
+                <th className="col-mobile-hide">Make / model</th>
+                <th>Odometer</th>
+                <th className="col-mobile-hide">Front tyre</th>
+                <th className="col-mobile-hide">Rear tyre</th>
+                <th>Services</th>
+              </tr>
+            </thead>
             <tbody>
               {vehicles === null
-                ? <SkeletonRows cols={['25%', '35%', '20%', '40px']} rows={3} />
+                ? <SkeletonRows cols={['22%', '28%', '16%', '12%', '12%', '40px']} rows={3} />
                 : vehicles.map(v => {
                   const reg = v.registration || v.mot_baseline?.registration;
                   return (
@@ -116,38 +124,22 @@ export default function Dashboard() {
                     <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
                     <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? formatName(v.mot_baseline?.make), v.model ?? formatName(v.mot_baseline?.model)].filter(Boolean).join(' ') || '—'}</td>
                     <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
+                    <td className="col-mobile-hide">
+                      <div>{fmtPressurePsiBar(v.tyre_pressure_front_psi) ?? '—'}</div>
+                      {v.tyre_size_front && <div className="text-sm text-muted">{v.tyre_size_front}</div>}
+                    </td>
+                    <td className="col-mobile-hide">
+                      <div>{fmtPressurePsiBar(v.tyre_pressure_rear_psi) ?? '—'}</div>
+                      {v.tyre_size_rear && <div className="text-sm text-muted">{v.tyre_size_rear}</div>}
+                    </td>
                     <td>{v.service_count}</td>
                   </tr>
                   );
                 })
               }
               {vehicles !== null && vehicles.length === 0 && (
-                <tr><td colSpan={4} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>
+                <tr><td colSpan={6} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <h2 className="section-title mb-3">Recent services</h2>
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Vehicle</th><th>Service</th><th className="col-mobile-hide">Odometer</th><th>Cost</th></tr></thead>
-            <tbody>
-              {services === null
-                ? <SkeletonRows cols={['90px', '20%', '40%', '90px', '60px']} rows={3} />
-                : services.slice(0, 8).map(s => (
-                  <tr key={s.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/services/${s.id}`); }}>
-                    <td>{s.date}</td>
-                    <td><Link to={`/vehicles/${s.vehicle_id}`}>{s.vehicle_name}</Link></td>
-                    <td><Link to={`/services/${s.id}`}>{s.title}</Link></td>
-                    <td className="col-mobile-hide">{s.odometer_km != null ? fmtDistance(s.odometer_km, unitFor(s.vehicle_id)) : '—'}</td>
-                    <td>{s.cost != null ? fmtCost(s.cost) : '—'}</td>
-                  </tr>
-                ))
-              }
-              {services !== null && services.length === 0 && <tr><td colSpan={5} className="empty">No services yet</td></tr>}
             </tbody>
           </table>
         </div>

@@ -205,7 +205,7 @@ function SpecsCard({ vehicle, ro, onSaved }) {
       {editing ? (
         <div>
           {rows.map((r, i) => (
-            <div key={i} className="inline-form-sm mb-2">
+            <div key={i} className="inline-form-sm spec-row mb-2">
               <input value={r.name} onChange={e => setRow(i, 'name', e.target.value)} placeholder="Name (e.g. Engine oil)" />
               <input value={r.value} onChange={e => setRow(i, 'value', e.target.value)} placeholder="Value (e.g. 10W-40, 3.1 L)" />
               <button type="button" className="btn btn-danger btn-sm" onClick={() => setRows(rs => rs.filter((_, j) => j !== i))}>✕</button>

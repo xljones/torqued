@@ -79,6 +79,9 @@ select { cursor: pointer; }
 /* Green border on whichever value wins: the override input, or the DVSA fallback. */
 .dvsa-split.is-override > input { border-color: var(--btn-success); box-shadow: 0 0 0 1px var(--btn-success); }
 .dvsa-split.is-dvsa .dvsa-fixed { border-color: var(--btn-success); box-shadow: 0 0 0 1px var(--btn-success); }
+/* Reference spec row: a fixed-width name next to a value that takes the rest of the card. */
+.spec-row > input:first-child { flex: 0 0 180px; min-width: 0; }
+.spec-row > input:nth-child(2) { flex: 1; min-width: 0; }
 /* Tyre pressure: front + rear inputs on one row with a psi/bar unit toggle between them. */
 .pressure-entry { display: flex; gap: 8px; align-items: stretch; }
 .pressure-entry > input { flex: 1; min-width: 0; text-align: center; }

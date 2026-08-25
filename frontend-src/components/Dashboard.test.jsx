@@ -130,6 +130,22 @@ describe('Dashboard', () => {
     });
   });
 
+  it('shows tyre pressures per vehicle and no recent-services card', async () => {
+    const { api } = await import('../api.js');
+    api.getVehicles.mockResolvedValueOnce([{
+      id: 1, name: 'Street Triple', kind: 'motorcycle', odometer_unit: 'mi',
+      service_count: 0, photo_count: 0, cover_photo_id: null, latest_odometer: null,
+      tyre_pressure_front_psi: 34, tyre_pressure_rear_psi: 36, tyre_size_front: '120/70 ZR17',
+    }]);
+    renderDashboard();
+    await waitFor(() => {
+      expect(screen.getByText('34psi (2.3 bar)')).toBeInTheDocument();
+      expect(screen.getByText('36psi (2.5 bar)')).toBeInTheDocument();
+      expect(screen.getByText('120/70 ZR17')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Recent services')).not.toBeInTheDocument();
+  });
+
   it('falls back to mot_baseline for make/model/year when vehicle columns are null', async () => {
     const { api } = await import('../api.js');
     api.getVehicles.mockResolvedValueOnce([{
