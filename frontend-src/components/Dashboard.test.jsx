@@ -1,15 +1,19 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
+import { DisplayPrefsProvider } from '../DisplayPrefsContext.jsx';
 
-vi.mock('../AuthContext.jsx', () => ({
-  useAuth: () => ({
-    user: { username: 'x', is_admin: false, memberships: [{ garage_id: 1, garage_name: 'Home Garage', role: 'member' }] },
-    currentGarage: { id: 1, name: 'Home Garage', role: 'member' },
-    roleFor: () => 'member',
-  }),
-}));
+// One stable object: Dashboard's fetch effect keys on `currentGarage`, so a fresh literal
+// per call would re-fire it on every render and burn through the mockResolvedValueOnce queue.
+const auth = {
+  user: { username: 'x', is_admin: false, memberships: [{ garage_id: 1, garage_name: 'Home Garage', role: 'member' }] },
+  currentGarage: { id: 1, name: 'Home Garage', role: 'member' },
+  roleFor: () => 'member',
+};
+
+vi.mock('../AuthContext.jsx', () => ({ useAuth: () => auth }));
 
 vi.mock('../api.js', () => ({
   api: {
@@ -30,8 +34,8 @@ vi.mock('../api.js', () => ({
     ]),
     getReminders: vi.fn().mockResolvedValue([
       {
-        id: 7, vehicle_id: 1, vehicle_name: 'Street Triple', title: 'Annual service',
-        category: 'Service', date: '2025-04-05', status: 'overdue',
+        type: 'service', id: 7, vehicle_id: 1, vehicle_name: 'Street Triple',
+        title: 'Annual service', category: 'Service', date: '2025-04-05', status: 'overdue',
         next_due_date: '2026-04-05', next_due_km: null, km_remaining: null,
         vehicle_odometer_unit: 'mi',
       },
@@ -39,13 +43,28 @@ vi.mock('../api.js', () => ({
   },
 }));
 
+const upcoming = {
+  type: 'service', id: 8, vehicle_id: 1, vehicle_name: 'Street Triple',
+  title: 'Brake fluid', category: 'Brake fluid', date: '2025-04-05', status: 'upcoming',
+  next_due_date: '2027-04-05', next_due_km: null, km_remaining: null,
+  vehicle_odometer_unit: 'mi',
+};
+
+beforeEach(() => {
+  localStorage.clear();
+});
+
 function renderDashboard() {
   return render(
     <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Dashboard />
+      <DisplayPrefsProvider><Dashboard /></DisplayPrefsProvider>
     </MemoryRouter>,
   );
 }
+
+// "Service" and the vehicle name also appear in the Recent services table below, so
+// reminder assertions scope themselves to the nested sub-list.
+const sublist = () => document.querySelector('.reminder-sublist');
 
 describe('Dashboard', () => {
   it('renders stat card labels', async () => {
@@ -66,12 +85,17 @@ describe('Dashboard', () => {
     });
   });
 
-  it('shows a reminder with its status badge', async () => {
-    renderDashboard();
-    await waitFor(() => {
-      expect(screen.getByText('Street Triple — Service')).toBeInTheDocument();
-      expect(screen.getByText('Overdue')).toBeInTheDocument();
-    });
+  it('nests a reminder under its vehicle, with its status badge', async () => {
+    const { container } = renderDashboard();
+    await waitFor(() => expect(container.querySelector('.reminder-subrow')).toBeInTheDocument());
+    // The old flat cross-vehicle list is gone; the vehicle row is the only heading.
+    expect(screen.queryByText('Maintenance reminders')).toBeNull();
+    // The sub-row no longer repeats the vehicle name — it's the parent row now.
+    expect(sublist().textContent).toContain('Service');
+    expect(sublist().textContent).not.toContain('Street Triple');
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1 reminder for Street Triple' }))
+      .toHaveAttribute('aria-expanded', 'true');
   });
 
   it('shows an MOT reminder with an expiry sub-line', async () => {
@@ -83,11 +107,9 @@ describe('Dashboard', () => {
       vehicle_odometer_unit: 'mi',
     }]);
     renderDashboard();
-    await waitFor(() => {
-      expect(screen.getByText('Street Triple — MOT')).toBeInTheDocument();
-      expect(screen.getByText('Expires 2026-07-15')).toBeInTheDocument();
-      expect(screen.getByText('Due soon')).toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.getByText('Expires 2026-07-15')).toBeInTheDocument());
+    expect(sublist().textContent).toContain('MOT');
+    expect(screen.getByText('Due soon')).toBeInTheDocument();
   });
 
   it('shows a road-tax reminder with a due sub-line', async () => {
@@ -100,7 +122,7 @@ describe('Dashboard', () => {
     }]);
     renderDashboard();
     await waitFor(() => {
-      expect(screen.getByText('Street Triple — Tax')).toBeInTheDocument();
+      expect(screen.getByText('Tax')).toBeInTheDocument();
       expect(screen.getByText('Due 2026-08-01')).toBeInTheDocument();
       expect(screen.getByText('Due soon')).toBeInTheDocument();
     });
@@ -116,7 +138,7 @@ describe('Dashboard', () => {
     }]);
     renderDashboard();
     await waitFor(() => {
-      const row = screen.getByText('Street Triple — Minor service').closest('.reminder-row');
+      const row = screen.getByText('Minor service').closest('.reminder-row');
       expect(row).toBeInTheDocument();
       expect(screen.getByText(/After “Minor service” \(2024-06-15\)/)).toBeInTheDocument();
     });
@@ -130,6 +152,68 @@ describe('Dashboard', () => {
     });
   });
 
+  it('starts collapsed when nothing is more urgent than upcoming', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([{ ...upcoming }]);
+    localStorage.setItem('torqued.showUpcoming', 'true');
+    renderDashboard();
+    await waitFor(() => expect(screen.getByRole('button', { name: /1 reminder/ }))
+      .toHaveAttribute('aria-expanded', 'false'));
+    expect(screen.queryByText('Brake fluid')).toBeNull();
+  });
+
+  it('an explicit expand sticks, and toggling never navigates away', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([{ ...upcoming }]);
+    localStorage.setItem('torqued.showUpcoming', 'true');
+    renderDashboard();
+    const toggle = await screen.findByRole('button', { name: /1 reminder/ });
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Brake fluid')).toBeInTheDocument();
+    // The row's own click-to-navigate handler skips 'a, button', so we're still here.
+    expect(screen.getByText('Maintenance due')).toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows no toggle for a vehicle with no reminders', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([]);
+    const { container } = renderDashboard();
+    await waitFor(() => expect(screen.getByText(/Nothing on the horizon/)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /reminder/ })).toBeNull();
+    expect(container.querySelector('.reminder-subrow')).toBeNull();
+  });
+
+  it('hides upcoming reminders behind a toggle, always keeping the urgent ones', async () => {
+    const { api } = await import('../api.js');
+    api.getReminders.mockResolvedValueOnce([
+      {
+        type: 'service', id: 7, vehicle_id: 1, vehicle_name: 'Street Triple',
+        title: 'Annual service', category: 'Service', date: '2025-04-05', status: 'overdue',
+        next_due_date: '2026-04-05', next_due_km: null, km_remaining: null,
+        vehicle_odometer_unit: 'mi',
+      },
+      { ...upcoming },
+    ]);
+    renderDashboard();
+    // Hidden by default: only the overdue one is counted and listed.
+    const toggle = await screen.findByRole('button', { name: 'Show 1 upcoming' });
+    expect(screen.getByRole('button', { name: /1 reminder/ })).toBeInTheDocument();
+    expect(sublist().textContent).not.toContain('Brake fluid');
+    expect(sublist().textContent).toContain('Service');
+    // The "Maintenance due" stat only ever counted the urgent ones, so it's unmoved.
+    expect(screen.getByText('Maintenance due').previousSibling).toHaveTextContent('1');
+
+    await userEvent.click(toggle);
+    expect(sublist().textContent).toContain('Brake fluid');
+    expect(sublist().textContent).toContain('Service');
+    expect(screen.getByRole('button', { name: /2 reminders/ })).toBeInTheDocument();
+    expect(localStorage.getItem('torqued.showUpcoming')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Hide upcoming' })).toBeInTheDocument();
+  });
+
   it('falls back to mot_baseline for make/model/year when vehicle columns are null', async () => {
     const { api } = await import('../api.js');
     api.getVehicles.mockResolvedValueOnce([{
@@ -138,8 +222,10 @@ describe('Dashboard', () => {
       latest_odometer: null, mot_baseline: { make: 'VOLKSWAGEN', model: 'PASSAT', year: 2003 },
     }]);
     renderDashboard();
+    // Title-cased because the display-prefs provider is now in the tree and tidy-up
+    // names defaults on; the point here is that the baseline is used at all.
     await waitFor(() => {
-      expect(screen.getByText('2003 VOLKSWAGEN PASSAT')).toBeInTheDocument();
+      expect(screen.getByText('2003 Volkswagen Passat')).toBeInTheDocument();
     });
   });
 });

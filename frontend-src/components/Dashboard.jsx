@@ -1,19 +1,89 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { useDisplayPrefs } from '../DisplayPrefsContext.jsx';
 import { SkeletonRows } from './Skeleton.jsx';
 import RegPlate from './RegPlate.jsx';
+import ReminderLine from './ReminderLine.jsx';
 import { REMINDER_LABELS } from '../constants.js';
 import { fmtCost, fmtDistance } from '../units.js';
-import { overdueBy } from '../reminders.js';
 
 const statSkeleton = <span className="skeleton-line" style={{ width: 48, height: 34, display: 'inline-block' }} />;
 
+const STATUS_RANK = { overdue: 0, due_soon: 1, upcoming: 2 };
+const worstStatus = rs =>
+  rs.reduce((worst, r) => (STATUS_RANK[r.status] < STATUS_RANK[worst] ? r.status : worst), 'upcoming');
+
+function VehicleRow({ vehicle: v, reminders: rs, formatName, navigate }) {
+  // Vehicles with something overdue or due soon start expanded: the dashboard exists to
+  // surface what needs action, and the flat list this replaces showed everything at once,
+  // so collapsing an overdue item by default would be a regression. `null` means "follow
+  // that default" — computed at render, not seeded in an effect, because the reminders
+  // arrive after the first paint and would otherwise freeze the wrong default. An explicit
+  // click sticks.
+  const [override, setOverride] = useState(null);
+  const worst = rs.length ? worstStatus(rs) : null;
+  const open = rs.length > 0 && (override ?? worst !== 'upcoming');
+  const reg = v.registration || v.mot_baseline?.registration;
+
+  return (
+    <>
+      <tr
+        className="row-clickable"
+        onClick={e => { if (!e.target.closest('a, button')) navigate(`/vehicles/${v.id}`); }}
+      >
+        <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
+        <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? formatName(v.mot_baseline?.make), v.model ?? formatName(v.mot_baseline?.model)].filter(Boolean).join(' ') || '—'}</td>
+        <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
+        <td className="col-mobile-hide">{v.service_count}</td>
+        <td className="col-shrink">
+          {rs.length === 0 ? <span className="text-muted">—</span> : (
+            // A real <button>, so the row's own click handler (which skips 'a, button')
+            // leaves it alone and it stays keyboard-operable.
+            <button
+              type="button"
+              className="reminder-toggle"
+              aria-expanded={open}
+              aria-controls={`vehicle-reminders-${v.id}`}
+              aria-label={`${rs.length} reminder${rs.length === 1 ? '' : 's'} for ${v.name}`}
+              onClick={() => setOverride(!open)}
+            >
+              <span className={`badge badge-${worst}`}>
+                {rs.length}
+                <span className="col-mobile-hide">{REMINDER_LABELS[worst].toLowerCase()}</span>
+              </span>
+              <span className="dvsa-record-caret" aria-hidden="true">{open ? '▲' : '▼'}</span>
+            </button>
+          )}
+        </td>
+      </tr>
+      {open && (
+        <tr className="reminder-subrow">
+          <td colSpan={5} id={`vehicle-reminders-${v.id}`}>
+            <div className="reminder-sublist">
+              {rs.map(r => (
+                <button
+                  key={r.id == null ? r.type : `${r.type}-${r.id}`}
+                  type="button"
+                  className="reminder-row reminder-row--button"
+                  // Only service reminders have a service page; the rest open the vehicle.
+                  onClick={() => navigate(r.type === 'service' ? `/services/${r.id}` : `/vehicles/${v.id}`)}
+                >
+                  <ReminderLine reminder={r} />
+                </button>
+              ))}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 export default function Dashboard() {
   const { currentGarage } = useAuth();
-  const { formatName } = useDisplayPrefs();
+  const { formatName, showUpcoming, setShowUpcoming } = useDisplayPrefs();
   const [vehicles, setVehicles] = useState(null);
   const [services, setServices] = useState(null);
   const [reminders, setReminders] = useState(null);
@@ -26,6 +96,18 @@ export default function Dashboard() {
     api.getReminders(currentGarage.id).then(setReminders).catch(() => {});
   }, [currentGarage]);
 
+  // Filtered once, here, so the per-vehicle badge count, its colour and the auto-expand
+  // default all follow the low-priority toggle without re-deriving it.
+  const remindersByVehicle = useMemo(() => {
+    const byVehicle = new Map();
+    for (const r of reminders ?? []) {
+      if (!showUpcoming && r.status === 'upcoming') continue;
+      if (!byVehicle.has(r.vehicle_id)) byVehicle.set(r.vehicle_id, []);
+      byVehicle.get(r.vehicle_id).push(r);
+    }
+    return byVehicle;
+  }, [reminders, showUpcoming]);
+
   if (!currentGarage) {
     return (
       <div>
@@ -36,6 +118,7 @@ export default function Dashboard() {
   }
 
   const dueCount = reminders === null ? null : reminders.filter(r => r.status !== 'upcoming').length;
+  const upcomingCount = reminders === null ? 0 : reminders.length - dueCount;
   const totalSpent = services === null ? null : services.reduce((sum, s) => sum + (s.cost ?? 0), 0);
   const unitFor = (vehicleId) => vehicles?.find(v => v.id === vehicleId)?.odometer_unit ?? 'mi';
 
@@ -63,66 +146,36 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <h2 className="section-title mb-3">Maintenance reminders</h2>
-      <div className="card mb-6">
-        {reminders === null && <p className="card-message">Loading…</p>}
-        {reminders?.length === 0 && <p className="card-message">Nothing on the horizon — ride on 🏁</p>}
-        {reminders?.map(r => {
-          const isMot = r.type === 'mot';
-          const isTax = r.type === 'tax';
-          // Only service reminders open a service page; MOT/tax/schedule link to the vehicle.
-          const toVehicle = r.type !== 'service';
-          return (
-            <div
-              key={`${r.type}-${r.id ?? r.vehicle_id}`}
-              className="reminder-row row-clickable"
-              onClick={() => navigate(toVehicle ? `/vehicles/${r.vehicle_id}` : `/services/${r.id}`)}
-            >
-              <div className="reminder-main">
-                <span className="reminder-title">{r.vehicle_name} — {r.category || r.title}</span>
-                <span className="reminder-sub">
-                  {isMot
-                    ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
-                    : isTax
-                    ? `${r.status === 'overdue' ? 'Expired' : 'Due'} ${r.next_due_date}`
-                    : <>
-                        After “{r.title}” ({r.date})
-                        {r.next_due_date && ` — due ${r.next_due_date}`}
-                        {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, r.vehicle_odometer_unit)}`}
-                      </>}
-                  {overdueBy(r, r.vehicle_odometer_unit) && (
-                    <span className="reminder-overdue"> — {overdueBy(r, r.vehicle_odometer_unit)}</span>
-                  )}
-                </span>
-              </div>
-              <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
-            </div>
-          );
-        })}
+      <div className="section-header mb-3">
+        <h2 className="section-title">The garage</h2>
+        {upcomingCount > 0 && (
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowUpcoming(!showUpcoming)}>
+            {showUpcoming ? 'Hide upcoming' : `Show ${upcomingCount} upcoming`}
+          </button>
+        )}
       </div>
-
-      <h2 className="section-title mb-3">The garage</h2>
       <div className="card mb-6">
+        {reminders?.length === 0 && vehicles?.length > 0 && (
+          <p className="card-message">Nothing on the horizon — ride on 🏁</p>
+        )}
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Vehicle</th><th className="col-mobile-hide">Make / model</th><th>Odometer</th><th>Services</th></tr></thead>
+            <thead><tr><th>Vehicle</th><th className="col-mobile-hide">Make / model</th><th>Odometer</th><th className="col-mobile-hide">Services</th><th className="col-shrink">Due</th></tr></thead>
             <tbody>
               {vehicles === null
-                ? <SkeletonRows cols={['25%', '35%', '20%', '40px']} rows={3} />
-                : vehicles.map(v => {
-                  const reg = v.registration || v.mot_baseline?.registration;
-                  return (
-                  <tr key={v.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/vehicles/${v.id}`); }}>
-                    <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
-                    <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? formatName(v.mot_baseline?.make), v.model ?? formatName(v.mot_baseline?.model)].filter(Boolean).join(' ') || '—'}</td>
-                    <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
-                    <td>{v.service_count}</td>
-                  </tr>
-                  );
-                })
+                ? <SkeletonRows cols={['25%', '35%', '20%', '40px', '80px']} rows={3} />
+                : vehicles.map(v => (
+                  <VehicleRow
+                    key={v.id}
+                    vehicle={v}
+                    reminders={remindersByVehicle.get(v.id) ?? []}
+                    formatName={formatName}
+                    navigate={navigate}
+                  />
+                ))
               }
               {vehicles !== null && vehicles.length === 0 && (
-                <tr><td colSpan={4} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>
+                <tr><td colSpan={5} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>
               )}
             </tbody>
           </table>

@@ -11,11 +11,11 @@ import MotCard from './MotCard.jsx';
 import RegPlate from './RegPlate.jsx';
 import MileageChart from './MileageChart.jsx';
 import MotField from './MotField.jsx';
+import ReminderLine from './ReminderLine.jsx';
 import { SkeletonPage } from './Skeleton.jsx';
-import { KIND_LABELS, REMINDER_LABELS, ScheduleKind } from '../constants.js';
+import { KIND_LABELS, ScheduleKind } from '../constants.js';
 import ScheduleForm, { EMPTY_SCHEDULE } from './ScheduleForm.jsx';
 import { scheduleTitle, scheduleInterval } from '../schedules.js';
-import { overdueBy } from '../reminders.js';
 import { fmtCost, fmtDistance, fmtDistanceBoth, fmtDistanceDelta, fmtInterval, fmtPressure, formatReg, fromKm, toKm } from '../units.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
@@ -428,25 +428,7 @@ export default function VehicleDetail() {
         <div className="card mb-6">
           {dueReminders.map(r => (
             <div key={r.id == null ? r.type : `${r.type}-${r.id}`} className="reminder-row">
-              <div className="reminder-main">
-                <span className="reminder-title">{r.category || r.title}</span>
-                <span className="reminder-sub">
-                  {r.type === 'mot'
-                    ? `${r.status === 'overdue' ? 'Expired' : 'Expires'} ${r.next_due_date}`
-                    : r.type === 'tax'
-                    ? `${r.status === 'overdue' ? 'Expired' : 'Due'} ${r.next_due_date}`
-                    : <>
-                        After “{r.title}” ({r.date})
-                        {r.next_due_date && ` — due ${r.next_due_date}`}
-                        {r.next_due_km != null && ` — due at ${fmtDistance(r.next_due_km, unit)}`}
-                        {r.km_remaining != null && r.km_remaining > 0 && ` (${fmtDistance(r.km_remaining, unit)} to go)`}
-                      </>}
-                  {overdueBy(r, unit) && (
-                    <span className="reminder-overdue"> — {overdueBy(r, unit)}</span>
-                  )}
-                </span>
-              </div>
-              <span className={`badge badge-${r.status}`}>{REMINDER_LABELS[r.status]}</span>
+              <ReminderLine reminder={r} unit={unit} />
             </div>
           ))}
         </div>
