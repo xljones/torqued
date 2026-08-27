@@ -101,6 +101,8 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 /* ── Kind & reminder badges ────────────────────────────────────────────────── */
 .badge-car { background: var(--tint-info-bg); color: var(--tint-info-fg); }
 .badge-motorcycle { background: var(--tint-accent2-bg); color: var(--tint-accent2-fg); }
+/* Archived is a state, not a category — greyscale so it reads as "set aside". */
+.badge-archived { background: var(--surface2); color: var(--text2); }
 .badge-overdue { background: var(--tint-bad-bg); color: var(--tint-bad-fg); }
 .badge-due_soon { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
 .badge-upcoming { background: var(--tint-ok-bg); color: var(--tint-ok-fg); }
@@ -169,7 +171,10 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
   position: relative; width: 480px; max-width: 90vw; aspect-ratio: 16 / 9;
   overflow: hidden; border-radius: var(--radius); background: var(--surface2); touch-action: none;
 }
-.cover-frame img { position: absolute; top: 0; left: 0; max-width: none; cursor: grab; }
+.cover-frame img {
+  position: absolute; top: 0; left: 0; max-width: none; cursor: grab;
+  -webkit-user-drag: none; user-select: none;
+}
 .cover-frame-loading {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 13px;

@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Removed
+- **Tyre pressures page.** The standalone `/tyres` page and its nav entries are gone —
+  front/rear pressures now sit on the dashboard's "The garage" table, next to the odometer.
+- **"Recent services" dashboard card.** It duplicated the Service log page.
 - **Neon database admin card.** The admin panel's Neon storage/compute stats card and its
   `/api/admin/neon` endpoint are gone (the `NEON_*` env vars are no longer read).
 
@@ -27,6 +30,22 @@
 - **The DVSA and DVLA records sit side by side.** Expanding a vehicle's MOT tile lays the
   two source records out in two columns (stacking on narrow screens) so they can be read
   against each other rather than scrolled between.
+- **Stay logged in for 30 days.** The login session previously had no expiry set at all, so
+  the browser treated it as a session cookie and dropped it whenever the browser closed — on
+  mobile that meant being signed out roughly daily. Sessions now last 30 days on a rolling
+  window (every request pushes the expiry back, so only 30 days of inactivity signs you out),
+  and the session cookie is marked `Secure` when running on PythonAnywhere.
+- **SORN vehicles raise no MOT reminder.** A vehicle declared off the road needs no MOT, so
+  a lapsed one is no longer listed as overdue (the vehicle card still reports it expired).
+- **Settings.** The password form moved into the Account card, collapsed behind a "Change
+  password" button, next to a "Signed in as" line that now uses the sidebar's site-admin
+  pill. Wider cards, roomier Appearance rows, and a much shorter tidy-up-names explanation.
+- **Vehicles page.** "Show archived" is a toggle button rather than a checkbox, and the
+  choice is remembered across reloads. The "Archived" badge is now a greyscale pill.
+- **Reference specs.** The value field fills the row; the name field keeps its width.
+- **SQLite by default everywhere.** Development, tests, and production all use SQLite; the
+  local Docker Postgres service and the dev-only login database switcher were removed.
+  PostgreSQL is still supported by setting `DATABASE_URL`.
 
 ### Added
 - **Per-garage reminder windows.** How far ahead a reminder counts as "due soon" is now

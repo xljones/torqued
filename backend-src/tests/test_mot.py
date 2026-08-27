@@ -731,7 +731,9 @@ def test_mot_reminder_overdue(
     assert rem["status"] == "overdue"
 
 
-def _store_ves_mot(vehicle_id: int, expiry: str | None) -> None:
+def _store_ves_mot(
+    vehicle_id: int, expiry: str | None, tax_status: str | None = None
+) -> None:
     """Persist a DVLA VES record (with a MOT expiry) against a vehicle."""
     from torqued.db import get_db
     from torqued.repositories.ves_repository import VesRepository
@@ -739,7 +741,12 @@ def _store_ves_mot(vehicle_id: int, expiry: str | None) -> None:
     with get_db() as db:
         VesRepository(db).replace_for_vehicle(
             vehicle_id,
-            {"registration": "A1XYZ", "mot_status": "valid MOT", "mot_expiry_date": expiry},
+            {
+                "registration": "A1XYZ",
+                "mot_status": "valid MOT",
+                "mot_expiry_date": expiry,
+                "tax_status": tax_status,
+            },
         )
 
 
@@ -766,6 +773,17 @@ def test_mot_reminder_ves_earlier_does_not_override_valid_dvsa(
     v = _store_mot(auth_client, monkeypatch, _passed(dvsa_future))
     _store_ves_mot(v["id"], ves_past)
     assert _mot_reminders(auth_client) == []  # 200 days out, well outside the window
+
+
+def test_mot_reminder_sorn_hidden(
+    auth_client: FlaskClient, monkeypatch: pytest.MonkeyPatch, mot_env: None
+) -> None:
+    # A SORN vehicle is off the road and needs no MOT, so a lapsed one raises no reminder
+    # (the vehicle card still reports the expiry as expired).
+    past = (date.today() - timedelta(days=10)).isoformat()
+    v = _store_mot(auth_client, monkeypatch, _passed(past))
+    _store_ves_mot(v["id"], past, tax_status="SORN")
+    assert _mot_reminders(auth_client) == []
 
 
 def test_mot_reminder_outside_window_hidden(

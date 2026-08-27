@@ -49,13 +49,14 @@ class MotRepository(BaseRepository):
         """Return MOT-expiry reminders for in-scope, non-archived vehicles.
 
         A vehicle with a stored DVSA snapshot yields a reminder when its MOT has
-        lapsed ('overdue') or falls due within the owning garage's MOT window
-        ('due_soon'); MOTs further out produce nothing. The due date is the **later** of the most
+        lapsed ('overdue') or falls due within the owning garage's MOT window ('due_soon');
+        MOTs further out produce nothing. The due date is the **later** of the most
         recent DVSA test's expiry and the DVLA VES current-MOT-status expiry (the DVSA
         history feed lags for e.g. SORN vehicles, so a fresh VES expiry corrects a stale
         DVSA one and prevents a false 'overdue'), falling back to the DVSA vehicle-level
-        next-due date — the same value the MOT card shows. Shaped (and tagged type='mot')
-        to merge with the service-log reminders.
+        next-due date — the same value the MOT card shows. Vehicles the DVLA records as
+        SORN are skipped entirely: off the road, no MOT needed, nothing to act on.
+        Shaped (and tagged type='mot') to merge with the service-log reminders.
         """
         today = today or date.today()
         if not garage_ids:
@@ -82,6 +83,7 @@ class MotRepository(BaseRepository):
                 DvsaVehicle.mot_test_due_date,
                 latest_expiry.label("latest_expiry"),
                 VehicleVes.mot_expiry_date.label("ves_expiry"),
+                VehicleVes.tax_status.label("ves_tax_status"),
             )
             .join(DvsaVehicle, DvsaVehicle.vehicle_id == Vehicle.id)
             .outerjoin(VehicleVes, VehicleVes.vehicle_id == Vehicle.id)
@@ -93,6 +95,10 @@ class MotRepository(BaseRepository):
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
         for r in rows:
+            # A SORN vehicle is declared off the road and needs no MOT, so a lapsed one
+            # isn't actionable. The vehicle card still shows the factual 'expired' status.
+            if (r["ves_tax_status"] or "").upper() == "SORN":
+                continue
             # Each garage sets its own window, so the cutoff is per row, not hoisted.
             cutoff = (
                 today + timedelta(days=windows.get(r["garage_id"], DEFAULT_WINDOWS).mot_days)

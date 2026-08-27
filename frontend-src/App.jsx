@@ -8,7 +8,6 @@ import { DisplayPrefsProvider } from './DisplayPrefsContext.jsx';
 import LoginPage from './components/LoginPage.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import VehicleList from './components/VehicleList.jsx';
-import TyrePressures from './components/TyrePressures.jsx';
 import VehicleDetail from './components/VehicleDetail.jsx';
 import VehicleForm from './components/VehicleForm.jsx';
 import ServiceList from './components/ServiceList.jsx';
@@ -84,7 +83,6 @@ function Nav() {
       <NavLink to="/" end>Dashboard</NavLink>
       <hr className="sidebar-divider" />
       <NavLink to="/vehicles">Vehicles</NavLink>
-      <NavLink to="/tyres">Tyre pressures</NavLink>
       <NavLink to="/services">Service log</NavLink>
       <NavLink to="/codes">Fault codes</NavLink>
       {user?.is_admin && <NavLink to="/records">DVLA &amp; DVSA Records</NavLink>}
@@ -122,7 +120,6 @@ function BottomNav() {
             <div className="sidebar-garage">
               <GarageSwitcher />
             </div>
-            <NavLink to="/tyres" className="sidebar-nav-btn" onClick={closeMore}>Tyre pressures</NavLink>
             <NavLink to="/codes" className="sidebar-nav-btn" onClick={closeMore}>Fault codes</NavLink>
             {user?.is_admin && (
               <NavLink to="/records" className="sidebar-nav-btn" onClick={closeMore}>DVLA &amp; DVSA Records</NavLink>
@@ -201,7 +198,6 @@ function AppShell() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/vehicles" element={<VehicleList />} />
-          <Route path="/tyres" element={<TyrePressures />} />
           <Route path="/vehicles/new" element={<VehicleForm mode={FormMode.CREATE} />} />
           <Route path="/vehicles/:id" element={<VehicleDetail />} />
           <Route path="/vehicles/:id/edit" element={<VehicleForm mode={FormMode.EDIT} />} />

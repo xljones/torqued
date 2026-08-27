@@ -7,7 +7,7 @@ import { SkeletonRows } from './Skeleton.jsx';
 import RegPlate from './RegPlate.jsx';
 import ReminderLine from './ReminderLine.jsx';
 import { REMINDER_LABELS } from '../constants.js';
-import { fmtCost, fmtDistance } from '../units.js';
+import { fmtCost, fmtDistance, fmtPressurePsiBar } from '../units.js';
 
 const statSkeleton = <span className="skeleton-line" style={{ width: 48, height: 34, display: 'inline-block' }} />;
 
@@ -36,6 +36,14 @@ function VehicleRow({ vehicle: v, reminders: rs, formatName, navigate }) {
         <td><span className="vehicle-name-cell"><Link to={`/vehicles/${v.id}`}>{v.name}</Link><RegPlate reg={reg} /></span></td>
         <td className="col-mobile-hide">{[v.year ?? v.mot_baseline?.year, v.make ?? formatName(v.mot_baseline?.make), v.model ?? formatName(v.mot_baseline?.model)].filter(Boolean).join(' ') || '—'}</td>
         <td>{v.latest_odometer ? fmtDistance(v.latest_odometer.odometer_km, v.odometer_unit) : '—'}</td>
+        <td className="col-mobile-hide">
+          <div>{fmtPressurePsiBar(v.tyre_pressure_front_psi) ?? '—'}</div>
+          {v.tyre_size_front && <div className="text-sm text-muted">{v.tyre_size_front}</div>}
+        </td>
+        <td className="col-mobile-hide">
+          <div>{fmtPressurePsiBar(v.tyre_pressure_rear_psi) ?? '—'}</div>
+          {v.tyre_size_rear && <div className="text-sm text-muted">{v.tyre_size_rear}</div>}
+        </td>
         <td className="col-mobile-hide">{v.service_count}</td>
         <td className="col-shrink">
           {rs.length === 0 ? <span className="text-muted">—</span> : (
@@ -60,7 +68,7 @@ function VehicleRow({ vehicle: v, reminders: rs, formatName, navigate }) {
       </tr>
       {open && (
         <tr className="reminder-subrow">
-          <td colSpan={5} id={`vehicle-reminders-${v.id}`}>
+          <td colSpan={7} id={`vehicle-reminders-${v.id}`}>
             <div className="reminder-sublist">
               {rs.map(r => (
                 <button
@@ -120,7 +128,6 @@ export default function Dashboard() {
   const dueCount = reminders === null ? null : reminders.filter(r => r.status !== 'upcoming').length;
   const upcomingCount = reminders === null ? 0 : reminders.length - dueCount;
   const totalSpent = services === null ? null : services.reduce((sum, s) => sum + (s.cost ?? 0), 0);
-  const unitFor = (vehicleId) => vehicles?.find(v => v.id === vehicleId)?.odometer_unit ?? 'mi';
 
   return (
     <div>
@@ -154,16 +161,27 @@ export default function Dashboard() {
           </button>
         )}
       </div>
-      <div className="card mb-6">
+      <div className="card">
         {reminders?.length === 0 && vehicles?.length > 0 && (
           <p className="card-message">Nothing on the horizon — ride on 🏁</p>
         )}
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Vehicle</th><th className="col-mobile-hide">Make / model</th><th>Odometer</th><th className="col-mobile-hide">Services</th><th className="col-shrink">Due</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Vehicle</th>
+                <th className="col-mobile-hide">Make / model</th>
+                <th>Odometer</th>
+                <th className="col-mobile-hide">Front tyre</th>
+                <th className="col-mobile-hide">Rear tyre</th>
+                {/* Hidden on mobile so the narrow view keeps to Vehicle / Odometer / Due. */}
+                <th className="col-mobile-hide">Services</th>
+                <th className="col-shrink">Due</th>
+              </tr>
+            </thead>
             <tbody>
               {vehicles === null
-                ? <SkeletonRows cols={['25%', '35%', '20%', '40px', '80px']} rows={3} />
+                ? <SkeletonRows cols={['22%', '26%', '14%', '11%', '11%', '40px', '80px']} rows={3} />
                 : vehicles.map(v => (
                   <VehicleRow
                     key={v.id}
@@ -175,32 +193,8 @@ export default function Dashboard() {
                 ))
               }
               {vehicles !== null && vehicles.length === 0 && (
-                <tr><td colSpan={5} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>
+                <tr><td colSpan={7} className="empty">No vehicles yet — <Link to="/vehicles/new">add your first</Link></td></tr>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <h2 className="section-title mb-3">Recent services</h2>
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Vehicle</th><th>Service</th><th className="col-mobile-hide">Odometer</th><th>Cost</th></tr></thead>
-            <tbody>
-              {services === null
-                ? <SkeletonRows cols={['90px', '20%', '40%', '90px', '60px']} rows={3} />
-                : services.slice(0, 8).map(s => (
-                  <tr key={s.id} className="row-clickable" onClick={e => { if (!e.target.closest('a, button')) navigate(`/services/${s.id}`); }}>
-                    <td>{s.date}</td>
-                    <td><Link to={`/vehicles/${s.vehicle_id}`}>{s.vehicle_name}</Link></td>
-                    <td><Link to={`/services/${s.id}`}>{s.title}</Link></td>
-                    <td className="col-mobile-hide">{s.odometer_km != null ? fmtDistance(s.odometer_km, unitFor(s.vehicle_id)) : '—'}</td>
-                    <td>{s.cost != null ? fmtCost(s.cost) : '—'}</td>
-                  </tr>
-                ))
-              }
-              {services !== null && services.length === 0 && <tr><td colSpan={5} className="empty">No services yet</td></tr>}
             </tbody>
           </table>
         </div>

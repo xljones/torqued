@@ -1,8 +1,8 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, Response, jsonify, send_from_directory, session
 from flask.typing import ResponseReturnValue
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, logout_user
@@ -12,6 +12,11 @@ from torqued.domain.user import User
 _DIST_DIR = str(Path(__file__).parent.parent.parent / "dist")
 
 login_manager = LoginManager()
+
+# Rolling login lifetime: every request refreshes the cookie, so only 30 days of
+# inactivity ends a session. Without this Flask emits a browser-session cookie that
+# mobile browsers discard within a day.
+SESSION_LIFETIME = timedelta(days=30)
 
 
 # A deploy can briefly take the app offline (e.g. while migrations run). When this
@@ -82,6 +87,10 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # photo uploads
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["PERMANENT_SESSION_LIFETIME"] = SESSION_LIFETIME
+    # PythonAnywhere serves HTTPS only; PYTHONANYWHERE_SITE is always set there (also
+    # used above to skip the startup migration). Local dev over plain HTTP is unaffected.
+    app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("PYTHONANYWHERE_SITE"))
     CORS(app, supports_credentials=True)
 
     login_manager.init_app(app)
@@ -119,6 +128,9 @@ def create_app() -> Flask:
         # torqued.access; this hook only enforces account expiry.
         if not current_user.is_authenticated:
             return None
+        # Upgrades sessions issued before the 30-day lifetime existed, and keeps the
+        # rolling window alive for everyone else.
+        session.permanent = True
         if current_user.expires_at:
             try:
                 if datetime.now(timezone.utc) >= datetime.fromisoformat(current_user.expires_at):

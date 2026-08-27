@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import VehicleList from './VehicleList';
@@ -44,7 +44,32 @@ function renderList() {
   );
 }
 
+beforeEach(() => localStorage.clear());
+
 describe('VehicleList', () => {
+  it('toggles "show archived", refetches, and remembers the choice', async () => {
+    api.getVehicles.mockResolvedValue(vehicles);
+    renderList();
+    const toggle = await screen.findByRole('button', { name: 'Show archived' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(api.getVehicles).toHaveBeenCalledWith(1, false));
+
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveClass('btn-active');
+    await waitFor(() => expect(api.getVehicles).toHaveBeenCalledWith(1, true));
+    expect(localStorage.getItem('torqued.showArchived')).toBe('true');
+  });
+
+  it('starts with archived shown when the preference was stored', async () => {
+    localStorage.setItem('torqued.showArchived', 'true');
+    api.getVehicles.mockResolvedValue([{ ...vehicles[1], archived: 1 }]);
+    renderList();
+    await waitFor(() => expect(api.getVehicles).toHaveBeenCalledWith(1, true));
+    expect(await screen.findByText('Archived')).toHaveClass('badge-archived');
+    expect(screen.getByRole('button', { name: 'Show archived' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('renders vehicle cards with kind badges and odometer', async () => {
     api.getVehicles.mockResolvedValue(vehicles);
     renderList();

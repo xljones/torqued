@@ -10,13 +10,22 @@ import { isPast, motTone, taxTone, compactAge } from '../status.js';
 
 const cellClass = tone => `status-cell${tone ? ` status-cell--${tone}` : ''}`;
 
+// Whether archived vehicles are shown is a sticky preference, like the theme and the
+// selected garage — see ThemeContext/AuthContext for the same torqued.* pattern.
+const ARCHIVED_KEY = 'torqued.showArchived';
+
 export default function VehicleList() {
   const { currentGarage } = useAuth();
   const { formatName } = useDisplayPrefs();
   const ro = currentGarage?.role === 'readonly';
   const [vehicles, setVehicles] = useState(null);
   const [filter, setFilter] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState(() => localStorage.getItem(ARCHIVED_KEY) === 'true');
+
+  const toggleArchived = () => setShowArchived(v => {
+    localStorage.setItem(ARCHIVED_KEY, String(!v));
+    return !v;
+  });
 
   useEffect(() => {
     if (currentGarage) api.getVehicles(currentGarage.id, showArchived).then(setVehicles);
@@ -112,7 +121,7 @@ export default function VehicleList() {
         <div className="vehicle-card-name">
           {v.name}
           <span className={`badge badge-${v.kind}`}>{KIND_LABELS[v.kind]}</span>
-          {!!v.archived && <span className="badge">Archived</span>}
+          {!!v.archived && <span className="badge badge-archived">Archived</span>}
         </div>
         <div className="vehicle-card-sub">
           {[eff(v, 'year'), effName(v, 'make'), effName(v, 'model')].filter(Boolean).join(' ') || '—'}
@@ -143,10 +152,14 @@ export default function VehicleList() {
           placeholder="Filter by name, make, model, plate…"
           className="search-input"
         />
-        <label className="text-sm text-muted" style={{ whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-          {' '}Show archived
-        </label>
+        <button
+          type="button"
+          aria-pressed={showArchived}
+          className={`btn btn-secondary${showArchived ? ' btn-active' : ''}`}
+          onClick={toggleArchived}
+        >
+          Show archived
+        </button>
       </div>
 
       {vehicles === null && <p className="text-muted">Loading…</p>}

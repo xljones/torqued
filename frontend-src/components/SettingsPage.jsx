@@ -23,11 +23,16 @@ export default function SettingsPage() {
   const toast = useToast();
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
   const [saving, setSaving] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [windows, setWindows] = useState(null);
   const [savingWindows, setSavingWindows] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setWindow = (k, v) => setWindows(w => ({ ...w, [k]: v }));
+  const closePasswordForm = () => {
+    setForm({ current_password: '', new_password: '', confirm_password: '' });
+    setChangingPassword(false);
+  };
 
   const canEditWindows = !!currentGarage && roleFor(currentGarage.id) === 'owner';
   const windowUnit = windows?.reminder_service_unit || 'mi';
@@ -80,7 +85,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await api.changePassword(form.current_password, form.new_password);
-      setForm({ current_password: '', new_password: '', confirm_password: '' });
+      closePasswordForm();
       toast('Password changed');
     } catch (err) {
       toast(err.message, 'error');
@@ -98,9 +103,63 @@ export default function SettingsPage() {
       <section className="settings-section">
         <h2 className="section-title mb-2">Account</h2>
         <div className="card card-body">
-          <div className="meta">Signed in as</div>
-          <div className="fw-600">{user?.username}</div>
-          {user?.is_admin && <div className="meta">Site admin</div>}
+          <div className="settings-field">
+            <div>
+              <div className="meta">Signed in as</div>
+              {/* Same pill the sidebar shows against the username (see UserBadges in App.jsx). */}
+              <div className="fw-600">
+                {user?.username}
+                {user?.is_admin && <span className="user-badge user-badge-admin">Site admin</span>}
+              </div>
+            </div>
+            {!changingPassword && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setChangingPassword(true)}>
+                Change password
+              </button>
+            )}
+          </div>
+          {changingPassword && (
+            <form onSubmit={handleSubmit} className="settings-subform">
+              <div className="form-grid mb-3">
+                <div className="field span-2">
+                  <label>Current password</label>
+                  <input
+                    type="password"
+                    value={form.current_password}
+                    onChange={e => set('current_password', e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div className="field span-2">
+                  <label>New password</label>
+                  <input
+                    type="password"
+                    value={form.new_password}
+                    onChange={e => set('new_password', e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="field span-2">
+                  <label>Confirm new password</label>
+                  <input
+                    type="password"
+                    value={form.confirm_password}
+                    onChange={e => set('confirm_password', e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+              <div className="form-actions">
+                <button
+                  className="btn btn-success"
+                  disabled={saving || !form.current_password || !form.new_password || !form.confirm_password}
+                >
+                  {saving ? 'Saving…' : 'Change password'}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={closePasswordForm}>Cancel</button>
+              </div>
+            </form>
+          )}
         </div>
       </section>
 
@@ -131,11 +190,8 @@ export default function SettingsPage() {
             <div>
               <div className="fw-600">Tidy up vehicle names</div>
               <div className="meta">
-                Official DVSA records come in capitals (e.g. “VOLKSWAGEN PASSAT”). With this on,
-                makes, models, colours and fuel types from the DVSA show in title case
-                (“Volkswagen Passat”). It only changes how they&apos;re displayed — the stored
-                record is untouched, anything you type yourself shows exactly as entered, and a
-                few names (BMW, McLaren) won&apos;t capitalise perfectly.
+                Show DVSA makes, models and colours in title case instead of CAPITALS.
+                Display only — the stored record and anything you type stay as they are.
               </div>
             </div>
             <div className="btn-group" role="radiogroup" aria-label="Tidy up vehicle names">
@@ -232,51 +288,6 @@ export default function SettingsPage() {
           </div>
         </section>
       )}
-
-      <section className="settings-section">
-        <h2 className="section-title mb-2">Password</h2>
-        <div className="card card-body">
-          <form onSubmit={handleSubmit}>
-            <div className="form-grid mb-3">
-              <div className="field span-2">
-                <label>Current password</label>
-                <input
-                  type="password"
-                  value={form.current_password}
-                  onChange={e => set('current_password', e.target.value)}
-                  autoComplete="current-password"
-                />
-              </div>
-              <div className="field span-2">
-                <label>New password</label>
-                <input
-                  type="password"
-                  value={form.new_password}
-                  onChange={e => set('new_password', e.target.value)}
-                  autoComplete="new-password"
-                />
-              </div>
-              <div className="field span-2">
-                <label>Confirm new password</label>
-                <input
-                  type="password"
-                  value={form.confirm_password}
-                  onChange={e => set('confirm_password', e.target.value)}
-                  autoComplete="new-password"
-                />
-              </div>
-            </div>
-            <div className="form-actions">
-              <button
-                className="btn btn-success"
-                disabled={saving || !form.current_password || !form.new_password || !form.confirm_password}
-              >
-                {saving ? 'Saving…' : 'Change password'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
     </div>
   );
 }
