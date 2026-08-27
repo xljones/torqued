@@ -7,11 +7,31 @@
   `/api/admin/neon` endpoint are gone (the `NEON_*` env vars are no longer read).
 
 ### Changed
-- **SQLite by default everywhere.** Development, tests, and production all use SQLite; the
-  local Docker Postgres service and the dev-only login database switcher were removed.
-  PostgreSQL is still supported by setting `DATABASE_URL`.
+- **Reminders now warn much earlier by default.** The "due soon" window for service and
+  schedule reminders went from 30 days / 500 km to **3 months / 2,000 miles** (the MOT and
+  road-tax windows are unchanged at 60 and 30 days). Existing garages pick this up
+  immediately with no action: reminders that used to sit quietly as *upcoming* will now show
+  amber and count towards the dashboard's "Maintenance due" total. Narrow the window back in
+  **Settings → Maintenance reminders** if the old behaviour suited you better.
+- **The dashboard's reminders are nested under their vehicle.** The separate "Maintenance
+  reminders" list is gone; each vehicle row in *The garage* now carries a count badge and
+  expands to show its own reminders, so a reminder no longer has to repeat the vehicle's
+  name. Vehicles with anything overdue or due soon start expanded. A **Show N upcoming**
+  toggle (remembered per device) hides the low-priority tail — overdue and due-soon
+  reminders are always shown.
+- **MOT and tax tiles keep their colour on hover.** Hovering the MOT or tax tile on a
+  vehicle used to wash it out to grey; it now deepens its own green/amber/red. The tiles
+  also gained a visible keyboard focus ring.
+- **The DVSA and DVLA records sit side by side.** Expanding a vehicle's MOT tile lays the
+  two source records out in two columns (stacking on narrow screens) so they can be read
+  against each other rather than scrolled between.
 
 ### Added
+- **Per-garage reminder windows.** How far ahead a reminder counts as "due soon" is now
+  configurable per garage under **Settings → Maintenance reminders** — separately for
+  services (days *and* distance, in mi or km), the MOT, and road tax. Only a garage owner
+  can change them; other members see the values read-only. Leaving a field blank uses the
+  application default. Migration `0009`, `PUT /api/garages/<id>/settings`.
 - **Service schedules.** Each vehicle can define recurring service schedules — a *minor*,
   a *major*, and any number of user-named *custom* ones — with an interval expressed as
   every N months and/or every N km/mi (stored canonically in km). A service log can record
