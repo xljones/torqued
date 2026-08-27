@@ -26,6 +26,9 @@
   --tint-warn-bg: #fdf3d7;    --tint-warn-fg: #7a5a0a;  --tint-warn-border: #ecd9a0;
   --tint-bad-bg: #fde2e2;     --tint-bad-fg: #8a1f1f;   --tint-bad-border: #f3c4c4;
   --tint-accent2-bg: #fdeedd; --tint-accent2-fg: #7a3a0a;
+  /* Hover/open shade for an interactive tinted surface: one step deeper in the same hue,
+     sitting between the -bg and the -border, so it reacts without flattening to grey. */
+  --tint-ok-hover: #cbe8d8;   --tint-warn-hover: #f9e9bd; --tint-bad-hover: #f9d2d2;
 
   /* Success-action green (deliberately more saturated than --success) + form-warning text. */
   --btn-success: #2e7d32;     --btn-success-hover: #1b5e20;

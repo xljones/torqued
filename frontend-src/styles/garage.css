@@ -303,8 +303,19 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 .mot-defect-minor { background: var(--tint-info-bg); color: var(--tint-info-fg); }
 .mot-defect-advisory { background: var(--tint-warn-bg); color: var(--tint-warn-fg); }
 .dvsa-record-tile { cursor: pointer; user-select: none; transition: background 0.1s; }
+/* Neutral hover/open for an untinted tile (the admin records page passes no tone class). */
 .dvsa-record-tile:hover { background: var(--surface3); }
 .dvsa-record-tile--open { background: var(--surface2); }
+/* A tinted tile deepens its own colour instead of going grey — the neutral rules above
+   out-specify .pressure-tile--* (single class vs class + pseudo-class), so the tone has to
+   be restated compounded with the interactive class to win it back. */
+.dvsa-record-tile--open.pressure-tile--ok,
+.dvsa-record-tile.pressure-tile--ok:hover     { background: var(--tint-ok-hover); }
+.dvsa-record-tile--open.pressure-tile--warn,
+.dvsa-record-tile.pressure-tile--warn:hover   { background: var(--tint-warn-hover); }
+.dvsa-record-tile--open.pressure-tile--danger,
+.dvsa-record-tile.pressure-tile--danger:hover { background: var(--tint-bad-hover); }
+.dvsa-record-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .dvsa-record-caret { font-size: 10px; opacity: 0.6; margin-left: 4px; }
 /* DVSA vehicles admin table: rows expand to reveal their stored records. */
 .dvsa-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

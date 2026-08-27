@@ -27,6 +27,7 @@
   --tint-warn-bg: #3a2f12;    --tint-warn-fg: #e6c473;  --tint-warn-border: #4d3f1c;
   --tint-bad-bg: #3d1a1a;     --tint-bad-fg: #f0a0a0;   --tint-bad-border: #5a2626;
   --tint-accent2-bg: #3a2410; --tint-accent2-fg: #e0a877;
+  --tint-ok-hover: #1d4229;   --tint-warn-hover: #4a3c17; --tint-bad-hover: #4e2222;
 
   /* Success-action green (lifted for dark) + form-warning text. */
   --btn-success: #3f9e46;     --btn-success-hover: #4fb257;
