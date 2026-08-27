@@ -12,7 +12,7 @@ windows are now set per garage.
 Five nullable columns with no DB default: NULL means "use the application default" (see
 ``torqued/reminders.py``), keeping defaults in Python where the rest of them live and the
 migration portable across SQLite and Postgres. Nothing is back-filled — existing garages
-pick up the new, wider defaults.
+pick up the new default distance (2,000 mi, up from 500 km; the 30-day half is unchanged).
 
 The service distance is stored canonically in km alongside the unit the user typed, the
 same pair as ``vehicles.odometer_km``/``odometer_unit``, so a garage that entered "2,000 mi"

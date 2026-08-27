@@ -10,7 +10,7 @@ const THEME_LABELS = { light: 'Light', dark: 'Dark', system: 'System' };
 
 // Mirrors the application defaults in the backend's torqued/reminders.py — shown as input
 // placeholders so a blank field reads as "use the default" rather than "unset".
-const WINDOW_DEFAULTS = { service_days: 90, service_distance: { mi: 2000, km: 3219 }, mot_days: 60, tax_days: 30 };
+const WINDOW_DEFAULTS = { service_days: 30, service_distance: { mi: 2000, km: 3219 }, mot_days: 60, tax_days: 30 };
 
 // The stored km value shown in the garage's chosen unit, rounded — these are coarse
 // thresholds, so a fractional mile would be noise.

@@ -12,8 +12,8 @@ function readStoredTitleCase() {
   return saved == null ? true : saved === 'true';
 }
 
-// Default OFF: low-priority 'upcoming' reminders are the long tail, and with a three-month
-// window that tail gets busy. Overdue and due-soon are never hidden.
+// Default OFF: low-priority 'upcoming' reminders are the long tail, and a garage with a few
+// vehicles racks up plenty. Overdue and due-soon are never hidden.
 function readStoredShowUpcoming() {
   return localStorage.getItem(SHOW_UPCOMING_KEY) === 'true';
 }

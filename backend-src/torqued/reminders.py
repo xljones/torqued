@@ -15,8 +15,10 @@ from typing import Any
 
 from torqued.units import to_km
 
-# Service and schedule reminders: three months, or 2,000 miles.
-DEFAULT_SERVICE_DAYS = 90
+# Service and schedule reminders: a month, or 2,000 miles. The distance does the work here
+# — 500 km was barely a fortnight's driving — while a month ahead is enough notice to book
+# something in.
+DEFAULT_SERVICE_DAYS = 30
 DEFAULT_SERVICE_KM = to_km(2000.0, "mi")
 DEFAULT_SERVICE_UNIT = "mi"
 # The MOT (~2 months) and road tax (~1 month) keep their historic windows.

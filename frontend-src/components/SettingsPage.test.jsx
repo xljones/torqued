@@ -82,7 +82,7 @@ describe('SettingsPage', () => {
       expect(screen.getByRole('heading', { name: 'Maintenance reminders' })).toBeInTheDocument();
       expect(screen.getByText('Home Garage')).toBeInTheDocument();
       expect(screen.getByLabelText('Service — days ahead')).toHaveValue(null);
-      expect(screen.getByLabelText('Service — days ahead')).toHaveAttribute('placeholder', '90');
+      expect(screen.getByLabelText('Service — days ahead')).toHaveAttribute('placeholder', '30');
       expect(screen.getByLabelText('Service — distance ahead')).toHaveAttribute('placeholder', '2000');
       expect(screen.getByLabelText('MOT — days ahead')).toHaveAttribute('placeholder', '60');
       expect(screen.getByLabelText('Road tax — days ahead')).toHaveAttribute('placeholder', '30');

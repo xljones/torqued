@@ -7,12 +7,14 @@
   `/api/admin/neon` endpoint are gone (the `NEON_*` env vars are no longer read).
 
 ### Changed
-- **Reminders now warn much earlier by default.** The "due soon" window for service and
-  schedule reminders went from 30 days / 500 km to **3 months / 2,000 miles** (the MOT and
-  road-tax windows are unchanged at 60 and 30 days). Existing garages pick this up
-  immediately with no action: reminders that used to sit quietly as *upcoming* will now show
-  amber and count towards the dashboard's "Maintenance due" total. Narrow the window back in
-  **Settings → Maintenance reminders** if the old behaviour suited you better.
+- **Mileage-based reminders warn far earlier by default.** The distance half of the "due
+  soon" window for service and schedule reminders went from 500 km to **2,000 miles**; the
+  time half stays at 30 days, and the MOT and road-tax windows are unchanged at 60 and 30
+  days. 500 km was barely a fortnight's driving, so a reminder due on mileage often went
+  amber only once it was nearly overdue. Existing garages pick this up with no action:
+  mileage reminders that used to sit quietly as *upcoming* will now show amber and count
+  towards the dashboard's "Maintenance due" total. Narrow it back in **Settings →
+  Maintenance reminders** if the old behaviour suited you better.
 - **The dashboard's reminders are nested under their vehicle.** The separate "Maintenance
   reminders" list is gone; each vehicle row in *The garage* now carries a count badge and
   expands to show its own reminders, so a reminder no longer has to repeat the vehicle's
