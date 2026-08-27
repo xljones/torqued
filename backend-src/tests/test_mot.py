@@ -809,12 +809,14 @@ def test_mot_reminder_excludes_archived_vehicle(
     assert _mot_reminders(auth_client) == []
 
 
-def test_mot_reminders_empty_garages() -> None:
+def test_mot_reminders_standalone(garage: dict) -> None:
+    """Called outside the orchestrator, the repository resolves the windows itself."""
     from torqued.db import get_db
     from torqued.repositories.mot_repository import MotRepository
 
     with get_db() as db:
         assert MotRepository(db).reminders([]) == []
+        assert MotRepository(db).reminders([garage["id"]]) == []
 
 
 # ── MOT summaries (vehicle list cards) ──────────────────────────────────────────

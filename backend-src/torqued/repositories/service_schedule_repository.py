@@ -14,6 +14,7 @@ from torqued.models import (
     Vehicle,
     to_dict,
 )
+from torqued.reminders import DEFAULT_WINDOWS, ReminderWindows
 from torqued.repositories.base import BaseRepository
 
 # Persisted schedule columns (id/created_at/updated_at are managed by the DB / here).
@@ -107,6 +108,7 @@ class ServiceScheduleRepository(BaseRepository):
         vehicle_id: int | None = None,
         today: date | None = None,
         latest: dict[int, dict[str, Any]] | None = None,
+        windows: dict[int, ReminderWindows] | None = None,
     ) -> list[dict[str, Any]]:
         """Return schedule-derived reminders, shaped to merge with the other streams.
 
@@ -119,12 +121,11 @@ class ServiceScheduleRepository(BaseRepository):
         service-log reminders. Each carries type='schedule'.
 
         ``latest`` is the per-vehicle latest-odometer map from
-        ``VehicleRepository.latest_odometers``; the orchestrating
-        ``ServiceLogRepository.reminders`` passes in the one it already computed so the
-        (fairly heavy) scan isn't repeated. Omitted → computed here for standalone use.
+        ``VehicleRepository.latest_odometers`` and ``windows`` the per-garage reminder
+        thresholds from ``GarageRepository.reminder_windows``; the orchestrating
+        ``ServiceLogRepository.reminders`` passes in the ones it already computed so the
+        (fairly heavy) scans aren't repeated. Omitted → computed here for standalone use.
         """
-        from torqued.repositories.service_log_repository import DUE_SOON_DAYS, DUE_SOON_KM
-
         today = today or date.today()
         if not garage_ids:
             return []
@@ -169,12 +170,18 @@ class ServiceScheduleRepository(BaseRepository):
             from torqued.repositories.vehicle_repository import VehicleRepository
 
             latest = VehicleRepository(self.session).latest_odometers()
-        soon_cutoff = (today + timedelta(days=DUE_SOON_DAYS)).isoformat()
+        if windows is None:
+            from torqued.repositories.garage_repository import GarageRepository
+
+            windows = GarageRepository(self.session).reminder_windows(garage_ids)
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
         for schedule, v_name, v_kind, garage_id, v_unit, anchor_date, anchor_km in rows:
             if anchor_date is None:
                 continue  # no fulfilling log to project from
+            # Each garage sets its own window, so the cutoff is per row, not hoisted.
+            w = windows.get(garage_id, DEFAULT_WINDOWS)
+            soon_cutoff = (today + timedelta(days=w.service_days)).isoformat()
             next_due_date = (
                 add_months(anchor_date, schedule.interval_months)
                 if schedule.interval_months
@@ -197,7 +204,7 @@ class ServiceScheduleRepository(BaseRepository):
                 km_remaining is not None and km_remaining <= 0
             )
             due_soon = (next_due_date is not None and next_due_date <= soon_cutoff) or (
-                km_remaining is not None and km_remaining <= DUE_SOON_KM
+                km_remaining is not None and km_remaining <= w.service_km
             )
             status = "overdue" if overdue else "due_soon" if due_soon else "upcoming"
             reminders.append(

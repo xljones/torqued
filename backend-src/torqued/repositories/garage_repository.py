@@ -4,6 +4,7 @@ from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import aliased
 
 from torqued.models import Garage, GarageMember, User, Vehicle, to_dict
+from torqued.reminders import ReminderWindows, windows_from_row
 from torqued.repositories.base import BaseRepository
 
 ROLES = ("owner", "member", "readonly")
@@ -88,6 +89,40 @@ class GarageRepository(BaseRepository):
     def delete(self, garage_id: int) -> bool:
         """Delete a garage (cascades to members and vehicles); True if a row was removed."""
         return self.affected(delete(Garage).where(Garage.id == garage_id)) > 0
+
+    # ── reminder windows ─────────────────────────────────────────────────────
+
+    def reminder_windows(self, garage_ids: list[int]) -> dict[int, ReminderWindows]:
+        """Resolved reminder thresholds per garage, unset columns filled from the defaults.
+
+        Built once per reminder run and threaded into the MOT / VES / schedule streams —
+        the same trick as ``VehicleRepository.latest_odometers`` — because one
+        ``GET /api/reminders`` can span every garage the user belongs to, so the window has
+        to be resolved per garage rather than once.
+        """
+        if not garage_ids:
+            return {}
+        rows = (
+            self.session.execute(
+                select(
+                    Garage.id,
+                    Garage.reminder_service_days,
+                    Garage.reminder_service_km,
+                    Garage.reminder_mot_days,
+                    Garage.reminder_tax_days,
+                ).where(Garage.id.in_(garage_ids))
+            )
+            .mappings()
+            .all()
+        )
+        return {r["id"]: windows_from_row(r) for r in rows}
+
+    def set_reminder_windows(
+        self, garage_id: int, values: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Replace a garage's reminder-window columns and return the updated row."""
+        self.session.execute(update(Garage).where(Garage.id == garage_id).values(**values))
+        return self.get_by_id(garage_id)
 
     # ── membership ───────────────────────────────────────────────────────────
 

@@ -6,14 +6,11 @@ from sqlalchemy import delete, func, select, update
 
 from torqued import mot
 from torqued.models import DvsaVehicle, MotTest, Vehicle, VehicleVes, to_dict
+from torqued.reminders import DEFAULT_WINDOWS, ReminderWindows
 from torqued.repositories.base import BaseRepository
 
 # DVSA reports odometer units as 'MI'/'KM'; we store 'mi'/'km' like everywhere else.
 _UNIT_MAP = {"MI": "mi", "KM": "km"}
-
-# An MOT surfaces as a maintenance reminder once its expiry is within this window
-# (~2 months) or already lapsed.
-MOT_DUE_SOON_DAYS = 60
 
 
 class MotRepository(BaseRepository):
@@ -47,12 +44,13 @@ class MotRepository(BaseRepository):
         garage_ids: list[int],
         vehicle_id: int | None = None,
         today: date | None = None,
+        windows: dict[int, ReminderWindows] | None = None,
     ) -> list[dict[str, Any]]:
         """Return MOT-expiry reminders for in-scope, non-archived vehicles.
 
         A vehicle with a stored DVSA snapshot yields a reminder when its MOT has
-        lapsed ('overdue') or falls due within MOT_DUE_SOON_DAYS ('due_soon');
-        MOTs further out produce nothing. The due date is the **later** of the most
+        lapsed ('overdue') or falls due within the owning garage's MOT window
+        ('due_soon'); MOTs further out produce nothing. The due date is the **later** of the most
         recent DVSA test's expiry and the DVLA VES current-MOT-status expiry (the DVSA
         history feed lags for e.g. SORN vehicles, so a fresh VES expiry corrects a stale
         DVSA one and prevents a false 'overdue'), falling back to the DVSA vehicle-level
@@ -62,6 +60,10 @@ class MotRepository(BaseRepository):
         today = today or date.today()
         if not garage_ids:
             return []
+        if windows is None:  # standalone use; the orchestrator passes in the map it built
+            from torqued.repositories.garage_repository import GarageRepository
+
+            windows = GarageRepository(self.session).reminder_windows(garage_ids)
         latest_expiry = (
             select(MotTest.expiry_date)
             .where(MotTest.vehicle_id == Vehicle.id)
@@ -88,10 +90,13 @@ class MotRepository(BaseRepository):
         if vehicle_id is not None:
             stmt = stmt.where(Vehicle.id == vehicle_id)
         rows = self.session.execute(stmt).mappings().all()
-        cutoff = (today + timedelta(days=MOT_DUE_SOON_DAYS)).isoformat()
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
         for r in rows:
+            # Each garage sets its own window, so the cutoff is per row, not hoisted.
+            cutoff = (
+                today + timedelta(days=windows.get(r["garage_id"], DEFAULT_WINDOWS).mot_days)
+            ).isoformat()
             # The later of the DVSA test expiry and the VES expiry (ISO YYYY-MM-DD strings
             # sort chronologically), so a fresh VES status overrides stale DVSA history.
             expiry = max(

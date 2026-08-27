@@ -199,6 +199,52 @@ def test_reminder_upcoming(auth_client: FlaskClient) -> None:
     assert r["status"] == "upcoming"
 
 
+def test_reminder_due_soon_uses_the_ninety_day_default(auth_client: FlaskClient) -> None:
+    """The default service window is three months, not the old thirty days."""
+    v = mk_vehicle(auth_client)
+    soon = (date.today() + timedelta(days=80)).isoformat()
+    mk_service(auth_client, v["id"], category="Service", next_due_date=soon)
+    [r] = _vehicle_reminders(auth_client, v["id"])
+    assert r["status"] == "due_soon"
+
+
+def test_reminder_window_honours_a_garage_override(
+    garage_owner_client: FlaskClient, garage: dict
+) -> None:
+    """Narrowing the garage's window pushes a reminder back out to 'upcoming'."""
+    v = mk_vehicle(garage_owner_client)
+    soon = (date.today() + timedelta(days=80)).isoformat()
+    mk_service(garage_owner_client, v["id"], category="Service", next_due_date=soon)
+    assert _vehicle_reminders(garage_owner_client, v["id"])[0]["status"] == "due_soon"
+
+    garage_owner_client.put(
+        f"/api/garages/{garage['id']}/settings", json={"reminder_service_days": 30}
+    )
+    assert _vehicle_reminders(garage_owner_client, v["id"])[0]["status"] == "upcoming"
+
+
+def test_reminder_distance_window_honours_a_garage_override(
+    garage_owner_client: FlaskClient, garage: dict
+) -> None:
+    v = mk_vehicle(garage_owner_client)
+    far = (date.today() + timedelta(days=200)).isoformat()
+    mk_service(garage_owner_client, v["id"], category="Oil change",
+               odometer=1000, odometer_unit="km",
+               next_due_date=far, next_due_distance=2000)
+    garage_owner_client.post(f"/api/vehicles/{v['id']}/odometer", json={
+        "date": "2025-06-01", "odometer": 1800, "unit": "km",
+    })
+    # 200 km remaining is inside the 2,000-mile default…
+    assert _vehicle_reminders(garage_owner_client, v["id"])[0]["status"] == "due_soon"
+
+    # …but outside a 100 km window.
+    garage_owner_client.put(
+        f"/api/garages/{garage['id']}/settings",
+        json={"reminder_service_distance": 100, "reminder_service_unit": "km"},
+    )
+    assert _vehicle_reminders(garage_owner_client, v["id"])[0]["status"] == "upcoming"
+
+
 def test_reminder_overdue_by_km(auth_client: FlaskClient) -> None:
     v = mk_vehicle(auth_client)
     mk_service(auth_client, v["id"], category="Oil change",

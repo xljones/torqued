@@ -44,6 +44,12 @@ class Garage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(Text)
+    # Reminder "due soon" windows (migration 0009). NULL → the torqued.reminders default.
+    reminder_service_days: Mapped[int | None] = mapped_column(Integer)
+    reminder_service_km: Mapped[float | None] = mapped_column(Float)
+    reminder_service_unit: Mapped[str | None] = mapped_column(Text)
+    reminder_mot_days: Mapped[int | None] = mapped_column(Integer)
+    reminder_tax_days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=FetchedValue())
 
 

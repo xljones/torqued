@@ -6,8 +6,14 @@ from torqued.access import garage_role
 from torqued.db import IntegrityError, get_db
 from torqued.repositories.garage_repository import ROLES, GarageRepository
 from torqued.repositories.user_repository import UserRepository
+from torqued.units import parse_distance, to_km
 
 bp = Blueprint("garages", __name__)
+
+# Generous sanity bounds — wide enough that nobody legitimate hits them, tight enough to
+# reject a fat-fingered 900000. Enforced here rather than by a DB CHECK, as elsewhere.
+MAX_WINDOW_DAYS = 3650
+MAX_WINDOW_KM = to_km(100_000.0, "mi")
 
 
 @bp.get("/api/garages")
@@ -58,6 +64,52 @@ def rename_garage(garage_id: int) -> ResponseReturnValue:
             return jsonify(repo.rename(garage_id, name))
     except IntegrityError:
         return jsonify(error="Garage name already exists"), 409
+
+
+@bp.put("/api/garages/<int:garage_id>/settings")
+@login_required
+def update_garage_settings(garage_id: int) -> ResponseReturnValue:
+    """Set a garage's maintenance reminder windows (owner only).
+
+    Every threshold is optional; an omitted, empty or null value clears the column, which
+    means "fall back to the application default" (torqued.reminders) — so the form gets a
+    free "blank it to reset" affordance. The service distance arrives in the unit the user
+    typed and is stored canonically in km alongside it, like a schedule interval.
+    """
+    d = request.json or {}
+
+    def days(key: str) -> int | None:
+        raw = d.get(key)
+        if raw is None or raw == "":
+            return None
+        value = int(raw)  # a non-numeric value raises, caught below
+        if not 1 <= value <= MAX_WINDOW_DAYS:
+            raise ValueError(f"{key} must be between 1 and {MAX_WINDOW_DAYS} days")
+        return value
+
+    try:
+        service_km, service_unit = parse_distance(
+            d, value_key="reminder_service_distance", unit_key="reminder_service_unit"
+        )
+        if service_km is not None and not 0 < service_km <= MAX_WINDOW_KM:
+            return jsonify(error="reminder_service_distance is out of range"), 400
+        values = {
+            "reminder_service_days": days("reminder_service_days"),
+            "reminder_service_km": service_km,
+            "reminder_service_unit": service_unit,
+            "reminder_mot_days": days("reminder_mot_days"),
+            "reminder_tax_days": days("reminder_tax_days"),
+        }
+    except (TypeError, ValueError) as err:
+        return jsonify(error=str(err) or "reminder windows must be numeric"), 400
+
+    with get_db() as db:
+        repo = GarageRepository(db)
+        if not repo.get_by_id(garage_id):
+            return jsonify(error="Not found"), 404
+        if garage_role(db, current_user, garage_id) != "owner":
+            return jsonify(error="Garage owner access required"), 403
+        return jsonify(repo.set_reminder_windows(garage_id, values))
 
 
 @bp.delete("/api/garages/<int:garage_id>")

@@ -169,8 +169,9 @@ VES data is **stored**, not fetched on every view. A refresh happens only when:
 ## Reminders
 
 `VesRepository.reminders` emits a reminder (tagged `type='tax'`, `title='Road tax'`,
-`category='Tax'`) when the stored `tax_due_date` is within `TAX_DUE_SOON_DAYS` (30) —
-`due_soon` — or already past — `overdue`. SORN / untaxed records carry no due date and so
+`category='Tax'`) when the stored `tax_due_date` is within the owning garage's tax window
+(`garages.reminder_tax_days`, defaulting to 30 — see `torqued/reminders.py`) — `due_soon` —
+or already past — `overdue`. SORN / untaxed records carry no due date and so
 raise no reminder; the **MOT & tax** card shows that status directly. Tax reminders are merged
 into `ServiceLogRepository.reminders` alongside service and MOT reminders, so they appear on
 the dashboard, the vehicle detail page, and the PDF report.

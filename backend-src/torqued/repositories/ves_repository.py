@@ -6,10 +6,8 @@ from sqlalchemy import delete, func, select, update
 
 from torqued import mot
 from torqued.models import Vehicle, VehicleVes, to_dict
+from torqued.reminders import DEFAULT_WINDOWS, ReminderWindows
 from torqued.repositories.base import BaseRepository
-
-# Road tax surfaces as a reminder once its due date is within this window or lapsed.
-TAX_DUE_SOON_DAYS = 30
 
 
 class VesRepository(BaseRepository):
@@ -103,18 +101,23 @@ class VesRepository(BaseRepository):
         garage_ids: list[int],
         vehicle_id: int | None = None,
         today: date | None = None,
+        windows: dict[int, ReminderWindows] | None = None,
     ) -> list[dict[str, Any]]:
         """Return road-tax reminders for in-scope, non-archived vehicles.
 
         A vehicle with a stored tax due date yields a reminder when the tax has lapsed
-        ('overdue') or falls due within TAX_DUE_SOON_DAYS ('due_soon'); tax further out
-        produces nothing. SORN / Untaxed records carry no due date and so raise no reminder —
-        the card shows that status directly. Shaped (and tagged type='tax') to merge with the
-        service-log and MOT reminders.
+        ('overdue') or falls due within the owning garage's tax window ('due_soon'); tax
+        further out produces nothing. SORN / Untaxed records carry no due date and so raise no
+        reminder — the card shows that status directly. Shaped (and tagged type='tax') to merge
+        with the service-log and MOT reminders.
         """
         today = today or date.today()
         if not garage_ids:
             return []
+        if windows is None:  # standalone use; the orchestrator passes in the map it built
+            from torqued.repositories.garage_repository import GarageRepository
+
+            windows = GarageRepository(self.session).reminder_windows(garage_ids)
         stmt = (
             select(
                 Vehicle.id.label("vehicle_id"),
@@ -130,10 +133,13 @@ class VesRepository(BaseRepository):
         if vehicle_id is not None:
             stmt = stmt.where(Vehicle.id == vehicle_id)
         rows = self.session.execute(stmt).mappings().all()
-        cutoff = (today + timedelta(days=TAX_DUE_SOON_DAYS)).isoformat()
         today_iso = today.isoformat()
         reminders: list[dict[str, Any]] = []
         for r in rows:
+            # Each garage sets its own window, so the cutoff is per row, not hoisted.
+            cutoff = (
+                today + timedelta(days=windows.get(r["garage_id"], DEFAULT_WINDOWS).tax_days)
+            ).isoformat()
             due = r["tax_due_date"]
             if not due:
                 continue
