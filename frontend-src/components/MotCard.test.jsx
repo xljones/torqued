@@ -308,6 +308,24 @@ describe('MotCard', () => {
     expect(screen.getAllByText('cylinder_capacity').length).toBeGreaterThan(0); // VES raw
   });
 
+  it('lays the two MOT records side by side, and the tax record full width', async () => {
+    api.getMot.mockResolvedValue({ configured: true, mot });
+    api.getVes.mockResolvedValue({ configured: true, ves });
+    const { container } = render(<MotCard vehicle={vehicle} ro={false} />);
+    await waitFor(() => expect(screen.getByText('MOT')).toBeInTheDocument());
+
+    // Grab the tax tile up front — once a record is expanded, "Taxed" also appears in its
+    // JSON and the by-text lookup goes ambiguous.
+    const taxTile = screen.getByText('Taxed').closest('.pressure-tile');
+
+    await userEvent.click(screen.getByText('MOT').closest('.pressure-tile'));
+    expect(container.querySelectorAll('.motax-records > .motax-record')).toHaveLength(2);
+
+    // The tax tile expands a single record, so it stays outside the side-by-side grid.
+    await userEvent.click(taxTile);
+    expect(container.querySelector('.motax-records')).toBeNull();
+  });
+
   it('shows up to 10 MOT tests before the "show all" button appears', async () => {
     const many = Array.from({ length: 12 }, (_, i) => ({
       id: 100 + i, completed_date: `20${10 + i}-01-01T00:00:00.000Z`, test_result: 'PASSED',

@@ -280,6 +280,14 @@ a.vehicle-card:hover { border-color: var(--accent); text-decoration: none; }
 /* The two core tiles (tax | MOT) sit side by side on one row; the DVSA record sits
    full-width underneath (rendered outside this grid). */
 .motax-primary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+/* The two MOT sources (DVSA test history | DVLA VES) sit side by side so they can be read
+   against each other. auto-fit rather than a fixed two columns: a vehicle often has only
+   one of the pair, and a lone panel should fill the row instead of leaving a dead half.
+   Below ~320px a track they stack — two JSON trees in half a phone screen are unreadable. */
+.motax-records { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+/* Grid items default to min-width:auto, which would let .dvsa-raw-json's `white-space: pre`
+   widen the track instead of scrolling inside it. */
+.motax-record { min-width: 0; }
 .mot-test { border-bottom: 1px solid var(--border); padding: 8px 0; }
 .mot-test:last-child { border-bottom: none; }
 .mot-test-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
