@@ -1,18 +1,30 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SettingsPage from './SettingsPage';
 import { ThemeProvider } from '../ThemeContext.jsx';
 import { DisplayPrefsProvider } from '../DisplayPrefsContext.jsx';
+import { api } from '../api.js';
 
-vi.mock('../AuthContext.jsx', () => ({
-  useAuth: () => ({ user: { username: 'alice', is_admin: false } }),
-}));
+// Mutable so a test can swap in a different garage or role before rendering.
+const auth = {
+  user: { username: 'alice', is_admin: false },
+  currentGarage: { id: 3, name: 'Home Garage' },
+  roleFor: () => 'owner',
+  refreshGarages: vi.fn(),
+};
+
+vi.mock('../AuthContext.jsx', () => ({ useAuth: () => auth }));
 vi.mock('./Toast.jsx', () => ({ useToast: () => vi.fn() }));
-vi.mock('../api.js', () => ({ api: { changePassword: vi.fn() } }));
+vi.mock('../api.js', () => ({
+  api: { changePassword: vi.fn(), updateGarageSettings: vi.fn() },
+}));
 
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute('data-theme');
+  vi.clearAllMocks();
+  auth.currentGarage = { id: 3, name: 'Home Garage' };
+  auth.roleFor = () => 'owner';
 });
 
 const renderSettings = () => render(
@@ -62,5 +74,65 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'false');
     expect(localStorage.getItem('torqued.titleCaseNames')).toBe('false');
+  });
+
+  describe('maintenance reminder windows', () => {
+    it('names the garage and shows the defaults as placeholders when unset', () => {
+      renderSettings();
+      expect(screen.getByRole('heading', { name: 'Maintenance reminders' })).toBeInTheDocument();
+      expect(screen.getByText('Home Garage')).toBeInTheDocument();
+      expect(screen.getByLabelText('Service — days ahead')).toHaveValue(null);
+      expect(screen.getByLabelText('Service — days ahead')).toHaveAttribute('placeholder', '90');
+      expect(screen.getByLabelText('Service — distance ahead')).toHaveAttribute('placeholder', '2000');
+      expect(screen.getByLabelText('MOT — days ahead')).toHaveAttribute('placeholder', '60');
+      expect(screen.getByLabelText('Road tax — days ahead')).toHaveAttribute('placeholder', '30');
+    });
+
+    it("shows the garage's overrides, with the distance back in the unit it was entered", () => {
+      auth.currentGarage = {
+        id: 3, name: 'Home Garage',
+        reminder_service_days: 45, reminder_service_km: 3218.688, reminder_service_unit: 'mi',
+        reminder_mot_days: 90, reminder_tax_days: 14,
+      };
+      renderSettings();
+      expect(screen.getByLabelText('Service — days ahead')).toHaveValue(45);
+      expect(screen.getByLabelText('Service — distance ahead')).toHaveValue(2000);
+      expect(screen.getByRole('button', { name: 'mi' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('converts the distance when the unit toggle flips', () => {
+      renderSettings();
+      fireEvent.change(screen.getByLabelText('Service — distance ahead'), { target: { value: '2000' } });
+      fireEvent.click(screen.getByRole('button', { name: 'km' }));
+      expect(screen.getByLabelText('Service — distance ahead')).toHaveValue(3219);
+      fireEvent.click(screen.getByRole('button', { name: 'mi' }));
+      expect(screen.getByLabelText('Service — distance ahead')).toHaveValue(2000);
+    });
+
+    it('saves the windows and refreshes the garages', async () => {
+      api.updateGarageSettings.mockResolvedValue({});
+      renderSettings();
+      fireEvent.change(screen.getByLabelText('Service — days ahead'), { target: { value: '45' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save reminders' }));
+      await waitFor(() => expect(auth.refreshGarages).toHaveBeenCalled());
+      expect(api.updateGarageSettings).toHaveBeenCalledWith(3, expect.objectContaining({
+        reminder_service_days: '45', reminder_service_unit: 'mi',
+      }));
+    });
+
+    it('is read-only for a member', () => {
+      auth.roleFor = () => 'member';
+      renderSettings();
+      expect(screen.getByLabelText('Service — days ahead')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'mi' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Save reminders' })).toBeNull();
+      expect(screen.getByText('Only a garage owner can change these.')).toBeInTheDocument();
+    });
+
+    it('is hidden entirely when the user has no garage', () => {
+      auth.currentGarage = null;
+      renderSettings();
+      expect(screen.queryByRole('heading', { name: 'Maintenance reminders' })).toBeNull();
+    });
   });
 });
