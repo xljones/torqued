@@ -17,6 +17,7 @@ from torqued.models import (
     Vehicle,
     to_dict,
 )
+from torqued.reminders import DEFAULT_WINDOWS
 from torqued.repositories.base import BaseRepository
 
 SERVICE_FIELDS: list[str] = [
@@ -33,9 +34,6 @@ SERVICE_FIELDS: list[str] = [
     "next_due_km",
 ]
 
-# Reminder proximity thresholds: "due soon" within this window.
-DUE_SOON_DAYS = 30
-DUE_SOON_KM = 500.0
 
 
 def _log_select() -> Select[Any]:
@@ -255,8 +253,9 @@ class ServiceLogRepository(BaseRepository):
 
         A service log with a next_due_date or next_due_km creates a reminder. The
         reminder is closed once a newer log exists for the same vehicle and category.
-        Status is 'overdue', 'due_soon' (within DUE_SOON_DAYS / DUE_SOON_KM of the
-        vehicle's latest odometer reading), or 'upcoming'. Each carries type='service'.
+        Status is 'overdue', 'due_soon' (within the owning garage's service window of
+        today / the vehicle's latest odometer reading — see torqued.reminders), or
+        'upcoming'. Each carries type='service'.
 
         MOT-expiry reminders (type='mot') are merged in alongside, so a vehicle's
         upcoming or lapsed MOT surfaces here too.
@@ -312,12 +311,16 @@ class ServiceLogRepository(BaseRepository):
                 self.session.execute(stmt).all()
             )
         ]
+        from torqued.repositories.garage_repository import GarageRepository
         from torqued.repositories.vehicle_repository import VehicleRepository
 
         latest = VehicleRepository(self.session).latest_odometers()
-        soon_cutoff = (today + timedelta(days=DUE_SOON_DAYS)).isoformat()
+        windows = GarageRepository(self.session).reminder_windows(garage_ids)
         reminders = []
         for s in candidates:
+            # Each garage sets its own window, so the cutoff is per candidate, not hoisted.
+            w = windows.get(s["garage_id"], DEFAULT_WINDOWS)
+            soon_cutoff = (today + timedelta(days=w.service_days)).isoformat()
             current_km = (latest.get(s["vehicle_id"]) or {}).get("odometer_km")
             status = "upcoming"
             km_remaining = None
@@ -328,7 +331,7 @@ class ServiceLogRepository(BaseRepository):
             ) or (km_remaining is not None and km_remaining <= 0)
             due_soon = (
                 s["next_due_date"] is not None and s["next_due_date"] <= soon_cutoff
-            ) or (km_remaining is not None and km_remaining <= DUE_SOON_KM)
+            ) or (km_remaining is not None and km_remaining <= w.service_km)
             if overdue:
                 status = "overdue"
             elif due_soon:
@@ -341,14 +344,18 @@ class ServiceLogRepository(BaseRepository):
         from torqued.repositories.ves_repository import VesRepository
 
         reminders.extend(
-            MotRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
+            MotRepository(self.session).reminders(
+                garage_ids, vehicle_id=vehicle_id, today=today, windows=windows
+            )
         )
         reminders.extend(
-            VesRepository(self.session).reminders(garage_ids, vehicle_id=vehicle_id, today=today)
+            VesRepository(self.session).reminders(
+                garage_ids, vehicle_id=vehicle_id, today=today, windows=windows
+            )
         )
         reminders.extend(
             ServiceScheduleRepository(self.session).reminders(
-                garage_ids, vehicle_id=vehicle_id, today=today, latest=latest
+                garage_ids, vehicle_id=vehicle_id, today=today, latest=latest, windows=windows
             )
         )
         order = {"overdue": 0, "due_soon": 1, "upcoming": 2}

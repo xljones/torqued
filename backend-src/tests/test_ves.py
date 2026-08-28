@@ -672,12 +672,14 @@ def test_tax_reminder_excludes_archived(
     assert _tax_reminders(auth_client) == []
 
 
-def test_tax_reminders_empty_garages() -> None:
+def test_tax_reminders_standalone(garage: dict) -> None:
+    """Called outside the orchestrator, the repository resolves the windows itself."""
     from torqued.db import get_db
     from torqued.repositories.ves_repository import VesRepository
 
     with get_db() as db:
         assert VesRepository(db).reminders([]) == []
+        assert VesRepository(db).reminders([garage["id"]]) == []
 
 
 # ── tax summaries (vehicle list cards) ──────────────────────────────────────────

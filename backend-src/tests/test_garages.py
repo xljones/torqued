@@ -84,6 +84,85 @@ def test_delete_garage_cascades(admin_client: FlaskClient) -> None:
     assert admin_client.delete("/api/garages/999").status_code == 404
 
 
+# ── reminder windows ──────────────────────────────────────────────────────────
+
+def test_reminder_windows_unset_by_default(auth_client: FlaskClient) -> None:
+    """A fresh garage overrides nothing — every window falls back to the app default."""
+    garage = auth_client.get("/api/garages").json[0]
+    assert garage["reminder_service_days"] is None
+    assert garage["reminder_service_km"] is None
+    assert garage["reminder_service_unit"] is None
+    assert garage["reminder_mot_days"] is None
+    assert garage["reminder_tax_days"] is None
+
+
+def test_set_reminder_windows_as_garage_owner(garage_owner_client: FlaskClient) -> None:
+    garage_id = garage_owner_client.get("/api/garages").json[0]["id"]
+    r = garage_owner_client.put(
+        f"/api/garages/{garage_id}/settings",
+        json={
+            "reminder_service_days": 45,
+            "reminder_service_distance": 2000,
+            "reminder_service_unit": "mi",
+            "reminder_mot_days": 90,
+            "reminder_tax_days": 14,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json["reminder_service_days"] == 45
+    assert r.json["reminder_service_km"] == 2000 * 1.609344  # stored canonically in km
+    assert r.json["reminder_service_unit"] == "mi"
+    assert r.json["reminder_mot_days"] == 90
+    assert r.json["reminder_tax_days"] == 14
+
+
+def test_set_reminder_windows_clears_on_empty(garage_owner_client: FlaskClient) -> None:
+    """Blanking a field resets it to the application default (a NULL column)."""
+    garage_id = garage_owner_client.get("/api/garages").json[0]["id"]
+    url = f"/api/garages/{garage_id}/settings"
+    garage_owner_client.put(url, json={"reminder_service_days": 45})
+    r = garage_owner_client.put(url, json={"reminder_service_days": "", "reminder_tax_days": None})
+    assert r.status_code == 200
+    assert r.json["reminder_service_days"] is None
+    assert r.json["reminder_service_km"] is None
+    # The unit is kept even with no distance, so the form's mi/km toggle stays sticky.
+    assert r.json["reminder_service_unit"] == "mi"
+
+
+def test_set_reminder_windows_validation(garage_owner_client: FlaskClient) -> None:
+    garage_id = garage_owner_client.get("/api/garages").json[0]["id"]
+    url = f"/api/garages/{garage_id}/settings"
+    for body in (
+        {"reminder_service_days": "soon"},
+        {"reminder_service_days": 0},
+        {"reminder_mot_days": 4000},
+        {"reminder_service_distance": -1},
+        {"reminder_service_distance": 1_000_000},
+        {"reminder_service_distance": "far"},
+        {"reminder_service_distance": 10, "reminder_service_unit": "furlongs"},
+    ):
+        assert garage_owner_client.put(url, json=body).status_code == 400, body
+
+
+def test_set_reminder_windows_requires_garage_owner(auth_client: FlaskClient) -> None:
+    garage_id = auth_client.get("/api/garages").json[0]["id"]
+    r = auth_client.put(f"/api/garages/{garage_id}/settings", json={"reminder_tax_days": 7})
+    assert r.status_code == 403
+
+
+def test_set_reminder_windows_site_admin_and_missing_garage(admin_client: FlaskClient) -> None:
+    garage = mk_garage()
+    r = admin_client.put(f"/api/garages/{garage['id']}/settings", json={"reminder_mot_days": 30})
+    assert r.status_code == 200
+    assert r.json["reminder_mot_days"] == 30
+    assert admin_client.put("/api/garages/999/settings", json={}).status_code == 404
+
+
+def test_reminder_windows_repository_without_garages(app: Flask) -> None:
+    with get_db() as db:
+        assert GarageRepository(db).reminder_windows([]) == {}
+
+
 # ── members ───────────────────────────────────────────────────────────────────
 
 def test_members_visible_to_members(auth_client: FlaskClient) -> None:

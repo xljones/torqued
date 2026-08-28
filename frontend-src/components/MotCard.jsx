@@ -154,6 +154,7 @@ export default function MotCard({ vehicle, ro, onSynced }) {
       : null;
   // The MOT tile expands to its records only when there's a record to show.
   const motHasRecord = !!mot || !!vesInfo;
+  const motMakeModel = [mot?.make, mot?.model].filter(Boolean).join(' ');
   const showRecall = String(mot?.has_outstanding_recall ?? 'Unknown').toLowerCase() !== 'unknown';
   const visible = showAll ? tests : tests.slice(0, 10);
 
@@ -255,23 +256,22 @@ export default function MotCard({ vehicle, ro, onSynced }) {
       )}
 
       {/* MOT records — expanded from the MOT tile: the DVSA test-history record AND the DVLA
-          VES record, so the user can compare both MOT sources. */}
+          VES record, side by side so the two MOT sources can be read against each other. */}
       {openRecord === 'mot' && motHasRecord && (
-        <div className="mt-2">
+        <div className="motax-records mt-2">
           {mot && (
-            <>
-              <div className="pressure-label mt-2">
-                DVSA record
-                {[mot.make, mot.model].filter(Boolean).join(' ') ? ` · ${[mot.make, mot.model].filter(Boolean).join(' ')}` : ''}
+            <div className="motax-record">
+              <div className="pressure-label">
+                DVSA record{motMakeModel ? ` · ${motMakeModel}` : ''}
               </div>
               <DvsaRecordPanel raw={mot.raw} className="mt-1" />
-            </>
+            </div>
           )}
           {vesInfo && (
-            <>
-              <div className="pressure-label mt-3">DVLA record (VES)</div>
+            <div className="motax-record">
+              <div className="pressure-label">DVLA record (VES)</div>
               <DvsaRecordPanel raw={vesInfo.raw} className="mt-1" />
-            </>
+            </div>
           )}
         </div>
       )}

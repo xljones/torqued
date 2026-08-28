@@ -42,6 +42,7 @@ export const api = {
   getGarages:       ()                          => req('GET',    '/garages'),
   createGarage:     (name)                      => req('POST',   '/garages', { name }),
   renameGarage:     (id, name)                  => req('PUT',    `/garages/${id}`, { name }),
+  updateGarageSettings: (id, body)              => req('PUT',    `/garages/${id}/settings`, body),
   deleteGarage:     (id)                        => req('DELETE', `/garages/${id}`),
   getMembers:       (garageId)                  => req('GET',    `/garages/${garageId}/members`),
   addMember:        (garageId, username, role)  => req('POST',   `/garages/${garageId}/members`, { username, role }),
